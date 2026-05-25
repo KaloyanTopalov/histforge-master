@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Step } from "@/worker/pipeline";
 import { appendLog } from "@/lib/logger";
@@ -41,6 +41,26 @@ export const step: Step = {
     const projectDir = join(ctx.projectsDir, videoId);
     const scriptPath = join(projectDir, "script", "full_script.md");
     const outPath = join(projectDir, "audio", "narration.mp3");
+
+    // Manual-upload bypass: if the operator already uploaded a voiceover
+    // via POST /api/videos/<id>/voiceover, the file is sitting at
+    // outPath. Skip the TTS call and treat this step as done. The check
+    // requires a non-zero file — an empty stub would just fail step 07
+    // (alignment) downstream. The upload route always writes the full
+    // payload in a single writeFileSync, so partial files cannot land
+    // here from the upload path itself.
+    if (existsSync(outPath)) {
+      const stats = statSync(outPath);
+      if (stats.isFile() && stats.size > 0) {
+        appendLog(
+          videoId,
+          "voiceover",
+          `Using pre-existing voiceover at audio/narration.mp3 (${stats.size} bytes) — skipping TTS.`,
+          ctx.projectsDir,
+        );
+        return;
+      }
+    }
 
     const text = readFileSync(scriptPath, "utf-8");
     const result = await ctx.ttsProvider.synthesize(text, outPath, {

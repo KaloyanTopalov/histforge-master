@@ -147,4 +147,80 @@ describe("voiceover (step 6)", () => {
     // a user-clicked Retry resumes the dead task and throws again in a loop.
     expect(voiceoverStep.outputs).toContain("audio/.tts_task_id");
   });
+
+  describe("manual-upload bypass", () => {
+    it("skips the TTS provider call when audio/narration.mp3 already exists", async () => {
+      // The voiceover upload route writes the file at this path. Step 6
+      // detects the pre-existing audio at entry, logs the bypass, and
+      // returns without invoking the provider.
+      const projectsDir = tempDir("projects");
+      const videoId = "v_test_voiceover_manual";
+      const scriptDir = join(projectsDir, videoId, "script");
+      const audioDir = join(projectsDir, videoId, "audio");
+      mkdirSync(scriptDir, { recursive: true });
+      mkdirSync(audioDir, { recursive: true });
+      writeFileSync(join(scriptDir, "full_script.md"), "ignored — bypass active");
+      // Non-zero payload so the size guard treats it as a real file.
+      writeFileSync(join(audioDir, "narration.mp3"), Buffer.from("ID3\x00\x00\x00\x00\x00deadbeef"));
+
+      const ttsProvider = mockProvider();
+
+      await voiceoverStep.run(
+        videoId,
+        makeStepContext({ projectsDir, ttsProvider }),
+      );
+
+      expect(ttsProvider.synthesize).not.toHaveBeenCalled();
+      const logContents = readFileSync(
+        join(projectsDir, videoId, "pipeline.log"),
+        "utf-8",
+      );
+      expect(logContents).toContain("[voiceover]");
+      expect(logContents).toContain("Using pre-existing voiceover");
+      expect(logContents).toContain("skipping TTS");
+    });
+
+    it("falls through to the TTS provider when audio/narration.mp3 exists but is zero-sized", async () => {
+      // Defensive — a zero-byte stub at the path would fail alignment
+      // downstream. Treat the existence check as "must be a real file
+      // with bytes" rather than just "path exists".
+      const projectsDir = tempDir("projects");
+      const videoId = "v_test_voiceover_empty_stub";
+      const scriptDir = join(projectsDir, videoId, "script");
+      const audioDir = join(projectsDir, videoId, "audio");
+      mkdirSync(scriptDir, { recursive: true });
+      mkdirSync(audioDir, { recursive: true });
+      writeFileSync(join(scriptDir, "full_script.md"), "narration text");
+      writeFileSync(join(audioDir, "narration.mp3"), Buffer.alloc(0));
+
+      const ttsProvider = mockProvider();
+
+      await voiceoverStep.run(
+        videoId,
+        makeStepContext({ projectsDir, ttsProvider }),
+      );
+
+      expect(ttsProvider.synthesize).toHaveBeenCalledOnce();
+    });
+
+    it("falls through to the TTS provider when audio/narration.mp3 does not exist (pre-feature behavior)", async () => {
+      // Confirms the bypass is opt-in: a fresh video with no upload
+      // behaves exactly like the original step 06 — full_script.md is
+      // read, the provider is called with the narration path.
+      const projectsDir = tempDir("projects");
+      const videoId = "v_test_voiceover_no_upload";
+      const scriptDir = join(projectsDir, videoId, "script");
+      mkdirSync(scriptDir, { recursive: true });
+      writeFileSync(join(scriptDir, "full_script.md"), "narration text");
+
+      const ttsProvider = mockProvider();
+
+      await voiceoverStep.run(
+        videoId,
+        makeStepContext({ projectsDir, ttsProvider }),
+      );
+
+      expect(ttsProvider.synthesize).toHaveBeenCalledOnce();
+    });
+  });
 });

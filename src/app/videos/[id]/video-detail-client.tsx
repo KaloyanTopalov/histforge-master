@@ -43,6 +43,7 @@ import { VideoActions } from "./video-actions";
 import { FlowModerationPanel } from "./flow-moderation-panel";
 import { FlowProgressPanel } from "./flow-progress-panel";
 import { ArtifactsPanel } from "./artifacts-panel";
+import { VoiceoverUpload } from "./voiceover-upload";
 
 export type { FlowSummary } from "@/lib/flow-summary";
 
@@ -565,6 +566,11 @@ export function VideoDetailClient({
               <FlowModerationPanel events={flowSummary.moderation.events} />
             )}
         </div>
+
+        <VoiceoverUpload
+          videoId={videoId}
+          hasExistingVoiceover={artifacts.includes("audio/narration.mp3")}
+        />
 
         <ArtifactsPanel videoId={videoId} artifacts={artifacts} steps={steps} />
       </div>

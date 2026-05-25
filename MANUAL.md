@@ -193,6 +193,8 @@ Click a video title to open the detail page, which shows the step list, step tim
 - **Retry failed step** — re-runs the failed step, keeping everything before it.
 - **Restart from beginning** — deletes all artifacts and re-queues from step 1.
 
+**Manual voiceover upload (skip TTS):** On the video detail page there is a **Voiceover** card with an upload button. Drop in a pre-rendered MP3 (or WAV / M4A / AAC / OGG / FLAC — non-MP3 files are transcoded on the server via ffmpeg) and the file lands at `audio/narration.mp3`. The voiceover step detects the file at entry and skips the TTS provider call. If you upload **after** the voiceover step has already run with TTS, click **Retry failed step** on the voiceover row (or **Restart from beginning** if you want to redo everything) so the pipeline re-enters step 06 and picks up your file.
+
 ---
 
 ## 11. Copy Path (finished videos)
