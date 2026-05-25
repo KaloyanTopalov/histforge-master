@@ -1,6 +1,9 @@
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Step } from "@/worker/pipeline";
 import { align, type AlignOpts } from "@/lib/align";
+import { appendLog } from "@/lib/logger";
+import { isValidAlignmentArray } from "@/lib/srt";
 
 /**
  * Deliberate exception to the {@link makeStepContext} convention used by
@@ -31,6 +34,32 @@ export async function runAlign(
   const audioPath = join(projectDir, "audio", "narration.mp3");
   const scriptPath = join(projectDir, "script", "full_script.md");
   const outPath = join(projectDir, "alignment", "alignment.json");
+
+  // Manual-upload bypass: if `alignment.json` is already present AND
+  // its contents parse to a valid `AlignmentEntry[]`, skip aeneas
+  // entirely (no WSL spawn, no sentences.txt write, no spawn-time
+  // failure on Windows hosts without WSL installed). The shape check
+  // is load-bearing — a malformed file would silently pass through to
+  // the chunker step and crash there with a less actionable error.
+  if (existsSync(outPath)) {
+    const stats = statSync(outPath);
+    if (stats.isFile() && stats.size > 0) {
+      try {
+        const parsed = JSON.parse(readFileSync(outPath, "utf-8"));
+        if (isValidAlignmentArray(parsed)) {
+          appendLog(
+            videoId,
+            "align",
+            `Using pre-existing alignment.json (${parsed.length} entries, ${stats.size} bytes) — skipping aeneas.`,
+            projectsDir,
+          );
+          return;
+        }
+      } catch {
+        // Fall through to aeneas — file is on disk but unusable.
+      }
+    }
+  }
 
   await align(audioPath, scriptPath, outPath, deps);
 }

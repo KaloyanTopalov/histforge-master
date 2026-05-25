@@ -195,6 +195,8 @@ Click a video title to open the detail page, which shows the step list, step tim
 
 **Manual voiceover upload (skip TTS):** On the video detail page there is a **Voiceover** card with an upload button. Drop in a pre-rendered MP3 (or WAV / M4A / AAC / OGG / FLAC — non-MP3 files are transcoded on the server via ffmpeg) and the file lands at `audio/narration.mp3`. The voiceover step detects the file at entry and skips the TTS provider call. If you upload **after** the voiceover step has already run with TTS, click **Retry failed step** on the voiceover row (or **Restart from beginning** if you want to redo everything) so the pipeline re-enters step 06 and picks up your file.
 
+**Manual alignment upload (skip WSL/aeneas):** Same pattern as voiceover. The **Alignment** card accepts `.json` (aeneas-shape `[{id, text, begin, end}]`) or `.srt` / `.vtt` (parsed and converted server-side). Lands at `alignment/alignment.json`. The align step detects valid content at entry and skips the WSL/aeneas spawn — useful when WSL isn't installed on Windows, or when you already have a Whisper/Descript transcript. Malformed files fall through to aeneas (treated as if no upload happened) so a corrupt drop can't break the chunker downstream.
+
 ---
 
 ## 11. Copy Path (finished videos)
