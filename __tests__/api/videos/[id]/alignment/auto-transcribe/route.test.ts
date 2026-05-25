@@ -21,8 +21,43 @@ import {
   writeFileSync,
 } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+// Mock child_process.spawn for the LOCAL whisper-cli path. The route
+// also spawns ffmpeg for downsampling; we delegate that command back to
+// the real spawn so ffmpeg keeps working. Anything else (whisper-cli /
+// whisper.cpp main) is intercepted and made to behave like a successful
+// transcription by writing a fixture SRT to the basename in `-of`.
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return {
+    ...actual,
+    spawn: vi.fn(
+      (cmd: string, args: string[], opts?: unknown) => {
+        if (cmd === "ffmpeg") {
+          return actual.spawn(cmd, args, opts as never);
+        }
+        const child = new EventEmitter() as EventEmitter & {
+          stderr: EventEmitter;
+          stdout: EventEmitter;
+        };
+        child.stderr = new EventEmitter();
+        child.stdout = new EventEmitter();
+        const ofIdx = args.indexOf("-of");
+        if (ofIdx >= 0 && args[ofIdx + 1]) {
+          const srt =
+            "1\n00:00:00,000 --> 00:00:02,500\nFirst local-whisper sentence.\n\n" +
+            "2\n00:00:02,500 --> 00:00:05,000\nSecond local-whisper sentence.\n";
+          writeFileSync(args[ofIdx + 1] + ".srt", srt);
+        }
+        process.nextTick(() => child.emit("close", 0));
+        return child as unknown as ReturnType<typeof actual.spawn>;
+      },
+    ),
+  };
+});
 
 let tempDir: string;
 let projectsDir: string;
@@ -62,6 +97,10 @@ beforeEach(async () => {
   delete process.env.WHISPER_API_KEY;
   delete process.env.WHISPER_BASE_URL;
   delete process.env.WHISPER_MODEL;
+  delete process.env.WHISPER_LOCAL_BIN;
+  delete process.env.WHISPER_LOCAL_MODEL;
+  delete process.env.WHISPER_LOCAL_LANG;
+  delete process.env.WHISPER_LOCAL_THREADS;
 });
 
 afterEach(() => {
@@ -303,4 +342,131 @@ describe("POST /api/videos/:id/alignment/auto-transcribe", () => {
       expect((await r.json()).error).toBe("parse_failed");
     },
   );
+
+  describe("local whisper.cpp mode", () => {
+    function seedLocalBin(): string {
+      // Path needs to exist for the existsSync(localBin) check to pass.
+      // The contents don't matter — spawn is mocked at the top of this
+      // file to intercept any non-ffmpeg command.
+      const binDir = mkdtempSync(join(tmpdir(), "histforge-fake-bin-"));
+      const isWin = process.platform === "win32";
+      const binPath = join(binDir, isWin ? "whisper-cli.cmd" : "whisper-cli");
+      writeFileSync(binPath, "(mock)\n");
+      return binPath;
+    }
+    function seedLocalModel(): string {
+      const modelDir = mkdtempSync(join(tmpdir(), "histforge-fake-model-"));
+      const modelPath = join(modelDir, "ggml-base.bin");
+      writeFileSync(modelPath, Buffer.from("(fake model bytes)"));
+      return modelPath;
+    }
+
+    it("returns 503 local_bin_missing when WHISPER_LOCAL_BIN points at a non-existent path", async () => {
+      process.env.WHISPER_LOCAL_BIN = join(tmpdir(), "definitely-not-a-real-file");
+      process.env.WHISPER_LOCAL_MODEL = seedLocalModel();
+      await seedVideo("v_test_wt");
+      seedAudio("v_test_wt", makeTinyMp3());
+
+      const r = await callPost("v_test_wt");
+      expect(r.status).toBe(503);
+      expect((await r.json()).error).toBe("local_bin_missing");
+    });
+
+    it("returns 503 local_model_missing when WHISPER_LOCAL_MODEL points at a non-existent path", async () => {
+      process.env.WHISPER_LOCAL_BIN = seedLocalBin();
+      process.env.WHISPER_LOCAL_MODEL = join(tmpdir(), "definitely-not-a-real-model.bin");
+      await seedVideo("v_test_wt");
+      seedAudio("v_test_wt", makeTinyMp3());
+
+      const r = await callPost("v_test_wt");
+      expect(r.status).toBe(503);
+      expect((await r.json()).error).toBe("local_model_missing");
+    });
+
+    it.skipIf(!FFMPEG_AVAILABLE)(
+      "happy path: ffmpeg→WAV, spawn whisper-cli, parse SRT, write alignment.json",
+      async () => {
+        const binPath = seedLocalBin();
+        const modelPath = seedLocalModel();
+        process.env.WHISPER_LOCAL_BIN = binPath;
+        process.env.WHISPER_LOCAL_MODEL = modelPath;
+        process.env.WHISPER_LOCAL_LANG = "en";
+        process.env.WHISPER_LOCAL_THREADS = "4";
+        await seedVideo("v_test_wt");
+        seedAudio("v_test_wt", makeTinyMp3());
+
+        const r = await callPost("v_test_wt");
+        expect(r.status).toBe(200);
+        const body = await r.json();
+        expect(body.ok).toBe(true);
+        expect(body.mode).toBe("local");
+        expect(body.entries).toBe(2);
+        expect(body.model).toBe("ggml-base.bin");
+
+        // Confirm whisper-cli was called with the expected args.
+        const { spawn } = await import("node:child_process");
+        const spawnMock = spawn as unknown as ReturnType<typeof vi.fn>;
+        const cliCall = spawnMock.mock.calls.find((c) => c[0] === binPath);
+        expect(cliCall).toBeTruthy();
+        const cliArgs = cliCall![1] as string[];
+        expect(cliArgs).toContain("-m");
+        expect(cliArgs).toContain(modelPath);
+        expect(cliArgs).toContain("-l");
+        expect(cliArgs).toContain("en");
+        expect(cliArgs).toContain("-osrt");
+        expect(cliArgs).toContain("-t");
+        expect(cliArgs).toContain("4");
+
+        const written = JSON.parse(
+          readFileSync(
+            join(projectsDir, "v_test_wt", "alignment", "alignment.json"),
+            "utf-8",
+          ),
+        );
+        expect(written).toHaveLength(2);
+        expect(written[0].text).toBe("First local-whisper sentence.");
+
+        // Scratch files should be cleaned up.
+        expect(
+          existsSync(join(projectsDir, "v_test_wt", "audio", "narration_whisper.wav")),
+        ).toBe(false);
+        expect(
+          existsSync(join(projectsDir, "v_test_wt", "alignment", "narration_whisper.srt")),
+        ).toBe(false);
+      },
+    );
+
+    it("local mode wins when both local + HTTP env are configured", async () => {
+      // Confirms the priority order documented in the route: local is
+      // preferred because it's free, offline, and uncapped. A user with
+      // an API key + a local install should default to local.
+      const binPath = seedLocalBin();
+      const modelPath = seedLocalModel();
+      process.env.WHISPER_LOCAL_BIN = binPath;
+      process.env.WHISPER_LOCAL_MODEL = modelPath;
+      process.env.WHISPER_API_KEY = "sk-should-not-be-used";
+      await seedVideo("v_test_wt");
+      seedAudio("v_test_wt", makeTinyMp3());
+
+      // If the route took the HTTP path it would call fetch — make
+      // fetch throw so any accidental HTTP path lights up loudly.
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockRejectedValue(new Error("fetch should not be called"));
+
+      if (FFMPEG_AVAILABLE) {
+        const r = await callPost("v_test_wt");
+        expect(r.status).toBe(200);
+        const body = await r.json();
+        expect(body.mode).toBe("local");
+        expect(fetchSpy).not.toHaveBeenCalled();
+      } else {
+        // Without ffmpeg, the local path fails at the WAV transcode
+        // step BEFORE reaching fetch. That still proves we picked
+        // local over HTTP — fetch is never called.
+        await callPost("v_test_wt");
+        expect(fetchSpy).not.toHaveBeenCalled();
+      }
+    });
+  });
 });

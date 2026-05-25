@@ -197,7 +197,22 @@ Click a video title to open the detail page, which shows the step list, step tim
 
 **Manual alignment upload (skip WSL/aeneas):** Same pattern as voiceover. The **Alignment** card accepts `.json` (aeneas-shape `[{id, text, begin, end}]`) or `.srt` / `.vtt` (parsed and converted server-side). Lands at `alignment/alignment.json`. The align step detects valid content at entry and skips the WSL/aeneas spawn — useful when WSL isn't installed on Windows, or when you already have a Whisper/Descript transcript. Malformed files fall through to aeneas (treated as if no upload happened) so a corrupt drop can't break the chunker downstream.
 
-**Auto-transcribe with Whisper:** The Alignment card has an **Auto-transcribe (Whisper)** button next to Upload. It reads `audio/narration.mp3`, ffmpeg-downsamples it to mono 16 kHz 24 kbps (so it fits Whisper's 25 MB upload cap up to ~2.5 hours of narration), POSTs it to an OpenAI-compatible `/v1/audio/transcriptions` endpoint with `response_format=srt`, parses the returned SRT, and writes `alignment.json`. Configure via three env vars in `.env`:
+**Auto-transcribe with Whisper:** The Alignment card has an **Auto-transcribe (Whisper)** button next to Upload. Two modes — local wins if both are configured.
+
+**Local mode (recommended — offline, free, no upload cap):** uses whisper.cpp's binary against a ggml model file.
+
+1. Download a release binary from [github.com/ggerganov/whisper.cpp/releases](https://github.com/ggerganov/whisper.cpp/releases). On Windows look for `whisper-bin-x64.zip` — extract `whisper-cli.exe`.
+2. Download a ggml model from [huggingface.co/ggerganov/whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp/tree/main). `ggml-base.en.bin` (~150 MB) is good for English; `ggml-small.en.bin` (~500 MB) is noticeably better.
+3. Set in `.env`:
+   ```
+   WHISPER_LOCAL_BIN=C:\tools\whisper\whisper-cli.exe
+   WHISPER_LOCAL_MODEL=C:\tools\whisper\ggml-base.en.bin
+   WHISPER_LOCAL_LANG=en          # optional, default en
+   WHISPER_LOCAL_THREADS=         # optional, default = CPU count
+   ```
+4. Restart `npm run dev`. The button now runs Whisper locally — ffmpeg converts narration.mp3 to mono 16 kHz PCM WAV, whisper.cpp produces an SRT, route parses + writes alignment.json. Expect ~real-time-to-2× audio length on a modern CPU; faster with a CUDA build.
+
+**HTTP API mode (fallback when local isn't configured):** the route reads `audio/narration.mp3`, ffmpeg-downsamples it to mono 16 kHz 24 kbps (so it fits Whisper's 25 MB upload cap up to ~2.5 hours of narration), POSTs it to an OpenAI-compatible `/v1/audio/transcriptions` endpoint, parses the returned SRT, and writes `alignment.json`. Env vars:
 
 ```
 WHISPER_API_KEY=...                                   # required
@@ -205,7 +220,7 @@ WHISPER_BASE_URL=https://api.openai.com/v1            # default
 WHISPER_MODEL=whisper-1                               # default
 ```
 
-Works against any endpoint that implements the OpenAI shape — confirmed with OpenAI (`whisper-1`) and Groq (`https://api.groq.com/openai/v1` + `whisper-large-v3`). For narrations longer than the 25 MB cap can hold (~2.5 hours at mono 24 kbps), the route fails with `audio_too_long` and you fall back to uploading an SRT manually.
+Works against any endpoint that implements the OpenAI shape — confirmed with OpenAI (`whisper-1`) and Groq (`https://api.groq.com/openai/v1` + `whisper-large-v3`). For narrations longer than the 25 MB cap can hold (~2.5 hours at mono 24 kbps), use local mode or upload an SRT manually.
 
 ---
 
