@@ -260,6 +260,8 @@ export function SettingsForm({
 
         <TabsContent value="visual-style" className="mt-8">
           <VisualStyleTab
+            values={values}
+            update={update}
             onDirtyChange={onVisualStyleDirtyChange}
             registerConfirmDiscard={registerVisualStyleConfirmDiscard}
           />

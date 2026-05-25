@@ -53,11 +53,14 @@ export const TAB_FIELDS: Record<TabId, readonly SettingKey[]> = {
     "music_video_loop_trim_tail_seconds",
     "music_video_loop_xfade_seconds",
   ],
-  // Visual-style settings now live in their own `visual_styles` table —
+  // Visual-style settings live in their own `visual_styles` table —
   // the tab renders a master-detail gallery that owns its own REST
   // round-trips and surfaces dirt via the SettingsForm external dirty
-  // channel.
-  "visual-style": [],
+  // channel. The two character-lock / style-lock textareas (provider-
+  // agnostic; consumed by step 09's prompt-assembly post-processing)
+  // are settings-table keys and round-trip through the normal PATCH
+  // /api/settings path, so they sit alongside the gallery on this tab.
+  "visual-style": ["style_lock_description", "character_lock_negative"],
   tts: [
     "voice_id",
     "voiceover_model_id",
