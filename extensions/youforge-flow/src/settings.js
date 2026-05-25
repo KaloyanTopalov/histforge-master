@@ -200,6 +200,7 @@ function getMediaFetchTimeoutSec() { return getSetting('mediaFetchTimeoutSec'); 
 function getSessionReFetchRetries() { return getSetting('sessionReFetchRetries'); }
 function getProgressEventEveryN() { return getSetting('progressEventEveryN'); }
 function getNotificationsEnabled() { return getSetting('notificationsEnabled'); }
+function getCharacterLockReference() { return getSetting('characterLockReference'); }
 
 // Toggles the verbose-logging flag. Called by the popup checkbox via
 // the message router; the cache stays in sync without a re-read. The
@@ -207,6 +208,16 @@ function getNotificationsEnabled() { return getSetting('notificationsEnabled'); 
 // boolean today, but the cast keeps the contract robust).
 function setVerboseLogging(v) {
   setSetting('verboseLogging', !!v);
+}
+
+// Bypasses coerceSettingValue's empty-string rejection so the popup can
+// clear the lock mid-session. Mirrors updateWebhooks's escape hatch for
+// kind:'string' keys that legitimately accept ''. Trims whitespace; UUID
+// validation happens at the executor entry (defensive — popup already
+// rejects malformed values before saving).
+function setCharacterLockReference(value) {
+  const v = typeof value === 'string' ? value.trim() : '';
+  settingsCache.set('characterLockReference', v);
 }
 
 // Drops the memoized loadPromise so the next loadSettings() call re-reads

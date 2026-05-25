@@ -13,6 +13,7 @@
 const SAVE_DEBOUNCE_MS = 400;
 const STATUS_REFRESH_MS = 2000;
 const DEFAULT_HISTFORGE_DOMAIN = 'http://localhost:3000';
+const CHARACTER_LOCK_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 const els = {
   form: document.getElementById('config-form'),
@@ -22,6 +23,8 @@ const els = {
   videoConcurrency: document.getElementById('video-concurrency'),
   verboseLogging: document.getElementById('verbose-logging'),
   notificationsEnabled: document.getElementById('notifications-enabled'),
+  characterLockReference: document.getElementById('character-lock-reference'),
+  characterLockError: document.getElementById('character-lock-error'),
   derivedHint: document.getElementById('derived-urls-hint'),
   advancedRoot: document.getElementById('advanced-root'),
   grantBtn: document.getElementById('grant-btn'),
@@ -136,6 +139,7 @@ async function loadConfig() {
     'histforgeDomain', 'pollUrl', 'accountToken',
     'imageConcurrency', 'videoConcurrency',
     'verboseLogging', 'notificationsEnabled',
+    'characterLockReference',
   ];
   const advancedKeys = ADVANCED_NUMERIC_FIELDS.map((f) => f.key);
   const s = await chrome.storage.local.get([...baseKeys, ...advancedKeys]);
@@ -157,6 +161,9 @@ async function loadConfig() {
   if (els.notificationsEnabled) {
     // notificationsEnabled defaults to true; only flip when explicitly stored false.
     els.notificationsEnabled.checked = s.notificationsEnabled !== false;
+  }
+  if (els.characterLockReference) {
+    els.characterLockReference.value = typeof s.characterLockReference === 'string' ? s.characterLockReference : '';
   }
   for (const f of ADVANCED_NUMERIC_FIELDS) {
     const el = document.getElementById(f.id);
@@ -198,6 +205,18 @@ function deriveWebhookUrls(domain, token) {
 }
 
 async function saveConfig() {
+  // Character lock validation runs first — a malformed value aborts the
+  // entire save (we don't want a known-bad lock persisted alongside an
+  // otherwise valid config, and the executor would throw on it anyway).
+  const characterLockReference = els.characterLockReference
+    ? els.characterLockReference.value.trim()
+    : '';
+  if (characterLockReference && !CHARACTER_LOCK_UUID_RE.test(characterLockReference)) {
+    showCharacterLockError('Expected a Google Flow media ID (UUID, 8-4-4-4-12 lowercase hex).');
+    return;
+  }
+  hideCharacterLockError();
+
   const domain = normalizeDomain(els.histforgeDomain.value);
   const accountToken = els.accountToken.value.trim();
   const { pollUrl, resultUrl, statusUrl, projectUrl, operationStartedUrl } =
@@ -222,6 +241,7 @@ async function saveConfig() {
     accountToken,
     imageConcurrency, videoConcurrency,
     verboseLogging, notificationsEnabled,
+    characterLockReference,
     ...advanced,
   });
   chrome.runtime.sendMessage({
@@ -236,6 +256,12 @@ async function saveConfig() {
     imageConcurrency, videoConcurrency,
   });
   chrome.runtime.sendMessage({ action: 'setVerboseLogging', value: verboseLogging });
+  // Dedicated setter — reloadSettings can't clear the lock cache because
+  // coerceSettingValue rejects '' for kind:'string'. See messages.js.
+  chrome.runtime.sendMessage({
+    action: 'setCharacterLockReference',
+    value: characterLockReference,
+  });
   // Advanced fieldset + notificationsEnabled have no per-field setter on
   // the SW side; ask it to drop its memoized loadPromise so the next
   // getter call re-reads chrome.storage.local.
@@ -245,6 +271,18 @@ async function saveConfig() {
   await refreshHostPermission();
   refreshEnabled();
   updateDerivedHint();
+}
+
+function showCharacterLockError(message) {
+  if (!els.characterLockError) return;
+  els.characterLockError.textContent = message;
+  els.characterLockError.hidden = false;
+}
+
+function hideCharacterLockError() {
+  if (!els.characterLockError) return;
+  els.characterLockError.textContent = '';
+  els.characterLockError.hidden = true;
 }
 
 function updateDerivedHint() {

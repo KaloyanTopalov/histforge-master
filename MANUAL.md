@@ -224,3 +224,6 @@ In the **Finished Videos** section, click **Copy Path** on a row to copy `<proje
 - **Hook-video step fails with "drop your ComfyUI video workflow at …"?** You haven't supplied the hook-video workflow JSON — see step 8.
 - **Video stuck in `in_progress` after a crash?** Restart the worker — on startup it resets stale running steps and resumes from the first non-`done` step.
 - **"Copy .env.example" error?** You forgot to create the `.env` file or left a key blank.
+- **YouForge Flow popup rejects the Character lock value?** Confirm it's a UUID in 8-4-4-4-12 lowercase hex format. Copy the value from your saved Character's `<img>` element in Flow (the part after `?name=` in the `src` URL). See `docs/setup-guides/setup-google-flow.md` → "Step: Lock a character".
+- **Image tasks fail with `BadCharacterLockError`?** The stored lock value is corrupt (popup validation should have prevented this; the most likely cause is a direct `chrome.storage.local` write). Re-copy the media ID from Flow and save it through the popup.
+- **Is the character lock active?** Open the YouForge Flow service-worker console. Every image task logs `[api] Task <id> ingredient=<UUID>`. `ingredient=none` means the lock is unset for that profile.

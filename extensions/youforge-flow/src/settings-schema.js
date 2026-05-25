@@ -69,6 +69,14 @@ const SETTINGS_SCHEMA = [
   { key: 'imgUpscale', default: 'none', kind: 'string' },
   { key: 'vidUpscale', default: 'none', kind: 'string' },
 
+  // Character lock — a Google Flow media ID (UUID) the operator pastes
+  // into the popup. When set, every image task prepends it to imageInputs
+  // as IMAGE_INPUT_TYPE_REFERENCE with no upload step. Empty means no
+  // lock. Coercion path rejects '' (kind:'string' contract), so clearing
+  // the lock goes through the dedicated setCharacterLockReference action
+  // in messages.js — same escape hatch updateWebhooks uses for ''.
+  { key: 'characterLockReference', default: '', kind: 'string' },
+
   // Logging + notifications
   { key: 'verboseLogging', default: false, kind: 'boolean' },
   { key: 'notificationsEnabled', default: true, kind: 'boolean' },

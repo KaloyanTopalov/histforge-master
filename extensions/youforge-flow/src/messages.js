@@ -8,7 +8,8 @@
 // stopPolling / pollBothBuckets / handleContentReady /
 // resetActiveCounts / forceStopAllTabs, handlers.handleTaskCompletedFIFO
 // / handleTaskFailedFIFO / handleVideoFoundFIFO, settings.updateWebhooks
-// / updateConcurrency / setMode, control-panel.openControlPanel,
+// / updateConcurrency / setMode / setVerboseLogging / reloadSettings /
+// setCharacterLockReference, control-panel.openControlPanel,
 // account-tier.clearCachedTier, stop-flag.setStopFlag / clearStopFlag /
 // getStopFlag, status.getStatus, media-fetch.fetchImageAsBase64,
 // stats.bumpStat, state.setGrantedOrigin / clearGrantedOrigin, safeLog.
@@ -136,6 +137,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case 'setVerboseLogging':
       setVerboseLogging(!!message.value);
+      sendResponse({ success: true });
+      break;
+
+    case 'setCharacterLockReference':
+      // Dedicated setter rather than relying on reloadSettings:
+      // coerceSettingValue rejects '' for kind:'string', so a popup
+      // clear (saving '') would leave the SW cache holding the prior
+      // UUID until the SW restarts. This path bypasses coercion.
+      setCharacterLockReference(message.value);
       sendResponse({ success: true });
       break;
 

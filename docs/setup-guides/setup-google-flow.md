@@ -45,6 +45,19 @@ Use **one Chrome profile per Google account**. Mixing accounts in the same profi
 
 Repeat steps 2–4 for each additional Google account, each in its own Chrome profile.
 
+### Step: Lock a character
+
+Optional but recommended for series that follow a single recurring character. The lock pins every image task to a saved Flow Character so the visual identity stays stable across chapters. One-time setup per Chrome profile — the value is stored in the extension popup.
+
+1. The character must already exist as a saved **Character** in Flow. Open `https://labs.google/fx/tools/flow` and confirm the Character is listed in the Characters panel.
+2. Open the Character so its reference image is rendered on the page.
+3. Press `F12` to open DevTools → **Elements** tab → locate the character's `<img>` element. Its `src` URL contains a query parameter like `?name=622f1a75-b4f1-45a8-9d77-948e0e93c8f7` (a UUID in 8-4-4-4-12 lowercase hex format — Google Flow's media ID).
+4. Copy just the UUID value (without `?name=`).
+5. In the YouForge Flow popup, paste it into **Character lock media ID** and click **Start** (or wait for the debounced save). The popup rejects the value with an inline error if it isn't a UUID.
+6. The next image task should attach the lock automatically. Verify in the extension service-worker console — every image task logs `[api] Task <id> ingredient=<UUID>`.
+
+To clear the lock, blank the field and save — the cache is cleared via a dedicated `setCharacterLockReference` message (an empty value can't round-trip through the schema-coercion path).
+
 ## 5. Smoke test end-to-end
 
 1. In HistForge, create a new video with a **short** script (a low `chapter_count`, say 3) so you only need a handful of main chunks and one hook.

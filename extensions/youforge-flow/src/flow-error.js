@@ -294,6 +294,24 @@ async function throwFromResponse({
   await throwFlowApiError(parsed);
 }
 
+// Thrown by the image executor when characterLockReference is set but
+// not a valid Flow media ID (UUID 8-4-4-4-12 lowercase hex). Defensive
+// — the popup validates before persisting, so a bad value reaching the
+// executor implies storage corruption or a direct chrome.storage.local
+// write that bypassed the popup. Fails the task loudly rather than
+// silently dropping the lock.
+function makeBadCharacterLockError(value) {
+  const err = new Error(
+    `Character lock reference is malformed: expected UUID (8-4-4-4-12 hex), got "${value}"`,
+  );
+  err.code = 'BAD_CHARACTER_LOCK';
+  err.reason = 'BAD_CHARACTER_LOCK';
+  err.category = 'invalid_argument';
+  err.value = value;
+  err.retryable = false;
+  return err;
+}
+
 function makeFlowApiError(parsed) {
   const p = parsed || {};
   const reason = p.reason || 'UNKNOWN';
