@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "AmbientForge DistroKid Runner",
+  "version": "0.1.0",
+  "description": "Polls the AmbientForge bridge on localhost:7342 and drives distrokid.com to fulfill verify_artist / start_release / set_metadata / upload_cover / upload_track / verify_track_count / submit_or_screenshot / focus_window actions.",
+  "permissions": ["storage", "alarms", "tabs", "scripting", "windows", "activeTab"],
+  "host_permissions": [
+    "https://distrokid.com/*",
+    "https://*.distrokid.com/*",
+    "http://localhost:7342/*",
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://distrokid.com/*", "https://*.distrokid.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "AmbientForge DistroKid Runner",
+    "default_popup": "popup.html"
+  }
+}

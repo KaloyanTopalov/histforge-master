@@ -1,0 +1,30 @@
+{
+  "expectations": [
+    {
+      "text": "Output organizes files into logical categories",
+      "passed": true,
+      "evidence": "Sections: Page/Route, API Routes, UI Components, Navigation Entry Point, Database/Auth Layer, Related Directories"
+    },
+    {
+      "text": "Finds app/(protected)/admin/page.tsx",
+      "passed": true,
+      "evidence": "Listed: 'app/(protected)/admin/page.tsx — The admin panel page component'"
+    },
+    {
+      "text": "Finds files under app/api/admin/",
+      "passed": true,
+      "evidence": "Both 'app/api/admin/users/route.ts' and 'app/api/admin/config/route.ts' listed"
+    },
+    {
+      "text": "Finds files under components/admin/",
+      "passed": true,
+      "evidence": "Both 'components/admin/user-management.tsx' and 'components/admin/system-prompt-editor.tsx' listed"
+    },
+    {
+      "text": "Focuses on file locations, not deep analysis of how code works",
+      "passed": true,
+      "evidence": "Brief role descriptions per file. Slightly more detailed than pure locating (mentions what components are imported) but stays at the locating level."
+    }
+  ],
+  "summary": { "passed": 5, "failed": 0, "total": 5, "pass_rate": 1.0 }
+}

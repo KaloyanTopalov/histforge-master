@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'">
+  <title>YouForge Flow</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="logo-row">
+        <img src="logo-48.png" alt="YouForge Flow" width="32" height="32">
+        <div class="header-text">
+          <h1>YouForge Flow</h1>
+          <span class="version">v0.1.0</span>
+        </div>
+      </div>
+    </header>
+
+    <form id="config-form" class="config-form" autocomplete="off">
+      <div class="field">
+        <label for="poll-url">Poll URL</label>
+        <input type="url" id="poll-url" name="pollUrl" placeholder="https://histforge.example.com/api/flow/next-task/TOKEN" spellcheck="false" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="result-url">Result URL</label>
+        <input type="url" id="result-url" name="resultUrl" placeholder="https://histforge.example.com/api/flow/submit-result/TOKEN" spellcheck="false" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="status-url">Status URL</label>
+        <input type="url" id="status-url" name="statusUrl" placeholder="https://histforge.example.com/api/flow/status/TOKEN" spellcheck="false" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="account-token">Account Token</label>
+        <input type="password" id="account-token" name="accountToken" placeholder="Paste from HistForge" spellcheck="false" autocomplete="off">
+      </div>
+      <div class="field field-narrow">
+        <label for="concurrency">Concurrency (1–10)</label>
+        <input type="number" id="concurrency" name="concurrency" min="1" max="10" value="5" step="1">
+      </div>
+    </form>
+
+    <div class="action-row">
+      <button type="button" id="grant-btn" class="btn btn-grant" hidden>Grant HistForge access</button>
+      <button type="button" id="start-btn" class="btn btn-primary" disabled>Start</button>
+      <button type="button" id="stop-btn" class="btn btn-secondary" hidden>Stop</button>
+    </div>
+
+    <div class="status-line" id="status-line" aria-live="polite">Idle</div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

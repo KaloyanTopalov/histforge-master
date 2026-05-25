@@ -1,0 +1,323 @@
+{
+  "metadata": {
+    "skill_name": "codebase-agents",
+    "skill_path": ".claude/agents/",
+    "executor_model": "claude-sonnet-4-6",
+    "timestamp": "2026-03-18T00:00:00Z",
+    "evals_run": [0, 1, 2, 3, 4, 5],
+    "runs_per_configuration": 1
+  },
+
+  "runs": [
+    {
+      "eval_id": 0,
+      "eval_name": "locator: RAG pipeline files",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 6,
+        "failed": 0,
+        "total": 6,
+        "time_seconds": 80.8,
+        "tokens": 10977,
+        "tool_calls": 21,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Output organizes files into logical categories", "passed": true, "evidence": "7 clear sections"},
+        {"text": "Listed file paths actually exist in the project", "passed": true, "evidence": "All paths verified"},
+        {"text": "Finds lib/rag/embed.ts", "passed": true, "evidence": "Listed under Core RAG Implementation"},
+        {"text": "Finds lib/rag/retrieve.ts", "passed": true, "evidence": "Listed under Core RAG Implementation"},
+        {"text": "Finds app/api/chat/route.ts", "passed": true, "evidence": "Listed under API Route"},
+        {"text": "Focuses on file locations, not deep analysis", "passed": true, "evidence": "One-line descriptions only"}
+      ]
+    },
+    {
+      "eval_id": 0,
+      "eval_name": "locator: RAG pipeline files",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.83,
+        "passed": 5,
+        "failed": 1,
+        "total": 6,
+        "time_seconds": 160.6,
+        "tokens": 64183,
+        "tool_calls": 47,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Output organizes files into logical categories", "passed": true, "evidence": "Well organized sections"},
+        {"text": "Listed file paths actually exist in the project", "passed": true, "evidence": "All paths verified"},
+        {"text": "Finds lib/rag/embed.ts", "passed": true, "evidence": "Found"},
+        {"text": "Finds lib/rag/retrieve.ts", "passed": true, "evidence": "Found"},
+        {"text": "Finds app/api/chat/route.ts", "passed": true, "evidence": "Found"},
+        {"text": "Focuses on file locations, not deep analysis", "passed": false, "evidence": "Goes into deep implementation analysis with function-level details and data flow diagrams"}
+      ]
+    },
+    {
+      "eval_id": 1,
+      "eval_name": "locator: auth logic files",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 6,
+        "failed": 0,
+        "total": 6,
+        "time_seconds": 135.3,
+        "tokens": 23544,
+        "tool_calls": 41,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Output organizes files into logical categories", "passed": true, "evidence": "8 clear sections"},
+        {"text": "Finds middleware.ts", "passed": true, "evidence": "lib/supabase/middleware.ts listed"},
+        {"text": "Finds app/login/page.tsx", "passed": true, "evidence": "Listed under OAuth Login Flow"},
+        {"text": "Finds app/auth/callback/route.ts", "passed": true, "evidence": "Listed under OAuth Login Flow"},
+        {"text": "Finds lib/supabase/server.ts or client.ts", "passed": true, "evidence": "Both listed"},
+        {"text": "Finds SQL migration files with RLS policies", "passed": true, "evidence": "004_rls_policies.sql listed with detail"}
+      ]
+    },
+    {
+      "eval_id": 1,
+      "eval_name": "locator: auth logic files",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 6,
+        "failed": 0,
+        "total": 6,
+        "time_seconds": 155.0,
+        "tokens": 45284,
+        "tool_calls": 42,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Output organizes files into logical categories", "passed": true, "evidence": "7 sections plus summary table"},
+        {"text": "Finds middleware.ts", "passed": true, "evidence": "Found both proxy.ts and lib/supabase/middleware.ts"},
+        {"text": "Finds app/login/page.tsx", "passed": true, "evidence": "Listed"},
+        {"text": "Finds app/auth/callback/route.ts", "passed": true, "evidence": "Listed"},
+        {"text": "Finds lib/supabase/server.ts or client.ts", "passed": true, "evidence": "Both listed"},
+        {"text": "Finds SQL migration files with RLS policies", "passed": true, "evidence": "Found 004 and 005 migrations"}
+      ]
+    },
+    {
+      "eval_id": 2,
+      "eval_name": "locator: admin panel files",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 90.3,
+        "tokens": 14348,
+        "tool_calls": 18,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Output organizes files into logical categories", "passed": true, "evidence": "6 clear sections"},
+        {"text": "Finds app/(protected)/admin/page.tsx", "passed": true, "evidence": "Listed"},
+        {"text": "Finds files under app/api/admin/", "passed": true, "evidence": "Both route files listed"},
+        {"text": "Finds files under components/admin/", "passed": true, "evidence": "Both component files listed"},
+        {"text": "Focuses on file locations, not deep analysis", "passed": true, "evidence": "Brief role descriptions"}
+      ]
+    },
+    {
+      "eval_id": 2,
+      "eval_name": "locator: admin panel files",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.80,
+        "passed": 4,
+        "failed": 1,
+        "total": 5,
+        "time_seconds": 89.5,
+        "tokens": 34209,
+        "tool_calls": 28,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Output organizes files into logical categories", "passed": true, "evidence": "6 sections"},
+        {"text": "Finds app/(protected)/admin/page.tsx", "passed": true, "evidence": "Listed"},
+        {"text": "Finds files under app/api/admin/", "passed": true, "evidence": "Both listed"},
+        {"text": "Finds files under components/admin/", "passed": true, "evidence": "Both listed"},
+        {"text": "Focuses on file locations, not deep analysis", "passed": false, "evidence": "Deep implementation details about state management, API patterns, conditional rendering"}
+      ]
+    },
+    {
+      "eval_id": 3,
+      "eval_name": "analyzer: chat streaming flow",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 6,
+        "failed": 0,
+        "total": 6,
+        "time_seconds": 139.2,
+        "tokens": 21137,
+        "tool_calls": 19,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Includes file:line references for key claims", "passed": true, "evidence": "Extensive: route.ts:22, route.ts:23-41, etc."},
+        {"text": "Traces data flow step by step", "passed": true, "evidence": "18-step data flow section"},
+        {"text": "Describes the authentication check", "passed": true, "evidence": "Section 1 details auth"},
+        {"text": "Describes RAG integration", "passed": true, "evidence": "Section 4 with 4 sub-steps"},
+        {"text": "Describes streaming mechanism", "passed": true, "evidence": "Section 7 on stream construction"},
+        {"text": "No improvement suggestions", "passed": true, "evidence": "Purely descriptive throughout"}
+      ]
+    },
+    {
+      "eval_id": 3,
+      "eval_name": "analyzer: chat streaming flow",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 6,
+        "failed": 0,
+        "total": 6,
+        "time_seconds": 150.0,
+        "tokens": 35000,
+        "tool_calls": 30,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Includes file:line references for key claims", "passed": true, "evidence": "Line references present though less granular"},
+        {"text": "Traces data flow step by step", "passed": true, "evidence": "Detailed sequence diagram + step-by-step"},
+        {"text": "Describes the authentication check", "passed": true, "evidence": "Step 2a covers auth"},
+        {"text": "Describes RAG integration", "passed": true, "evidence": "Step 2c covers RAG"},
+        {"text": "Describes streaming mechanism", "passed": true, "evidence": "Step 2f with code examples"},
+        {"text": "No improvement suggestions", "passed": true, "evidence": "Descriptive throughout"}
+      ]
+    },
+    {
+      "eval_id": 4,
+      "eval_name": "analyzer: RAG retrieval process",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 78.7,
+        "tokens": 10388,
+        "tool_calls": 8,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Includes file:line references", "passed": true, "evidence": "embed.ts:11-18, retrieve.ts:68-69, etc."},
+        {"text": "Describes embedding process", "passed": true, "evidence": "text-embedding-3-large, 3072 dimensions"},
+        {"text": "Describes similarity search", "passed": true, "evidence": "Cosine similarity formula explained"},
+        {"text": "References RAG config params", "passed": true, "evidence": "Both RAG_MATCH_COUNT and RAG_MATCH_THRESHOLD"},
+        {"text": "No improvement suggestions", "passed": true, "evidence": "Purely descriptive"}
+      ]
+    },
+    {
+      "eval_id": 4,
+      "eval_name": "analyzer: RAG retrieval process",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 109.1,
+        "tokens": 22226,
+        "tool_calls": 17,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Includes file:line references", "passed": true, "evidence": "Line references throughout"},
+        {"text": "Describes embedding process", "passed": true, "evidence": "Model and dimensions documented"},
+        {"text": "Describes similarity search", "passed": true, "evidence": "Cosine distance operator explained"},
+        {"text": "References RAG config params", "passed": true, "evidence": "Table with both params and defaults"},
+        {"text": "No improvement suggestions", "passed": true, "evidence": "Descriptive throughout"}
+      ]
+    },
+    {
+      "eval_id": 5,
+      "eval_name": "analyzer: middleware auth",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 127.1,
+        "tokens": 24691,
+        "tool_calls": 16,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Includes file:line references", "passed": true, "evidence": "proxy.ts:4, middleware.ts:5-30, etc."},
+        {"text": "Describes session refresh", "passed": true, "evidence": "Section 3 on getUser() and token refresh"},
+        {"text": "Describes deactivated user blocking", "passed": true, "evidence": "Section 5 with 6-step sequence"},
+        {"text": "Describes route protection", "passed": true, "evidence": "Route protection summary table"},
+        {"text": "No improvement suggestions", "passed": true, "evidence": "Purely descriptive"}
+      ]
+    },
+    {
+      "eval_id": 5,
+      "eval_name": "analyzer: middleware auth",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 147.5,
+        "tokens": 26543,
+        "tool_calls": 32,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Includes file:line references", "passed": true, "evidence": "Line references present"},
+        {"text": "Describes session refresh", "passed": true, "evidence": "Session refresh section"},
+        {"text": "Describes deactivated user blocking", "passed": true, "evidence": "3-step description"},
+        {"text": "Describes route protection", "passed": true, "evidence": "Matcher config + API route guards"},
+        {"text": "No improvement suggestions", "passed": true, "evidence": "Factual observations only"}
+      ]
+    }
+  ],
+
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {"mean": 1.0, "stddev": 0.0, "min": 1.0, "max": 1.0},
+      "time_seconds": {"mean": 108.6, "stddev": 25.5, "min": 78.7, "max": 139.2},
+      "tokens": {"mean": 17514, "stddev": 5800, "min": 10388, "max": 24691}
+    },
+    "without_skill": {
+      "pass_rate": {"mean": 0.94, "stddev": 0.09, "min": 0.80, "max": 1.0},
+      "time_seconds": {"mean": 135.3, "stddev": 25.0, "min": 89.5, "max": 160.6},
+      "tokens": {"mean": 37908, "stddev": 15000, "min": 22226, "max": 64183}
+    },
+    "delta": {
+      "pass_rate": "+0.06",
+      "time_seconds": "-26.7",
+      "tokens": "-20394"
+    }
+  },
+
+  "notes": [
+    "EFFICIENCY: With-skill agents use 54% fewer tokens on average (17.5K vs 37.9K) — the specialized agents stay focused and avoid reading unnecessary files.",
+    "SPEED: With-skill agents are 20% faster on average (108.6s vs 135.3s).",
+    "LOCATOR DISCIPLINE: The codebase-locator agent consistently avoids content analysis (passes 'no-content-analysis' assertion 100%), while the general-purpose baseline fails this 2 out of 3 times — it naturally drifts into explaining how code works instead of just finding files.",
+    "ANALYZER PARITY: Both codebase-analyzer and general-purpose agents pass all analyzer assertions at 100%. The analyzer agent's value is in efficiency (fewer tokens) rather than accuracy.",
+    "INTERESTING FINDING: The general-purpose baseline for middleware-auth caught that the middleware is disabled (proxy.ts rename), while the codebase-analyzer did not flag this. The analyzer stayed in its 'documentarian' lane as instructed, but missed a potentially important finding.",
+    "TOKEN EFFICIENCY: The biggest token savings are in locator tasks — codebase-locator used 10-23K tokens vs the baseline's 34-64K. The locator's lack of a Read tool forces it to stay at the file-finding level.",
+    "TOOL CALLS: With-skill agents use fewer tool calls on average (20.5 vs 33) because they don't read file contents unnecessarily."
+  ]
+}

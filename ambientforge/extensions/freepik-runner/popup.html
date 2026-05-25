@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>AmbientForge Freepik Runner</title>
+    <style>
+      body {
+        font-family: -apple-system, system-ui, sans-serif;
+        margin: 0;
+        padding: 16px;
+        width: 280px;
+        background: #0a0a0a;
+        color: #fafafa;
+      }
+      h1 {
+        font-size: 14px;
+        font-weight: 600;
+        margin: 0 0 12px;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin: 8px 0;
+        font-size: 12px;
+      }
+      .badge {
+        font-family: monospace;
+        font-size: 11px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: #1a1a1a;
+        color: #888;
+      }
+      .badge.on {
+        background: #14532d;
+        color: #86efac;
+      }
+      button {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid #444;
+        background: #1a1a1a;
+        color: #fafafa;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      button:hover {
+        background: #222;
+      }
+      .hint {
+        margin-top: 12px;
+        font-size: 11px;
+        color: #666;
+        line-height: 1.4;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Freepik Runner</h1>
+    <div class="row">
+      <span>Status</span>
+      <span id="status-badge" class="badge">…</span>
+    </div>
+    <div class="row">
+      <span>Processed</span>
+      <span id="processed" class="badge">0</span>
+    </div>
+    <div class="row">
+      <span>Failed</span>
+      <span id="failed" class="badge">0</span>
+    </div>
+    <button id="toggle">Enable polling</button>
+    <p class="hint">
+      Open <code>freepik.com/ai/image-generator</code> in a tab and sign in. Then
+      enable polling here. The runner polls the bridge on
+      <code>localhost:7344</code> every 5s.
+    </p>
+    <script src="popup.js"></script>
+  </body>
+</html>

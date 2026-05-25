@@ -1,0 +1,41 @@
+{
+  "skill_name": "codebase-agents",
+  "evals": [
+    {
+      "id": 0,
+      "agent": "codebase-locator",
+      "prompt": "Find all files related to the RAG pipeline in this project",
+      "expected_output": "Structured list of RAG-related files grouped by purpose (embedding, retrieval, API route, config)"
+    },
+    {
+      "id": 1,
+      "agent": "codebase-locator",
+      "prompt": "Where is the authentication and authorization logic in this codebase?",
+      "expected_output": "Files for OAuth, middleware, Supabase auth, RLS policies, and login pages"
+    },
+    {
+      "id": 2,
+      "agent": "codebase-locator",
+      "prompt": "Locate all admin panel related files",
+      "expected_output": "Admin page, admin API routes, admin components, user management files"
+    },
+    {
+      "id": 3,
+      "agent": "codebase-analyzer",
+      "prompt": "How does the chat streaming API route work? Trace the data flow from request to response.",
+      "expected_output": "Detailed trace of app/api/chat/route.ts with file:line references showing auth check, RAG retrieval, provider setup, and streaming response"
+    },
+    {
+      "id": 4,
+      "agent": "codebase-analyzer",
+      "prompt": "How does the RAG retrieval process work - from query embedding to results?",
+      "expected_output": "Trace through lib/rag/embed.ts and lib/rag/retrieve.ts with file:line references showing embedding generation and pgvector similarity search"
+    },
+    {
+      "id": 5,
+      "agent": "codebase-analyzer",
+      "prompt": "How does the middleware handle authentication and deactivated user blocking?",
+      "expected_output": "Trace through middleware.ts showing session refresh, auth checks, and is_active blocking with file:line references"
+    }
+  ]
+}

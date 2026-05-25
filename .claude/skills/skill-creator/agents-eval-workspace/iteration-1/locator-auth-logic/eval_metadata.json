@@ -1,0 +1,37 @@
+{
+  "eval_id": 1,
+  "eval_name": "locator-auth-logic",
+  "prompt": "Where is the authentication and authorization logic in this codebase?",
+  "assertions": [
+    {
+      "id": "files-grouped-by-purpose",
+      "description": "Output organizes files into logical categories",
+      "type": "qualitative"
+    },
+    {
+      "id": "finds-middleware",
+      "description": "Finds middleware.ts (auth middleware)",
+      "type": "programmatic"
+    },
+    {
+      "id": "finds-login-page",
+      "description": "Finds app/login/page.tsx (login page)",
+      "type": "programmatic"
+    },
+    {
+      "id": "finds-auth-callback",
+      "description": "Finds app/auth/callback/route.ts (OAuth callback)",
+      "type": "programmatic"
+    },
+    {
+      "id": "finds-supabase-client",
+      "description": "Finds lib/supabase/server.ts or client.ts",
+      "type": "programmatic"
+    },
+    {
+      "id": "finds-rls-migrations",
+      "description": "Finds SQL migration files with RLS policies",
+      "type": "programmatic"
+    }
+  ]
+}

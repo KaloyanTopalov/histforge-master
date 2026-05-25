@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Magnific HITL",
+  "version": "0.1.0",
+  "description": "HistForge-owned MV3 extension that drives Magnific image-gen + image-to-video pages on behalf of the music-video pipeline. Polls HistForge for tasks; operator finishes the loop in-tab.",
+  "permissions": [
+    "storage",
+    "alarms",
+    "tabs",
+    "scripting",
+    "notifications"
+  ],
+  "host_permissions": [
+    "https://www.magnific.com/*"
+  ],
+  "optional_host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.magnific.com/*"],
+      "js": ["content-shared.js", "content-magnific.js", "content-magnific-i2v.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Magnific HITL 0.1.0",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "logo-16.png",
+      "48": "logo-48.png",
+      "128": "logo-128.png"
+    }
+  },
+  "icons": {
+    "16": "logo-16.png",
+    "48": "logo-48.png",
+    "128": "logo-128.png"
+  }
+}

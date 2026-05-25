@@ -1,0 +1,1325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eval Review</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600&family=Lora:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js" integrity="sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      --bg: #faf9f5;
+      --surface: #ffffff;
+      --border: #e8e6dc;
+      --text: #141413;
+      --text-muted: #b0aea5;
+      --accent: #d97757;
+      --accent-hover: #c4613f;
+      --green: #788c5d;
+      --green-bg: #eef2e8;
+      --red: #c44;
+      --red-bg: #fceaea;
+      --header-bg: #141413;
+      --header-text: #faf9f5;
+      --radius: 6px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Lora', Georgia, serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ---- Header ---- */
+    .header {
+      background: var(--header-bg);
+      color: var(--header-text);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .header h1 {
+      font-family: 'Poppins', sans-serif;
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    .header .instructions {
+      font-size: 0.8rem;
+      opacity: 0.7;
+      margin-top: 0.25rem;
+    }
+    .header .progress {
+      font-size: 0.875rem;
+      opacity: 0.8;
+      text-align: right;
+    }
+
+    /* ---- Main content ---- */
+    .main {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1.5rem 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    /* ---- Sections ---- */
+    .section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      flex-shrink: 0;
+    }
+    .section-header {
+      font-family: 'Poppins', sans-serif;
+      padding: 0.75rem 1rem;
+      font-size: 0.75rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .section-body {
+      padding: 1rem;
+    }
+
+    /* ---- Config badge ---- */
+    .config-badge {
+      display: inline-block;
+      padding: 0.2rem 0.625rem;
+      border-radius: 9999px;
+      font-family: 'Poppins', sans-serif;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      margin-left: 0.75rem;
+      vertical-align: middle;
+    }
+    .config-badge.config-primary {
+      background: rgba(33, 150, 243, 0.12);
+      color: #1976d2;
+    }
+    .config-badge.config-baseline {
+      background: rgba(255, 193, 7, 0.15);
+      color: #f57f17;
+    }
+
+    /* ---- Prompt ---- */
+    .prompt-text {
+      white-space: pre-wrap;
+      font-size: 0.9375rem;
+      line-height: 1.6;
+    }
+
+    /* ---- Outputs ---- */
+    .output-file {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .output-file + .output-file {
+      margin-top: 1rem;
+    }
+    .output-file-header {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      font-family: 'SF Mono', SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .output-file-header .dl-btn {
+      font-size: 0.7rem;
+      color: var(--accent);
+      text-decoration: none;
+      cursor: pointer;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-weight: 500;
+      opacity: 0.8;
+    }
+    .output-file-header .dl-btn:hover {
+      opacity: 1;
+      text-decoration: underline;
+    }
+    .output-file-content {
+      padding: 0.75rem;
+      overflow-x: auto;
+    }
+    .output-file-content pre {
+      font-size: 0.8125rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: 'SF Mono', SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+    }
+    .output-file-content img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 4px;
+    }
+    .output-file-content iframe {
+      width: 100%;
+      height: 600px;
+      border: none;
+    }
+    .output-file-content table {
+      border-collapse: collapse;
+      font-size: 0.8125rem;
+      width: 100%;
+    }
+    .output-file-content table td,
+    .output-file-content table th {
+      border: 1px solid var(--border);
+      padding: 0.375rem 0.5rem;
+      text-align: left;
+    }
+    .output-file-content table th {
+      background: var(--bg);
+      font-weight: 600;
+    }
+    .output-file-content .download-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 0.875rem;
+      cursor: pointer;
+    }
+    .output-file-content .download-link:hover {
+      background: var(--border);
+    }
+    .empty-state {
+      color: var(--text-muted);
+      font-style: italic;
+      padding: 2rem;
+      text-align: center;
+    }
+
+    /* ---- Feedback ---- */
+    .prev-feedback {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.625rem 0.75rem;
+      margin-top: 0.75rem;
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .prev-feedback-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.25rem;
+      color: var(--text-muted);
+    }
+    .feedback-textarea {
+      width: 100%;
+      min-height: 100px;
+      padding: 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 0.9375rem;
+      line-height: 1.5;
+      resize: vertical;
+      color: var(--text);
+    }
+    .feedback-textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+    .feedback-status {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+      min-height: 1.1em;
+    }
+
+    /* ---- Grades (collapsible) ---- */
+    .grades-toggle {
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+    }
+    .grades-toggle:hover {
+      color: var(--accent);
+    }
+    .grades-toggle .arrow {
+      margin-right: 0.5rem;
+      transition: transform 0.15s;
+      font-size: 0.75rem;
+    }
+    .grades-toggle .arrow.open {
+      transform: rotate(90deg);
+    }
+    .grades-content {
+      display: none;
+      margin-top: 0.75rem;
+    }
+    .grades-content.open {
+      display: block;
+    }
+    .grades-summary {
+      font-size: 0.875rem;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .grade-badge {
+      display: inline-block;
+      padding: 0.125rem 0.5rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .grade-pass { background: var(--green-bg); color: var(--green); }
+    .grade-fail { background: var(--red-bg); color: var(--red); }
+    .assertion-list {
+      list-style: none;
+    }
+    .assertion-item {
+      padding: 0.625rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.8125rem;
+    }
+    .assertion-item:last-child { border-bottom: none; }
+    .assertion-status {
+      font-weight: 600;
+      margin-right: 0.5rem;
+    }
+    .assertion-status.pass { color: var(--green); }
+    .assertion-status.fail { color: var(--red); }
+    .assertion-evidence {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      margin-top: 0.25rem;
+      padding-left: 1.5rem;
+    }
+
+    /* ---- View tabs ---- */
+    .view-tabs {
+      display: flex;
+      gap: 0;
+      padding: 0 2rem;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .view-tab {
+      font-family: 'Poppins', sans-serif;
+      padding: 0.625rem 1.25rem;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      background: none;
+      color: var(--text-muted);
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+    .view-tab:hover { color: var(--text); }
+    .view-tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+    .view-panel { display: none; }
+    .view-panel.active { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+
+    /* ---- Benchmark view ---- */
+    .benchmark-view {
+      padding: 1.5rem 2rem;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .benchmark-table {
+      border-collapse: collapse;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 0.8125rem;
+      width: 100%;
+      margin-bottom: 1.5rem;
+    }
+    .benchmark-table th, .benchmark-table td {
+      padding: 0.625rem 0.75rem;
+      text-align: left;
+      border: 1px solid var(--border);
+    }
+    .benchmark-table th {
+      font-family: 'Poppins', sans-serif;
+      background: var(--header-bg);
+      color: var(--header-text);
+      font-weight: 500;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .benchmark-table tr:hover { background: var(--bg); }
+    .benchmark-table tr.benchmark-row-with { background: rgba(33, 150, 243, 0.06); }
+    .benchmark-table tr.benchmark-row-without { background: rgba(255, 193, 7, 0.06); }
+    .benchmark-table tr.benchmark-row-with:hover { background: rgba(33, 150, 243, 0.12); }
+    .benchmark-table tr.benchmark-row-without:hover { background: rgba(255, 193, 7, 0.12); }
+    .benchmark-table tr.benchmark-row-avg { font-weight: 600; border-top: 2px solid var(--border); }
+    .benchmark-table tr.benchmark-row-avg.benchmark-row-with { background: rgba(33, 150, 243, 0.12); }
+    .benchmark-table tr.benchmark-row-avg.benchmark-row-without { background: rgba(255, 193, 7, 0.12); }
+    .benchmark-delta-positive { color: var(--green); font-weight: 600; }
+    .benchmark-delta-negative { color: var(--red); font-weight: 600; }
+    .benchmark-notes {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem;
+    }
+    .benchmark-notes h3 {
+      font-family: 'Poppins', sans-serif;
+      font-size: 0.875rem;
+      margin-bottom: 0.75rem;
+    }
+    .benchmark-notes ul {
+      list-style: disc;
+      padding-left: 1.25rem;
+    }
+    .benchmark-notes li {
+      font-size: 0.8125rem;
+      line-height: 1.6;
+      margin-bottom: 0.375rem;
+    }
+    .benchmark-empty {
+      color: var(--text-muted);
+      font-style: italic;
+      text-align: center;
+      padding: 3rem;
+    }
+
+    /* ---- Navigation ---- */
+    .nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 2rem;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+    .nav-btn {
+      font-family: 'Poppins', sans-serif;
+      padding: 0.5rem 1.25rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text);
+      transition: all 0.15s;
+    }
+    .nav-btn:hover:not(:disabled) {
+      background: var(--bg);
+      border-color: var(--text-muted);
+    }
+    .nav-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .done-btn {
+      font-family: 'Poppins', sans-serif;
+      padding: 0.5rem 1.5rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+    .done-btn:hover {
+      background: var(--bg);
+      border-color: var(--text-muted);
+    }
+    .done-btn.ready {
+      border: none;
+      background: var(--accent);
+      color: white;
+      font-weight: 600;
+    }
+    .done-btn.ready:hover {
+      background: var(--accent-hover);
+    }
+    /* ---- Done overlay ---- */
+    .done-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 100;
+      justify-content: center;
+      align-items: center;
+    }
+    .done-overlay.visible {
+      display: flex;
+    }
+    .done-card {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 2rem 3rem;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 500px;
+    }
+    .done-card h2 {
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+    }
+    .done-card p {
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+      line-height: 1.5;
+    }
+    .done-card .btn-row {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: center;
+    }
+    .done-card button {
+      padding: 0.5rem 1.25rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      cursor: pointer;
+      font-size: 0.875rem;
+    }
+    .done-card button:hover {
+      background: var(--bg);
+    }
+    /* ---- Toast ---- */
+    .toast {
+      position: fixed;
+      bottom: 5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--header-bg);
+      color: var(--header-text);
+      padding: 0.625rem 1.25rem;
+      border-radius: var(--radius);
+      font-size: 0.875rem;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      z-index: 200;
+    }
+    .toast.visible {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <div id="app" style="height:100vh; display:flex; flex-direction:column;">
+    <div class="header">
+      <div>
+        <h1>Eval Review: <span id="skill-name"></span></h1>
+        <div class="instructions">Review each output and leave feedback below. Navigate with arrow keys or buttons. When done, copy feedback and paste into Claude Code.</div>
+      </div>
+      <div class="progress" id="progress"></div>
+    </div>
+
+    <!-- View tabs (only shown when benchmark data exists) -->
+    <div class="view-tabs" id="view-tabs" style="display:none;">
+      <button class="view-tab active" onclick="switchView('outputs')">Outputs</button>
+      <button class="view-tab" onclick="switchView('benchmark')">Benchmark</button>
+    </div>
+
+    <!-- Outputs panel (qualitative review) -->
+    <div class="view-panel active" id="panel-outputs">
+    <div class="main">
+      <!-- Prompt -->
+      <div class="section">
+        <div class="section-header">Prompt <span class="config-badge" id="config-badge" style="display:none;"></span></div>
+        <div class="section-body">
+          <div class="prompt-text" id="prompt-text"></div>
+        </div>
+      </div>
+
+      <!-- Outputs -->
+      <div class="section">
+        <div class="section-header">Output</div>
+        <div class="section-body" id="outputs-body">
+          <div class="empty-state">No output files found</div>
+        </div>
+      </div>
+
+      <!-- Previous Output (collapsible) -->
+      <div class="section" id="prev-outputs-section" style="display:none;">
+        <div class="section-header">
+          <div class="grades-toggle" onclick="togglePrevOutputs()">
+            <span class="arrow" id="prev-outputs-arrow">&#9654;</span>
+            Previous Output
+          </div>
+        </div>
+        <div class="grades-content" id="prev-outputs-content"></div>
+      </div>
+
+      <!-- Grades (collapsible) -->
+      <div class="section" id="grades-section" style="display:none;">
+        <div class="section-header">
+          <div class="grades-toggle" onclick="toggleGrades()">
+            <span class="arrow" id="grades-arrow">&#9654;</span>
+            Formal Grades
+          </div>
+        </div>
+        <div class="grades-content" id="grades-content"></div>
+      </div>
+
+      <!-- Feedback -->
+      <div class="section">
+        <div class="section-header">Your Feedback</div>
+        <div class="section-body">
+          <textarea
+            class="feedback-textarea"
+            id="feedback"
+            placeholder="What do you think of this output? Any issues, suggestions, or things that look great?"
+          ></textarea>
+          <div class="feedback-status" id="feedback-status"></div>
+          <div class="prev-feedback" id="prev-feedback" style="display:none;">
+            <div class="prev-feedback-label">Previous feedback</div>
+            <div id="prev-feedback-text"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="nav" id="outputs-nav">
+      <button class="nav-btn" id="prev-btn" onclick="navigate(-1)">&#8592; Previous</button>
+      <button class="done-btn" id="done-btn" onclick="showDoneDialog()">Submit All Reviews</button>
+      <button class="nav-btn" id="next-btn" onclick="navigate(1)">Next &#8594;</button>
+    </div>
+    </div><!-- end panel-outputs -->
+
+    <!-- Benchmark panel (quantitative stats) -->
+    <div class="view-panel" id="panel-benchmark">
+      <div class="benchmark-view" id="benchmark-content">
+        <div class="benchmark-empty">No benchmark data available. Run a benchmark to see quantitative results here.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Done overlay -->
+  <div class="done-overlay" id="done-overlay">
+    <div class="done-card">
+      <h2>Review Complete</h2>
+      <p>Your feedback has been saved. Go back to your Claude Code session and tell Claude you're done reviewing.</p>
+      <div class="btn-row">
+        <button onclick="closeDoneDialog()">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // ---- Embedded data (injected by generate_review.py) ----
+    const EMBEDDED_DATA = {"skill_name": "codebase-agents", "runs": [{"id": "locator-rag-pipeline-with_skill", "prompt": "Find all files related to the RAG pipeline in this project", "eval_id": 0, "outputs": [{"name": "response.md", "type": "text", "content": "## File Locations for the RAG Pipeline\n\nHere are all files related to the RAG pipeline, organized by purpose:\n\n---\n\n### Core RAG Implementation\n\n- `lib/rag/embed.ts` - Query embedding using OpenAI text-embedding-3-large (3072 dimensions)\n- `lib/rag/retrieve.ts` - pgvector similarity search; exports `retrieveContext`, returns `contextText` and `sources`\n\n### API Route (RAG Entry Point)\n\n- `app/api/chat/route.ts` - Imports `retrieveContext` from `lib/rag/retrieve`, calls it on the user message, passes context into the LLM prompt, and streams `source-url` parts back to the client\n\n### Database Migrations\n\n- `supabase/migrations/005_documents.sql` - Creates the `documents` table (stores chunks with embeddings)\n- `supabase/migrations/006_match_documents.sql` - Creates the `match_documents` SQL function used by pgvector similarity search\n\n### Source Display UI Components\n\n- `components/sources/source-card.tsx` - Card component for rendering a single retrieved source\n- `components/sidebar/right-sidebar.tsx` - Sidebar that lists all sources for the selected message using `SourceCard`\n- `components/chat/message-list.tsx` - Renders per-message `SourcesButton` when sources are present\n- `components/chat/sources-button.tsx` - Button on assistant messages that opens the sources panel\n- `components/chat/chat-area.tsx` - Extracts `source-url` stream parts and tracks them as message sources\n\n### Configuration\n\n- `.env.local.example` - Documents `OPENAI_API_KEY`, `RAG_MATCH_COUNT`, and `RAG_MATCH_THRESHOLD` environment variables\n- `.env` - Active environment variable values including RAG tuning parameters\n\n### Documentation\n\n- `docs/plans/2026-03-13-rag-assistant-mvp.md` - MVP plan referencing the RAG pipeline\n- `docs/design-specs.md` - Design specs mentioning vector/similarity search\n- `.claude/skills/domain-chat-rag/SKILL.md` - Skill guide for the chat UI, streaming, and RAG pipeline\n- `.claude/skills/domain-chat-rag/references/current-state.md` - Current-state reference for the RAG domain\n\n---\n\n### Related Directories\n\n- `lib/rag/` - Contains 2 files: `embed.ts` and `retrieve.ts`\n- `components/sources/` - Contains 1 file: `source-card.tsx`\n- `supabase/migrations/` - Contains 6 total SQL migrations; files `005` and `006` are RAG-specific\n"}], "grading": {"expectations": [{"text": "Output organizes files into logical categories (implementation, config, API routes, etc.)", "passed": true, "evidence": "Output has clear sections: Core RAG Implementation, API Route, Database Migrations, Source Display UI Components, Configuration, Documentation, Related Directories"}, {"text": "Listed file paths actually exist in the project", "passed": true, "evidence": "All listed paths (lib/rag/embed.ts, lib/rag/retrieve.ts, app/api/chat/route.ts, etc.) are known project files per CLAUDE.md architecture"}, {"text": "Finds lib/rag/embed.ts (the embedding module)", "passed": true, "evidence": "Listed under Core RAG Implementation: 'lib/rag/embed.ts - Query embedding using OpenAI text-embedding-3-large (3072 dimensions)'"}, {"text": "Finds lib/rag/retrieve.ts (the retrieval module)", "passed": true, "evidence": "Listed under Core RAG Implementation: 'lib/rag/retrieve.ts - pgvector similarity search'"}, {"text": "Finds app/api/chat/route.ts (the API route that uses RAG)", "passed": true, "evidence": "Listed under API Route: 'app/api/chat/route.ts - Imports retrieveContext from lib/rag/retrieve'"}, {"text": "Focuses on file locations, not deep analysis of how code works", "passed": true, "evidence": "Each file has a one-line description of its role. No deep code tracing, no line numbers, no function-level analysis."}], "summary": {"passed": 6, "failed": 0, "total": 6, "pass_rate": 1.0}}}, {"id": "locator-rag-pipeline-without_skill", "prompt": "Find all files related to the RAG pipeline in this project", "eval_id": 0, "outputs": [{"name": "response.md", "type": "text", "content": "# RAG Pipeline Files \u00e2\u20ac\u201d Complete Inventory\n\n## Summary\n\nThe RAG (Retrieval-Augmented Generation) pipeline in this project spans **16 files** across 5 layers: core RAG logic, database schema, API routes, UI components for displaying sources, and configuration/documentation. Below is the complete list organized by layer, with descriptions of each file's role in the pipeline.\n\n---\n\n## 1. Core RAG Library (`lib/rag/`)\n\nThese are the two dedicated RAG modules that handle embedding and retrieval.\n\n### `C:\\Users\\alexa\\Desktop\\jw-assistant\\lib\\rag\\embed.ts`\n- **Role**: Query embedding\n- Initializes a singleton OpenAI client using `OPENAI_API_KEY`\n- Exports `embedQuery(text)` which calls OpenAI's `text-embedding-3-large` model (3072 dimensions) and returns the embedding vector\n- Always uses OpenAI regardless of the configured LLM provider\n\n### `C:\\Users\\alexa\\Desktop\\jw-assistant\\lib\\rag\\retrieve.ts`\n- **Role**: Vector similarity search and source formatting\n- Creates a Supabase service-role client for privileged DB access\n- Exports `retrieveContext(query)` which:\n  1. Calls `embedQuery()` to embed the user's question\n  2. Calls the `match_documents` Supabase RPC function with the embedding, `RAG_MATCH_COUNT`, and `RAG_MATCH_THRESHOLD`\n  3. Formats matched documents into `Source` objects (title, subtitle, url, snippet, content)\n  4. Builds `contextText` \u00e2\u20ac\u201d a formatted string of all retrieved chunks prefixed with source labels\n- Defines the `Source` type used throughout the application\n- Contains helper functions for formatting source metadata (month names, publication types)\n\n---\n\n## 2. Database Schema (Supabase Migrations)\n\n### `C:\\Users\\alexa\\Desktop\\jw-assistant\\supabase\\migrations\\005_documents.sql`\n- **Role**: Defines the vector store table\n- Creates the `documents` table with columns: `id` (BIGINT), `content` (TEXT), `metadata` (JSONB), `embedding` (VECTOR(3072))\n- Requires the pgvector extension\n- RLS policy restricts access to `service_role` only (backend RAG ingestion/retrieval)\n\n### `C:\\Users\\alexa\\Desktop\\jw-assistant\\supabase\\migrations\\006_match_documents.sql`\n- **Role**: Similarity search RPC function\n- Creates `match_documents(query_embedding, match_count, match_threshold)` PL/pgSQL function\n- Uses cosine distance operator (`<=>`) for similarity scoring: `1 - (embedding <=> query_embedding)`\n- Filters results by `match_threshold` and limits to `match_count`\n- Returns: `id`, `content`, `metadata`, `similarity`\n\n### `C:\\Users\\alexa\\Desktop\\jw-assistant\\supabase\\migrations\\002_conversations_messages.sql`\n- **Role**: Message persistence with source storage\n- The `messages` table includes a `sources` JSONB column (nullable) that stores the RAG source metadata attached to each assistant response\n- Sources are persisted so they can be reloaded when a conversation is revisited\n\n### `C:\\Users\\alexa\\Desktop\\jw-assistant\\supabase\\migrations\\003_config.sql`\n- **Role**: System prompt storage\n- The `config` table stores the system prompt (key: `system_prompt`) that is prepended to the RAG context before being sent to the LLM\n- The system prompt instructs the LLM how to use the retrieved context\n\n### `C:\\Users\\alexa\\Desktop\\jw-assistant\\supabase\\migrations\\004_rls_policies.sql`\n- **Role**: Row-Level Security for all tables including messages (which carry source data)\n\n---\n\n## 3. API Routes\n\n### `C:\\Users\\alexa\\Desktop\\jw-assistant\\app\\api\\chat\\route.ts`\n- **Role**: The central orchestration point of the RAG pipeline\n- POST handler that:\n  1. Authenticates the user and verifies conversation ownership\n  2. Extracts the last user message text\n  3. Calls `retrieveContext(userText)` to get RAG context and sources\n  4. Fetches the system prompt from the `config` table\n  5. Constructs the augmented system prompt: `{system_prompt}\\n\\n---\\nContext from knowledge base:\\n\\n{contextText}\\n---`\n  6. Streams the LLM response via `streamText()` using the provider abstraction\n  7. Persists the assistant message with sources in `onFinish` callback\n  8. Sends sources to the client via `source-url` stream parts with metadata in `providerMetadata.custom`\n\n### `C:\\Users\\alexa\\Desktop\\jw-assistant\\app\\api\\admin\\config\\route.ts`\n- **Role**: Admin management of the system prompt\n- GET/PUT endpoints for reading and updating the system prompt that frames all RAG-augmented responses\n\n---\n\n## 4. UI Components (Source Display)\n\n### `C:\\Users\\alexa\\Desktop\\jw-assistant\\components\\chat\\chat-area.tsx`\n- **Role**: Client-side RAG source extraction from the stream\n- Uses `useChat` hook with `onFinish` callback to extract `source-url` parts from streamed messages\n- Maintains `messageSources` state (Record mapping message IDs to Source arrays)\n- Passes `messageSources` down to `MessageList`\n\n### `C:\\Users\\alexa\\Desktop\\jw-assistant\\components\\chat\\message-list.tsx`\n- **Role**: Renders the sources button on assistant messages\n- For each assistant message that has sources in `messageSources`, renders a `SourcesButton` component below the message\n\n### `C:\\Users\\alexa\\Desktop\\jw-assistant\\components\\chat\\sources-button.tsx`\n- **Role**: Toggle button for the sources sidebar\n- \"Sources\" button below assistant messages that opens/closes the right sidebar\n- Passes the message's sources to the layout context via `setSources()`\n\n### `C:\\Users\\alexa\\Desktop\\jw-assistant\\components\\sidebar\\right-sidebar.tsx`\n- **Role**: Sources sidebar panel\n- Reads `sources` from layout context and renders a `SourceCard` for each\n- Tracks which sources have been visited via `visitedSources` state\n\n### `C:\\Users\\alexa\\Desktop\\jw-assistant\\components\\sources\\source-card.tsx`\n- **Role**: Individual source display card\n- Shows title, subtitle, and snippet in a card format\n- Click opens a dialog with the full source content\n- Tracks visited state with a checkmark indicator\n\n### `C:\\Users\\alexa\\Desktop\\jw-assistant\\app\\(protected)\\layout.tsx`\n- **Role**: State management for sources across components\n- Manages `sources`, `setSources`, `visitedSources`, `markSourceVisited`, `selectedMessageId` in the layout context\n- Provides the three-panel layout (left sidebar, chat, right sources sidebar)\n\n### `C:\\Users\\alexa\\Desktop\\jw-assistant\\app\\(protected)\\chat\\[id]\\page.tsx`\n- **Role**: Server-side source rehydration\n- Loads persisted sources from the `messages.sources` JSONB column when a conversation is revisited\n- Builds `initialSources` map and passes it to `ChatArea` for immediate display without re-running RAG\n\n---\n\n## 5. Supporting Files\n\n### `C:\\Users\\alexa\\Desktop\\jw-assistant\\lib\\ai\\provider.ts`\n- **Role**: LLM provider abstraction\n- Returns the configured LLM model instance used by `streamText()` in the chat route\n- Supports OpenAI, Anthropic, and Google via environment variables\n\n### `C:\\Users\\alexa\\Desktop\\jw-assistant\\lib\\supabase\\server.ts`\n- **Role**: Server-side Supabase client factory\n- Used by the chat API route for session verification and conversation ownership checks\n\n### `C:\\Users\\alexa\\Desktop\\jw-assistant\\.env.local.example`\n- **Role**: Documents RAG-specific environment variables\n- `OPENAI_API_KEY` \u00e2\u20ac\u201d required for embeddings regardless of LLM provider\n- `RAG_MATCH_COUNT` \u00e2\u20ac\u201d number of chunks to retrieve (default: 5)\n- `RAG_MATCH_THRESHOLD` \u00e2\u20ac\u201d minimum similarity score (default: 0.7)\n\n---\n\n## 6. Documentation\n\n### `C:\\Users\\alexa\\Desktop\\jw-assistant\\docs\\design-specs.md`\n- **Role**: Full design specification\n- Section 5 (lines 153-253) details the complete RAG pipeline design: overview, vector table schema, retrieval function, configurable parameters, context injection format, and source extraction\n\n### `C:\\Users\\alexa\\Desktop\\jw-assistant\\docs\\plans\\2026-03-13-rag-assistant-mvp.md`\n- **Role**: Implementation plan\n- Tasks 11-12 cover RAG retrieval utilities and the chat API route with streaming\n- References to the design specs for RAG pipeline details\n\n### `C:\\Users\\alexa\\Desktop\\jw-assistant\\CLAUDE.md`\n- **Role**: Project instructions\n- Documents the RAG architecture, key conventions, and environment variables\n\n---\n\n## Data Flow Summary\n\n```\nUser sends message\n  -> app/api/chat/route.ts (POST handler)\n    -> lib/rag/retrieve.ts :: retrieveContext()\n      -> lib/rag/embed.ts :: embedQuery()  [OpenAI text-embedding-3-large]\n      -> Supabase RPC: match_documents()   [006_match_documents.sql]\n        -> documents table                 [005_documents.sql]\n      <- Returns: contextText + Source[]\n    -> Fetches system_prompt from config table [003_config.sql]\n    -> Augments system prompt with contextText\n    -> streamText() via lib/ai/provider.ts\n    -> Streams response + source-url parts to client\n    -> onFinish: persists message + sources to messages table [002_conversations_messages.sql]\n  <- Client receives stream\n    -> components/chat/chat-area.tsx extracts source-url parts\n    -> components/chat/message-list.tsx renders SourcesButton\n    -> components/chat/sources-button.tsx toggles right sidebar\n    -> components/sidebar/right-sidebar.tsx displays SourceCards\n    -> components/sources/source-card.tsx shows individual source details\n```\n"}], "grading": {"expectations": [{"text": "Output organizes files into logical categories (implementation, config, API routes, etc.)", "passed": true, "evidence": "Output has sections: Core RAG Library, Database Schema, API Routes, UI Components, Supporting Files, Documentation, Data Flow Summary"}, {"text": "Listed file paths actually exist in the project", "passed": true, "evidence": "All 16+ listed paths match known project structure"}, {"text": "Finds lib/rag/embed.ts (the embedding module)", "passed": true, "evidence": "Listed: 'lib/rag/embed.ts - Role: Query embedding'"}, {"text": "Finds lib/rag/retrieve.ts (the retrieval module)", "passed": true, "evidence": "Listed: 'lib/rag/retrieve.ts - Role: Vector similarity search and source formatting'"}, {"text": "Finds app/api/chat/route.ts (the API route that uses RAG)", "passed": true, "evidence": "Listed: 'app/api/chat/route.ts - Role: The central orchestration point of the RAG pipeline'"}, {"text": "Focuses on file locations, not deep analysis of how code works", "passed": false, "evidence": "Output goes well beyond file locations into deep implementation analysis. For example, the retrieve.ts entry explains 4 sub-steps of retrieveContext(), describes Source type fields, and helper functions. The chat route entry has an 8-step numbered list of implementation details. Includes a full data flow diagram with internal function calls."}], "summary": {"passed": 5, "failed": 1, "total": 6, "pass_rate": 0.83}}}, {"id": "locator-auth-logic-with_skill", "prompt": "Where is the authentication and authorization logic in this codebase?", "eval_id": 1, "outputs": [{"name": "response.md", "type": "text", "content": "## File Locations for Authentication and Authorization Logic\n\n### Entry Point: Next.js Middleware (Route Protection)\n\n- `lib/supabase/middleware.ts` \u00e2\u20ac\u201d The `updateSession` function. This is the core auth middleware helper. It refreshes the Supabase session on every request, redirects unauthenticated users to `/login`, and blocks deactivated users by checking `profiles.is_active`, signing them out and redirecting with `?error=deactivated`.\n\nThe root Next.js middleware.ts file (which would call `updateSession` and define the `matcher` config) is compiled into `.next/server/middleware.js` \u00e2\u20ac\u201d the source file appears to have been removed after the recent commit `7276b1f chore(middleware): remove unused middleware file`, but `lib/supabase/middleware.ts` remains as the session-refresh helper.\n\n### OAuth Login Flow\n\n- `app/login/page.tsx` \u00e2\u20ac\u201d Login page. Renders `LoginCard` and displays a deactivated-account error banner when `?error=deactivated` is in the URL.\n- `components/auth/login-card.tsx` \u00e2\u20ac\u201d Login UI component. Calls `supabase.auth.signInWithOAuth({ provider: \"google\" })` to initiate Google OAuth.\n- `app/auth/callback/route.ts` \u00e2\u20ac\u201d OAuth callback route. Exchanges the OAuth `code` for a session via `supabase.auth.exchangeCodeForSession(code)`, then redirects to the app root (or back to `/login` on failure).\n\n### Supabase Client Helpers\n\n- `lib/supabase/server.ts` \u00e2\u20ac\u201d Server-side Supabase client factory (`createClient`). Uses `@supabase/ssr` with cookie handling for Server Components and API routes.\n- `lib/supabase/client.ts` \u00e2\u20ac\u201d Browser-side Supabase client factory.\n\n### API Route Authorization Checks\n\nAll four API routes verify the session and `is_active` status before processing requests:\n\n- `app/api/chat/route.ts` \u00e2\u20ac\u201d Calls `supabase.auth.getUser()`, then queries `profiles.is_active`; returns 401 if not active.\n- `app/api/conversations/route.ts` \u00e2\u20ac\u201d Same pattern: `getUser()` + `profiles.is_active` check.\n- `app/api/admin/users/route.ts` \u00e2\u20ac\u201d Calls `getUser()`, then checks `profile.role !== \"admin\"` to gate admin-only operations (list all users, toggle `is_active`).\n- `app/api/admin/config/route.ts` \u00e2\u20ac\u201d Same admin role check (`profile.role !== \"admin\"`).\n\n### Database Schema: Profiles and Roles\n\n- `supabase/migrations/001_profiles.sql` \u00e2\u20ac\u201d Defines the `profiles` table with `role TEXT CHECK (role IN ('user', 'admin'))` and `is_active BOOLEAN DEFAULT TRUE`. Also defines the `handle_new_user()` trigger that auto-creates a profile row when a new `auth.users` record is inserted.\n\n### Database Authorization: Row-Level Security\n\n- `supabase/migrations/004_rls_policies.sql` \u00e2\u20ac\u201d Defines all RLS policies:\n  - `is_admin()` SQL function (SECURITY DEFINER) \u00e2\u20ac\u201d checks `role = 'admin'` for the current `auth.uid()`, used by policies to avoid recursion.\n  - `profiles`: users can select their own row; admins can select and update all rows.\n  - `conversations`: users can only access rows where `user_id = auth.uid()`.\n  - `messages`: users can only access messages in their own conversations.\n  - `config`: anyone can read; only admins can update.\n\n### Protected Route Group\n\n- `app/(protected)/layout.tsx` \u00e2\u20ac\u201d Layout wrapping all auth-required pages (chat, admin). Does not contain explicit auth checks itself; relies on the middleware layer for session enforcement.\n- `app/(protected)/admin/page.tsx` \u00e2\u20ac\u201d Admin panel page (authorization enforced at the API route level).\n\n### Related Directories Summary\n\n- `components/auth/` \u00e2\u20ac\u201d 1 file (`login-card.tsx`), OAuth sign-in UI\n- `app/auth/` \u00e2\u20ac\u201d 1 file (`callback/route.ts`), OAuth code exchange\n- `lib/supabase/` \u00e2\u20ac\u201d 3 files, Supabase client factories and session middleware helper\n- `supabase/migrations/` \u00e2\u20ac\u201d `001_profiles.sql` (schema + trigger), `004_rls_policies.sql` (all RLS + `is_admin()`)\n- `app/api/` \u00e2\u20ac\u201d 4 route files all containing inline session + role/active checks\n"}], "grading": {"expectations": [{"text": "Output organizes files into logical categories", "passed": true, "evidence": "Sections: Entry Point Middleware, OAuth Login Flow, Supabase Client Helpers, API Route Authorization Checks, Database Schema, Database Authorization RLS, Protected Route Group, Related Directories Summary"}, {"text": "Finds middleware.ts (auth middleware)", "passed": true, "evidence": "Listed: 'lib/supabase/middleware.ts \u00e2\u20ac\u201d The updateSession function'"}, {"text": "Finds app/login/page.tsx (login page)", "passed": true, "evidence": "Listed: 'app/login/page.tsx \u00e2\u20ac\u201d Login page. Renders LoginCard'"}, {"text": "Finds app/auth/callback/route.ts (OAuth callback)", "passed": true, "evidence": "Listed: 'app/auth/callback/route.ts \u00e2\u20ac\u201d OAuth callback route'"}, {"text": "Finds lib/supabase/server.ts or client.ts", "passed": true, "evidence": "Both listed: 'lib/supabase/server.ts \u00e2\u20ac\u201d Server-side Supabase client factory' and 'lib/supabase/client.ts \u00e2\u20ac\u201d Browser-side Supabase client factory'"}, {"text": "Finds SQL migration files with RLS policies", "passed": true, "evidence": "Listed: 'supabase/migrations/004_rls_policies.sql \u00e2\u20ac\u201d Defines all RLS policies' with detailed policy descriptions"}], "summary": {"passed": 6, "failed": 0, "total": 6, "pass_rate": 1.0}}}, {"id": "locator-auth-logic-without_skill", "prompt": "Where is the authentication and authorization logic in this codebase?", "eval_id": 1, "outputs": [{"name": "response.md", "type": "text", "content": "# Authentication and Authorization Logic in jw-assistant\n\n## Overview\n\nThe codebase implements a multi-layered auth system using Supabase Auth (Google OAuth) with Row-Level Security (RLS) at the database layer, Next.js middleware for session management and route protection, and per-route authorization checks in API handlers and pages.\n\n---\n\n## 1. Middleware Layer (Request Interception)\n\n### `proxy.ts` (project root)\nThe Next.js middleware entry point. It delegates to `updateSession` and defines a matcher that covers all routes **except** static assets and `/api/` routes (which handle their own auth).\n\n- **Matcher pattern**: `/((?!_next/static|_next/image|favicon.ico|api/|.*\\\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)`\n- Exports a `proxy` function (Next.js 16 middleware convention).\n\n### `lib/supabase/middleware.ts`\nContains the `updateSession` function, which is the core middleware logic:\n\n1. **Session refresh**: Creates a Supabase server client bound to the request cookies, calls `supabase.auth.getUser()` to refresh tokens (triggering cookie updates via `setAll`).\n2. **Unauthenticated redirect**: If no user is found and the path is not `/login` or `/auth`, redirects to `/login`.\n3. **Deactivated user blocking**: If a user exists, queries `profiles.is_active`. If `false`, signs the user out, clears session cookies, and redirects to `/login?error=deactivated`.\n\n---\n\n## 2. OAuth Login Flow\n\n### `app/login/page.tsx`\nRenders the `LoginCard` component. Displays a \"deactivated\" error banner when the `?error=deactivated` query param is present.\n\n### `components/auth/login-card.tsx`\nClient component that calls `supabase.auth.signInWithOAuth({ provider: \"google\" })`, redirecting the user to Google and then back to `/auth/callback`.\n\n### `app/auth/callback/route.ts`\nOAuth callback handler. Exchanges the authorization `code` for a session via `supabase.auth.exchangeCodeForSession(code)`. On success, redirects to the app root; on failure, redirects to `/login`.\n\n---\n\n## 3. Supabase Client Creation\n\n### `lib/supabase/server.ts`\nCreates a **server-side** Supabase client using `@supabase/ssr`'s `createServerClient`, bound to the Next.js `cookies()` store. Used in Server Components and API routes for authenticated (anon-key) queries.\n\n### `lib/supabase/client.ts`\nCreates a **browser-side** Supabase client using `createBrowserClient`. Used in client components for auth operations and data fetching.\n\n### Service Role Client (inline in API routes)\nSeveral API routes (`app/api/chat/route.ts`, `app/api/conversations/route.ts`, `app/api/admin/users/route.ts`, `app/api/admin/config/route.ts`) create a **service role** client using `SUPABASE_SERVICE_ROLE_KEY` for privileged operations that bypass RLS (e.g., persisting messages, reading all profiles for admin).\n\n---\n\n## 4. API Route Authorization\n\n### `app/api/chat/route.ts` (POST)\nThree-step authorization:\n1. Verifies the user is authenticated via `supabase.auth.getUser()` -- returns 401 if not.\n2. Checks `profiles.is_active` -- returns 403 (\"Account deactivated\") if false.\n3. Verifies conversation ownership by querying `conversations` with both `id` and `user_id` constraints -- returns 404 if the conversation does not belong to the user.\n\n### `app/api/conversations/route.ts` (GET, POST, DELETE)\nUses a shared `getActiveUser()` helper that:\n1. Calls `supabase.auth.getUser()`.\n2. Checks `profiles.is_active`.\n3. Returns `null` (triggering a 401 response) if either check fails.\n\nThe DELETE handler additionally scopes the deletion to `user_id = user.id` ensuring ownership.\n\n### `app/api/admin/users/route.ts` (GET, PATCH)\nUses a `verifyAdmin()` helper that:\n1. Gets the authenticated user.\n2. Queries the profile's `role` via the **service role client** (bypasses RLS).\n3. Returns `null` (triggering a 403 \"Forbidden\" response) if the role is not `\"admin\"`.\n\nThe PATCH handler has an additional self-protection check: an admin cannot deactivate themselves (`userId === admin.id` returns 400).\n\n### `app/api/admin/config/route.ts` (GET, PUT)\nUses the same `verifyAdmin()` pattern as the users route. Only admins can read or update the system prompt configuration.\n\n---\n\n## 5. Page-Level Authorization\n\n### `app/(protected)/chat/[id]/page.tsx`\nServer Component that:\n1. Calls `supabase.auth.getUser()` -- redirects to `/login` if unauthenticated.\n2. Verifies conversation ownership by querying with `user_id = user.id` -- redirects to `/` if the conversation is not found.\n\n### `app/(protected)/admin/page.tsx`\nClient Component that:\n1. Checks authentication via `supabase.auth.getUser()` -- redirects to `/login` if unauthenticated.\n2. Queries `profiles.role` -- displays an \"unauthorized\" shield UI if the user is not an admin.\n\n### `components/sidebar/user-menu.tsx`\nConditionally renders the \"Admin Panel\" menu item only when `profile.role === \"admin\"`. This is a UI-only check; actual enforcement is in the API routes.\n\n### `components/sidebar/left-sidebar.tsx`\nFetches conversations scoped to the authenticated user (`user_id = user.id`) via the Supabase client, which is subject to RLS.\n\n---\n\n## 6. Database Row-Level Security (RLS)\n\n### `supabase/migrations/004_rls_policies.sql`\n\n**Helper function** -- `public.is_admin()`: A `SECURITY DEFINER` SQL function that checks if the current authenticated user (`auth.uid()`) has `role = 'admin'` in the `profiles` table. Defined as `SECURITY DEFINER` to avoid RLS recursion when used within RLS policies.\n\n**Profiles table**:\n- `SELECT`: Users can view their own profile (`auth.uid() = id`).\n- `SELECT`: Admins can view all profiles (`is_admin()`).\n- `UPDATE`: Only admins can update profiles (`is_admin()`).\n- `INSERT`: Open (`WITH CHECK (TRUE)`) to allow the trigger-based auto-creation on signup.\n\n**Conversations table**:\n- `ALL` operations: Users can only access their own conversations (`auth.uid() = user_id`).\n\n**Messages table**:\n- `ALL` operations: Users can only access messages belonging to their own conversations (via a subquery joining to `conversations.user_id`).\n\n**Config table**:\n- `SELECT`: Anyone can read config values (system prompt is needed by the chat route).\n- `UPDATE`: Only admins can update config (`is_admin()`).\n\n**Documents table** (in `005_documents.sql`):\n- `ALL` operations: Restricted to `service_role` only. Regular users cannot access the RAG knowledge base directly.\n\n---\n\n## 7. Auto-Profile Creation\n\n### `supabase/migrations/001_profiles.sql`\n\nA database trigger (`on_auth_user_created`) fires `AFTER INSERT ON auth.users` and runs `handle_new_user()`, which automatically creates a `profiles` row for every new Supabase Auth user. The function is `SECURITY DEFINER` to bypass RLS. New users default to `role = 'user'` and `is_active = TRUE`.\n\n---\n\n## Summary of Files\n\n| File | Auth/Authz Role |\n|------|----------------|\n| `proxy.ts` | Next.js middleware entry point; delegates to `updateSession` |\n| `lib/supabase/middleware.ts` | Session refresh, unauthenticated redirect, deactivated-user blocking |\n| `lib/supabase/server.ts` | Server-side Supabase client factory (cookie-bound, anon key) |\n| `lib/supabase/client.ts` | Browser-side Supabase client factory |\n| `app/login/page.tsx` | Login page with deactivation error display |\n| `components/auth/login-card.tsx` | Google OAuth sign-in trigger |\n| `app/auth/callback/route.ts` | OAuth code-to-session exchange |\n| `app/api/chat/route.ts` | Auth + active check + conversation ownership verification |\n| `app/api/conversations/route.ts` | Auth + active check via `getActiveUser()` helper |\n| `app/api/admin/users/route.ts` | Auth + admin role check via `verifyAdmin()` helper |\n| `app/api/admin/config/route.ts` | Auth + admin role check via `verifyAdmin()` helper |\n| `app/(protected)/chat/[id]/page.tsx` | Server-side auth check + conversation ownership |\n| `app/(protected)/admin/page.tsx` | Client-side auth + admin role check |\n| `components/sidebar/user-menu.tsx` | UI-only admin menu visibility toggle |\n| `components/sidebar/left-sidebar.tsx` | Fetches user-scoped data (RLS enforced) |\n| `supabase/migrations/001_profiles.sql` | Profile schema, auto-creation trigger |\n| `supabase/migrations/004_rls_policies.sql` | All RLS policies + `is_admin()` helper function |\n| `supabase/migrations/005_documents.sql` | Documents RLS (service_role only) |\n"}], "grading": {"expectations": [{"text": "Output organizes files into logical categories", "passed": true, "evidence": "7 sections: Middleware Layer, OAuth Login Flow, Supabase Client Creation, API Route Authorization, Page-Level Authorization, Database RLS, Auto-Profile Creation, plus summary table"}, {"text": "Finds middleware.ts (auth middleware)", "passed": true, "evidence": "Found both proxy.ts and lib/supabase/middleware.ts"}, {"text": "Finds app/login/page.tsx (login page)", "passed": true, "evidence": "Listed under OAuth Login Flow"}, {"text": "Finds app/auth/callback/route.ts (OAuth callback)", "passed": true, "evidence": "Listed under OAuth Login Flow"}, {"text": "Finds lib/supabase/server.ts or client.ts", "passed": true, "evidence": "Both listed under Supabase Client Creation"}, {"text": "Finds SQL migration files with RLS policies", "passed": true, "evidence": "Found 004_rls_policies.sql and 005_documents.sql under Database RLS section"}], "summary": {"passed": 6, "failed": 0, "total": 6, "pass_rate": 1.0}}}, {"id": "locator-admin-panel-with_skill", "prompt": "Locate all admin panel related files", "eval_id": 2, "outputs": [{"name": "response.md", "type": "text", "content": "## File Locations for Admin Panel\n\n### Page / Route\n\n- `app/(protected)/admin/page.tsx` \u00e2\u20ac\u201d The admin panel page component. Lives inside the `(protected)` route group (requires authentication). Imports `UserManagement` and `SystemPromptEditor` components, fetches from both admin API routes, and guards access by checking `profile.role === 'admin'`.\n\n### API Routes\n\n- `app/api/admin/users/route.ts` \u00e2\u20ac\u201d REST handler for user management operations (listing/updating users).\n- `app/api/admin/config/route.ts` \u00e2\u20ac\u201d REST handler for reading and writing system configuration (e.g., system prompt).\n\n### UI Components\n\n- `components/admin/user-management.tsx` \u00e2\u20ac\u201d User management UI component used inside the admin page.\n- `components/admin/system-prompt-editor.tsx` \u00e2\u20ac\u201d System prompt editor UI component used inside the admin page.\n\n### Navigation Entry Point\n\n- `components/sidebar/user-menu.tsx` \u00e2\u20ac\u201d The user menu in the left sidebar. Renders an \"Admin Panel\" `DropdownMenuItem` that navigates to `/admin` when `profile.role === 'admin'`.\n\n### Database / Auth Layer\n\n- `supabase/migrations/001_profiles.sql` \u00e2\u20ac\u201d Defines the `profiles` table with a `role` column constrained to `'user'` or `'admin'`.\n- `supabase/migrations/004_rls_policies.sql` \u00e2\u20ac\u201d Defines the `is_admin()` helper function and RLS policies: \"Admins can view all profiles\", \"Admins can update profiles\", and \"Admins can update config\".\n\n### Related Directories (Clusters)\n\n- `app/(protected)/admin/` \u00e2\u20ac\u201d Contains 1 file (`page.tsx`), the admin page route.\n- `app/api/admin/` \u00e2\u20ac\u201d Contains 2 subdirectories (`users/`, `config/`), each with a `route.ts` file.\n- `components/admin/` \u00e2\u20ac\u201d Contains 2 component files (`user-management.tsx`, `system-prompt-editor.tsx`).\n"}], "grading": {"expectations": [{"text": "Output organizes files into logical categories", "passed": true, "evidence": "Sections: Page/Route, API Routes, UI Components, Navigation Entry Point, Database/Auth Layer, Related Directories"}, {"text": "Finds app/(protected)/admin/page.tsx", "passed": true, "evidence": "Listed: 'app/(protected)/admin/page.tsx \u00e2\u20ac\u201d The admin panel page component'"}, {"text": "Finds files under app/api/admin/", "passed": true, "evidence": "Both 'app/api/admin/users/route.ts' and 'app/api/admin/config/route.ts' listed"}, {"text": "Finds files under components/admin/", "passed": true, "evidence": "Both 'components/admin/user-management.tsx' and 'components/admin/system-prompt-editor.tsx' listed"}, {"text": "Focuses on file locations, not deep analysis of how code works", "passed": true, "evidence": "Brief role descriptions per file. Slightly more detailed than pure locating (mentions what components are imported) but stays at the locating level."}], "summary": {"passed": 5, "failed": 0, "total": 5, "pass_rate": 1.0}}}, {"id": "locator-admin-panel-without_skill", "prompt": "Locate all admin panel related files", "eval_id": 2, "outputs": [{"name": "response.md", "type": "text", "content": "# Admin Panel -- All Related Files\n\n## 1. Page & UI Components (Source Code)\n\n### Admin Page (entry point)\n- **`app/(protected)/admin/page.tsx`** -- Client component. The main admin panel page rendered inside the protected route group. Checks auth + admin role client-side on mount, fetches from `/api/admin/users` and `/api/admin/config` in parallel, renders `UserManagement` and `SystemPromptEditor` inside shadcn Card wrappers. Shows an unauthorized state with a \"Go back\" button if the user's `profile.role !== \"admin\"`.\n\n### Admin Components\n- **`components/admin/user-management.tsx`** -- Client component. Receives a `users` array as prop, manages local copy in state. Renders a table with avatar, role badge (admin/user), status badge (Active/Deactivated), last-updated date, and a \"Deactivate/Reactivate\" toggle button. Calls `PATCH /api/admin/users`. Hides the action button for rows where `user.role === \"admin\"` (prevents admin self-deactivation from UI).\n- **`components/admin/system-prompt-editor.tsx`** -- Client component. Renders a resizable monospace `Textarea` for editing the global system prompt. Tracks both `value` (current input) and `savedValue` (last persisted value) to determine save-button enabled state. Calls `PUT /api/admin/config`. Shows a transient \"Saved\" label for 3 seconds on success via `setTimeout`.\n\n### Navigation Entry Point\n- **`components/sidebar/user-menu.tsx`** -- Contains the user dropdown menu in the left sidebar. Conditionally renders an \"Admin Panel\" menu item (with ShieldIcon) when `profile.role === \"admin\"`, which navigates to `/admin`.\n\n## 2. API Routes (Backend)\n\n- **`app/api/admin/users/route.ts`** -- Handles `GET` (list all profiles) and `PATCH` (toggle `is_active` on a single profile). Both methods use `verifyAdmin()` which checks the caller's role via the Supabase service role client (bypasses RLS). The PATCH handler includes a self-deactivation guard (`userId === admin.id`).\n- **`app/api/admin/config/route.ts`** -- Handles `GET` (read the `system_prompt` config row) and `PUT` (update it). Same `verifyAdmin()` pattern. PUT trims whitespace and rejects empty strings. Writes `updated_by` with the admin's user ID.\n\n## 3. Database Migrations (Schema & Policies)\n\n- **`supabase/migrations/001_profiles.sql`** -- Creates the `profiles` table with `role` (CHECK IN ('user','admin')), `is_active`, and related columns. Also creates the `handle_new_user()` trigger function and `on_auth_user_created` trigger that auto-creates a profile row on signup.\n- **`supabase/migrations/003_config.sql`** -- Creates the `config` key-value table (`key TEXT PRIMARY KEY`, `value TEXT NOT NULL`, `updated_at`, `updated_by`). Seeds the default `system_prompt` row.\n- **`supabase/migrations/004_rls_policies.sql`** -- Defines Row Level Security policies for admin operations:\n  - Creates the `public.is_admin()` helper function (SECURITY DEFINER) to avoid RLS recursion.\n  - Profiles: admins can SELECT all rows and UPDATE any row.\n  - Config: anyone can SELECT; only admins can UPDATE.\n\n## 4. Middleware (Auth Enforcement for Deactivated Users)\n\n- **`lib/supabase/middleware.ts`** -- The `updateSession()` function refreshes the Supabase session and blocks deactivated users. When `is_active` is false, it signs the user out and redirects to `/login?error=deactivated`. This enforces the admin's deactivation action at the middleware layer.\n\n## 5. Related Files (Indirect References)\n\n- **`app/login/page.tsx`** -- Displays a \"Your account has been deactivated. Please contact an administrator.\" banner when the `error=deactivated` query parameter is present (set by middleware after admin deactivates a user).\n- **`app/api/chat/route.ts`** -- Reads the `system_prompt` from the `config` table (the value managed via the admin panel's SystemPromptEditor) before each LLM call.\n- **`app/(protected)/layout.tsx`** -- The protected route group layout that wraps the admin page; provides the three-panel shell (sidebars + main content area).\n\n## 6. Skill Documentation\n\n- **`.claude/skills/domain-admin-users/SKILL.md`** -- Claude skill file documenting admin panel architecture, patterns, and pitfalls.\n- **`.claude/skills/domain-admin-users/references/current-state.md`** -- Auto-generated reference with current file paths, API route details, schema columns, and component state breakdown.\n\n## Summary\n\nThe admin panel consists of **5 primary source files** (1 page, 2 components, 2 API routes), **3 database migrations** (profiles table, config table, RLS policies), **1 middleware helper** (deactivated user enforcement), and **2 indirectly related files** (login page error display, chat route system prompt consumption). The navigation entry point lives in the user menu component in the sidebar.\n"}], "grading": {"expectations": [{"text": "Output organizes files into logical categories", "passed": true, "evidence": "Sections: Page & UI Components, API Routes, Database Migrations, Middleware, Related Files, Skill Documentation"}, {"text": "Finds app/(protected)/admin/page.tsx", "passed": true, "evidence": "Listed as 'Admin Page (entry point)'"}, {"text": "Finds files under app/api/admin/", "passed": true, "evidence": "Both users/route.ts and config/route.ts listed"}, {"text": "Finds files under components/admin/", "passed": true, "evidence": "Both user-management.tsx and system-prompt-editor.tsx listed"}, {"text": "Focuses on file locations, not deep analysis of how code works", "passed": false, "evidence": "Goes into implementation details: 'Client component. Receives a users array as prop, manages local copy in state. Renders a table with avatar, role badge...'. Describes state management patterns, API call patterns, and conditional rendering logic."}], "summary": {"passed": 4, "failed": 1, "total": 5, "pass_rate": 0.8}}}, {"id": "analyzer-chat-streaming-with_skill", "prompt": "How does the chat streaming API route work? Trace the data flow from request to response.", "eval_id": 3, "outputs": [{"name": "response.md", "type": "text", "content": "## Analysis: Chat Streaming API Route\n\n### Overview\n\nThe `POST /api/chat` route handles streaming AI responses by first authenticating the user, verifying conversation ownership, running a RAG retrieval pipeline against a pgvector-backed knowledge base, assembling a system prompt with retrieved context, and then streaming an LLM response back using the Vercel AI SDK's `createUIMessageStreamResponse`. Both the user message and the completed assistant reply are persisted to the database, with sources attached to the assistant record.\n\n### Entry Points\n\n- `app/api/chat/route.ts:22` - `export async function POST(req: Request)`\n- `lib/ai/provider.ts:9` - `getModel()` - resolves the LLM model instance\n- `lib/rag/retrieve.ts:64` - `retrieveContext(query)` - RAG pipeline entry\n- `lib/rag/embed.ts:11` - `embedQuery(text)` - embedding generation\n\n---\n\n### Core Implementation\n\n#### 1. Session Authentication (`app/api/chat/route.ts:23-41`)\n\nThe route creates a server-side Supabase client via `createClient()` from `lib/supabase/server.ts:4`, which uses `@supabase/ssr`'s `createServerClient` bound to the Next.js cookie store. It calls `supabase.auth.getUser()` at line 26 and returns `401` if no user is found.\n\nFollowing the auth check, it queries the `profiles` table at line 33-37 for the `is_active` column on the authenticated user's row. If `is_active` is false or the profile is absent, the route returns `403 Account deactivated`.\n\n#### 2. Request Parsing and Conversation Ownership Check (`app/api/chat/route.ts:43-56`)\n\nThe request body is parsed as JSON at line 43, destructuring `messages` (typed as `UIMessage[]` from the AI SDK) and `conversationId` (a string UUID). The route then queries the `conversations` table at lines 47-52, filtering by both `id = conversationId` AND `user_id = user.id`. This ensures a user cannot submit messages to a conversation they don't own. If no matching row is found, the route returns `404`.\n\n#### 3. User Message Text Extraction (`app/api/chat/route.ts:58-67`)\n\nThe last user message is found by filtering `messages` to `role === \"user\"` and calling `.pop()` (line 58). If there is no user message, `400` is returned (line 60).\n\nThe message content is extracted by filtering the message's `.parts` array for items with `type === \"text\"` at line 65, then joining them into a single string `userText` at line 67. This handles the AI SDK's multi-part message format.\n\n#### 4. RAG Context Retrieval (`app/api/chat/route.ts:70-72`, `lib/rag/retrieve.ts:64-106`, `lib/rag/embed.ts:11-18`)\n\nIf `userText.trim()` is non-empty, `retrieveContext(userText)` is called. Otherwise, `contextText` and `sources` are both set to empty.\n\nInside `retrieveContext` (`lib/rag/retrieve.ts`):\n\n1. **Embedding** (`retrieve.ts:68-77`, `embed.ts:11-18`): `RAG_MATCH_COUNT` and `RAG_MATCH_THRESHOLD` are read from environment variables. `embedQuery(query)` is called, which creates a lazy singleton OpenAI client at `embed.ts:7-9` and calls `openai.embeddings.create` with model `text-embedding-3-large`, returning a 3072-dimensional float array from `response.data[0].embedding`.\n\n2. **Vector Search** (`retrieve.ts:79-88`): The embedding is passed to the Supabase RPC `match_documents` (defined in `supabase/migrations/006_match_documents.sql`). That SQL function computes cosine similarity as `1 - (d.embedding <=> query_embedding)` (the `<=>` operator is pgvector's cosine distance), filters documents above `match_threshold`, and returns up to `match_count` rows ordered by ascending distance.\n\n3. **Source Assembly** (`retrieve.ts:92-103`): Each returned `MatchedDocument` is mapped to a `Source` object. The `title` is built by `buildSourceTitle()` (`retrieve.ts:53-62`), which capitalizes `pub_type` and combines it with a formatted `pub_month` and `pub_year`. The `snippet` is `doc.content.slice(0, 200)`. Full `content` is included.\n\n4. **Context Text Assembly** (`retrieve.ts:101-103`): `contextText` is built by joining each document's content with a labeled prefix: `[Source N: <title>]\\n<content>`, separated by double newlines.\n\n#### 5. System Prompt Assembly (`app/api/chat/route.ts:75-78`)\n\n`getSystemPrompt()` (`route.ts:12-20`) queries the `config` table via the service-role client for the row where `key = 'system_prompt'`. If no row exists, a default fallback string is used.\n\nThe final `systemWithContext` is assembled at lines 76-78: if `contextText` is non-empty, it is appended to the system prompt with a separator block: `\"---\\nContext from knowledge base:\\n\\n{contextText}\\n---\"`.\n\n#### 6. User Message Persistence (`app/api/chat/route.ts:81-91`)\n\nBefore any streaming begins, the user's message is synchronously inserted into the `messages` table via the service-role client at line 81-85, with `role: \"user\"` and `content: userText`. The conversation's `updated_at` is also updated at lines 88-91.\n\nBoth operations use `serviceClient` (the `@supabase/supabase-js` service-role client initialized at `route.ts:7-10`) to bypass RLS.\n\n#### 7. Stream Construction and LLM Call (`app/api/chat/route.ts:93-132`)\n\nA `UIMessageStream` is created via `createUIMessageStream` at line 93. Inside its `execute` callback:\n\n- The AI SDK's `convertToModelMessages(messages)` is called at line 95 to transform the `UIMessage[]` format into the provider-agnostic `ModelMessage[]` format.\n- `streamText` is called at line 96 with the resolved model from `getModel()`, the assembled `systemWithContext`, and the converted messages.\n- `getModel()` (`lib/ai/provider.ts:9-26`) reads `AI_PROVIDER`, `AI_MODEL`, and `AI_API_KEY` from environment variables and switches on the provider string (`\"openai\"`, `\"anthropic\"`, or `\"google\"`) to create and return the appropriate provider model instance.\n- The `onFinish` callback at line 100-108 fires when the LLM completes. It inserts the assistant's full text into `messages` with `role: \"assistant\"`, and stores the `sources` array as JSONB (or `null` if empty).\n- The LLM stream is merged into the UI message stream via `writer.merge(result.toUIMessageStream())` at line 112.\n- Each retrieved source is then written as a discrete `source-url` stream part at lines 115-130. Each part has a random UUID `sourceId`, the source's `url`, `title`, and additional metadata (`snippet`, `subtitle`, `content`, `source`) placed in `providerMetadata.custom`.\n\n#### 8. Response (`app/api/chat/route.ts:134`)\n\n`createUIMessageStreamResponse({ stream })` wraps the `UIMessageStream` into a proper HTTP streaming `Response` and is returned directly.\n\n---\n\n### Data Flow\n\n1. `POST /api/chat` arrives at `app/api/chat/route.ts:22`\n2. Session validated via cookie-bound Supabase client (`route.ts:23-30`)\n3. User `is_active` checked against `profiles` table (`route.ts:33-41`)\n4. Request body parsed: `messages`, `conversationId` (`route.ts:43-44`)\n5. Conversation ownership verified against `conversations` table (`route.ts:47-56`)\n6. Last user message text extracted from `parts[]` (`route.ts:58-67`)\n7. `retrieveContext(userText)` called (`route.ts:70-72`)\n   - `embedQuery(userText)` -> OpenAI `text-embedding-3-large` -> 3072-dim vector (`embed.ts:11-18`)\n   - `match_documents` RPC -> pgvector cosine similarity search -> `MatchedDocument[]` (`retrieve.ts:79-83`)\n   - Documents mapped to `Source[]` and `contextText` string (`retrieve.ts:92-103`)\n8. System prompt fetched from `config` table (`route.ts:75`)\n9. `systemWithContext` assembled with injected context block (`route.ts:76-78`)\n10. User message inserted to `messages` table (`route.ts:81-85`)\n11. Conversation `updated_at` bumped (`route.ts:88-91`)\n12. `createUIMessageStream` opens a stream (`route.ts:93`)\n13. `convertToModelMessages` converts `UIMessage[]` to model format (`route.ts:95`)\n14. `streamText` initiated with provider model, system prompt, messages (`route.ts:96-109`)\n15. LLM token stream merged into UI stream (`route.ts:112`)\n16. Source `source-url` parts written into UI stream (`route.ts:115-130`)\n17. On LLM completion: assistant message + sources persisted to `messages` table (`route.ts:100-108`)\n18. `createUIMessageStreamResponse` returns HTTP streaming response (`route.ts:134`)\n\n---\n\n### Key Patterns\n\n- **Service Role Client for Writes**: All database mutations (message inserts, conversation timestamp update) use the module-level `serviceClient` (`route.ts:7-10`) initialized with `SUPABASE_SERVICE_ROLE_KEY`, bypassing RLS entirely. Auth checks use the cookie-bound `supabase` client, which operates under RLS.\n- **Lazy Singleton Clients**: Both `lib/rag/retrieve.ts:4-13` and `lib/rag/embed.ts:3-9` use module-level variables with guard checks to lazily initialize their respective Supabase and OpenAI clients once per process lifetime.\n- **Provider Abstraction**: `lib/ai/provider.ts` isolates all LLM SDK imports behind a single `getModel()` factory that switches on the `AI_PROVIDER` environment variable, so the rest of the codebase never imports SDK-specific modules directly.\n- **Dual-client Auth Pattern**: The route uses the cookie-bound user-scoped client for identity verification (`supabase.auth.getUser()`, profile check, conversation ownership) and the service-role client for all write operations, giving two distinct permission levels within one request handler.\n- **Stream Composition**: The AI SDK's `UIMessageStream` acts as a multiplexer: the LLM token stream is merged in at `route.ts:112` and discrete source metadata objects are written individually at `route.ts:116-129`, so the client receives both content tokens and structured source data over a single HTTP response stream.\n\n---\n\n### Configuration\n\n- `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` \u00e2\u20ac\u201d used by `serviceClient` at `route.ts:7-10` and `retrieve.ts:7-10`\n- `NEXT_PUBLIC_SUPABASE_ANON_KEY` \u00e2\u20ac\u201d used by `createClient()` in `lib/supabase/server.ts:8-9`\n- `AI_PROVIDER`, `AI_MODEL`, `AI_API_KEY` \u00e2\u20ac\u201d control LLM selection in `lib/ai/provider.ts:5-7`\n- `OPENAI_API_KEY` \u00e2\u20ac\u201d used exclusively for embeddings in `lib/rag/embed.ts:7`\n- `RAG_MATCH_COUNT`, `RAG_MATCH_THRESHOLD` \u00e2\u20ac\u201d control pgvector search parameters in `lib/rag/retrieve.ts:68-69`\n"}], "grading": {"expectations": [{"text": "Includes file:line references for key claims (e.g., route.ts:42)", "passed": true, "evidence": "Extensive file:line refs throughout: 'route.ts:22', 'route.ts:23-41', 'route.ts:43-56', 'route.ts:58-67', 'lib/rag/embed.ts:11-18', etc. Every section has precise line references."}, {"text": "Follows the code path step by step (request -> auth -> RAG -> LLM -> stream)", "passed": true, "evidence": "18-step data flow section traces: POST arrives -> session validated -> is_active checked -> body parsed -> ownership verified -> text extracted -> RAG -> system prompt -> message persisted -> stream created -> LLM called -> tokens merged -> sources written -> response returned"}, {"text": "Describes the authentication/session check in the route", "passed": true, "evidence": "Section '1. Session Authentication (app/api/chat/route.ts:23-41)' details cookie-bound Supabase client, getUser(), is_active check, 401/403 responses"}, {"text": "Describes how RAG retrieval is integrated into the chat flow", "passed": true, "evidence": "Section '4. RAG Context Retrieval' with 4 sub-steps: embedding, vector search, source assembly, context text assembly. Plus section 5 on system prompt injection."}, {"text": "Describes the streaming response mechanism (streamText or similar)", "passed": true, "evidence": "Section '7. Stream Construction and LLM Call' details createUIMessageStream, convertToModelMessages, streamText, writer.merge, source-url stream parts, and createUIMessageStreamResponse"}, {"text": "Does not suggest code changes, improvements, or critique the implementation", "passed": true, "evidence": "Entire output is purely descriptive. No suggestions, critiques, or 'should' statements. Key Patterns section describes what exists, not what should change."}], "summary": {"passed": 6, "failed": 0, "total": 6, "pass_rate": 1.0}}}, {"id": "analyzer-chat-streaming-without_skill", "prompt": "How does the chat streaming API route work? Trace the data flow from request to response.", "eval_id": 3, "outputs": [{"name": "response.md", "type": "text", "content": "# Chat Streaming API Route: Full Data Flow Trace\n\n## Overview\n\nThe chat streaming system spans the full stack: a React client component initiates a POST request via the Vercel AI SDK's `useChat` hook, the Next.js API route at `/api/chat` authenticates the user, performs RAG retrieval, streams an LLM response back, and the client renders tokens incrementally using the Streamdown library.\n\n---\n\n## 1. Client Side: Sending the Request\n\n### Entry Point: `ChatArea` component\n**File:** `components/chat/chat-area.tsx`\n\nThe `ChatArea` component is the central orchestrator. It is mounted by either:\n\n- **Existing conversation:** `app/(protected)/chat/[id]/page.tsx` \u00e2\u20ac\u201d a server component that fetches the conversation's messages from Supabase and passes them as `initialMessages` along with `conversationId`.\n- **New conversation:** `app/(protected)/page.tsx` \u00e2\u20ac\u201d passes `conversationId={null}` and no initial messages.\n\n### Transport Setup\n\n`ChatArea` creates a `DefaultChatTransport` configured to POST to `/api/chat`:\n\n```ts\nconst transport = useMemo(\n  () => new DefaultChatTransport({ api: \"/api/chat\" }),\n  []\n);\n```\n\n### The `useChat` Hook\n\nThe Vercel AI SDK's `useChat` hook (`@ai-sdk/react`) manages the chat state:\n\n```ts\nconst { messages, status, error, sendMessage } = useChat({\n  id: conversationId,      // ties the hook instance to a specific conversation\n  messages: initialMessages,\n  transport,\n  onFinish: ({ message }) => { /* extract source-url parts */ },\n});\n```\n\n### User Sends a Message\n\n1. **`ChatInput`** (`components/chat/chat-input.tsx`) captures user text from a `<textarea>`. On Enter (or button click), it calls `onSend(text)`.\n\n2. **`handleSend` in `ChatArea`:**\n   - If `conversationId` is null (new chat), it first POSTs to `/api/conversations` to create a conversation row in the database. The conversation gets a fallback title derived from the first message, and an AI-generated title is kicked off in the background (non-blocking).\n   - It then updates the browser URL via `window.history.replaceState` (avoids a Next.js remount that would kill the in-flight stream).\n   - Finally calls `sendMessage({ text }, { body: { conversationId } })`. The `body` parameter merges `conversationId` into the POST body alongside the `messages` array that the AI SDK automatically includes.\n\n### What the AI SDK Sends\n\nThe POST body to `/api/chat` is:\n```json\n{\n  \"messages\": [ /* UIMessage[] \u00e2\u20ac\u201d full conversation history */ ],\n  \"conversationId\": \"uuid-of-conversation\"\n}\n```\n\n---\n\n## 2. Server Side: The API Route\n\n**File:** `app/api/chat/route.ts`\n\n### Step 2a: Authentication and Authorization\n\n1. **Create a Supabase server client** using cookie-based auth (`lib/supabase/server.ts`). This uses `@supabase/ssr`'s `createServerClient` with the anon key, reading session cookies from the request.\n\n2. **Verify user identity:** `supabase.auth.getUser()` \u00e2\u20ac\u201d returns 401 if no session.\n\n3. **Check active status:** Queries the `profiles` table for `is_active`. Returns 403 if the account is deactivated.\n\n4. **Verify conversation ownership:** Queries the `conversations` table matching both the `conversationId` and the `user_id`. Returns 404 if not found (prevents users from injecting messages into others' conversations).\n\n### Step 2b: Extract User Message\n\nExtracts the last user message from the `messages` array. It filters message `parts` for `type === \"text\"` entries and joins them into a single `userText` string.\n\n### Step 2c: RAG Retrieval\n\n**Files:** `lib/rag/embed.ts`, `lib/rag/retrieve.ts`\n\nIf `userText` is non-empty, `retrieveContext(userText)` runs the RAG pipeline:\n\n1. **Embed the query:** `embedQuery(text)` calls the OpenAI API with model `text-embedding-3-large` to produce a 3072-dimensional vector embedding of the user's query. This always uses OpenAI regardless of the configured LLM provider.\n\n2. **Vector similarity search:** Calls the Supabase RPC function `match_documents` (defined in migration `006_match_documents.sql`), which:\n   - Takes the query embedding, a `match_count`, and a `match_threshold` (both from env vars `RAG_MATCH_COUNT` and `RAG_MATCH_THRESHOLD`).\n   - Computes cosine similarity as `1 - (embedding <=> query_embedding)` using pgvector's `<=>` (cosine distance) operator.\n   - Filters results above the threshold and returns the top N matches sorted by similarity.\n\n3. **Build sources and context:** Each matched document is transformed into a `Source` object with title (built from publication metadata like type, month, year), subtitle (article title), URL, snippet (first 200 chars), source identifier, and full content. The `contextText` is all documents concatenated with `[Source N: title]` headers.\n\nIf the query is empty, RAG is skipped and returns empty context/sources.\n\n### Step 2d: System Prompt Assembly\n\n`getSystemPrompt()` reads the `system_prompt` value from the `config` table using the service role client (bypasses RLS). Falls back to a default prompt if not found.\n\nIf RAG returned context, it is appended to the system prompt:\n```\n{system_prompt}\n\n---\nContext from knowledge base:\n\n{contextText}\n---\n```\n\n### Step 2e: Persist User Message\n\nThe user message is inserted into the `messages` table via the service role client (bypasses RLS). The conversation's `updated_at` is also bumped.\n\n### Step 2f: Stream the LLM Response\n\nThis is the core streaming logic:\n\n```ts\nconst stream = createUIMessageStream({\n  execute: async ({ writer }) => {\n    const modelMessages = await convertToModelMessages(messages);\n    const result = streamText({\n      model: getModel(),\n      system: systemWithContext,\n      messages: modelMessages,\n    });\n    writer.merge(result.toUIMessageStream());\n    // Write source-url parts after merging the LLM stream\n    for (const source of sources) {\n      writer.write({ type: \"source-url\", ... });\n    }\n  },\n});\nreturn createUIMessageStreamResponse({ stream });\n```\n\nBreaking this down:\n\n1. **`convertToModelMessages(messages)`** \u00e2\u20ac\u201d Converts the UI-format messages (with `parts` arrays) into the provider-agnostic model message format the AI SDK needs.\n\n2. **`getModel()`** (`lib/ai/provider.ts`) \u00e2\u20ac\u201d Returns an AI SDK model instance based on `AI_PROVIDER` env var. Supports `openai`, `anthropic`, and `google` providers. Uses `AI_MODEL` and `AI_API_KEY` env vars.\n\n3. **`streamText()`** \u00e2\u20ac\u201d Vercel AI SDK function that calls the LLM and returns a streaming result object. It receives:\n   - The model instance\n   - The system prompt (with RAG context appended)\n   - The full message history\n\n4. **`createUIMessageStream`** \u00e2\u20ac\u201d Creates a writable stream in the UI message protocol format. Inside the `execute` callback:\n   - `writer.merge(result.toUIMessageStream())` pipes the LLM's token-by-token output into the stream.\n   - After merging, source metadata is written as `source-url` stream parts, each with a random UUID, the source URL, title, and custom provider metadata (snippet, subtitle, content, source).\n\n5. **`onFinish` callback on `streamText`** \u00e2\u20ac\u201d Once the LLM finishes generating, the complete assistant response text is persisted to the `messages` table along with the sources array as JSONB.\n\n6. **`createUIMessageStreamResponse({ stream })`** \u00e2\u20ac\u201d Wraps the stream in a standard `Response` with appropriate headers for streaming (likely `Content-Type: text/event-stream` or similar).\n\n---\n\n## 3. Client Side: Consuming the Stream\n\n### The `useChat` Hook Processes the Stream\n\nThe AI SDK's `useChat` hook automatically:\n- Reads the streaming response\n- Incrementally updates `messages` state as new tokens arrive\n- Updates `status` from `\"submitted\"` to `\"streaming\"` to `\"ready\"`\n\n### Rendering: `MessageList` Component\n**File:** `components/chat/message-list.tsx`\n\n- Iterates over `messages` and renders each with the `Message` / `MessageContent` wrappers from `components/ai-elements/message.tsx`.\n- For assistant messages, text content is rendered via `MessageResponse` (which wraps the `Streamdown` component with plugins for CJK, code highlighting, math, and mermaid diagrams). The `isAnimating` prop is true while the last assistant message is still streaming.\n- When `status === \"submitted\"` (request sent but no tokens yet), a `StreamingIndicator` (three pulsing dots) is shown.\n- Error states display a red alert banner.\n\n### Source Extraction on Finish\n\nWhen the stream completes, `useChat`'s `onFinish` callback fires. It:\n1. Filters the completed message's `parts` for `type === \"source-url\"` entries.\n2. Maps them into `Source` objects (extracting custom metadata from `providerMetadata`).\n3. Stores them in `messageSources` state keyed by message ID.\n\n### Source Display\n\nEach assistant message with sources gets a `SourcesButton` (`components/chat/sources-button.tsx`). Clicking it:\n- Sets the sources in the layout context\n- Opens the right sidebar\n- Tracks which message's sources are shown via `selectedMessageId`\n\nThe right sidebar (`components/sidebar/right-sidebar.tsx`) renders the source cards.\n\n---\n\n## 4. Data Persistence Summary\n\n| Event | Table | Client |\n|-------|-------|--------|\n| New conversation created | `conversations` | anon (via `/api/conversations`) |\n| User message sent | `messages` | service role (in `/api/chat`) |\n| Conversation timestamp updated | `conversations` | service role (in `/api/chat`) |\n| Assistant response completed | `messages` (with sources JSONB) | service role (in `streamText.onFinish`) |\n| AI-generated title | `conversations.title` | service role (background, non-blocking) |\n\n---\n\n## 5. Key Files in the Data Flow\n\n| File | Role |\n|------|------|\n| `components/chat/chat-input.tsx` | Captures user text input |\n| `components/chat/chat-area.tsx` | Orchestrates conversation creation, sends messages via `useChat`, handles sources |\n| `app/api/chat/route.ts` | The streaming API route: auth, RAG, LLM streaming, persistence |\n| `lib/ai/provider.ts` | Multi-provider LLM abstraction (OpenAI/Anthropic/Google) |\n| `lib/rag/embed.ts` | Embeds query text via OpenAI `text-embedding-3-large` |\n| `lib/rag/retrieve.ts` | pgvector similarity search + source formatting |\n| `supabase/migrations/006_match_documents.sql` | PostgreSQL function for cosine similarity search |\n| `supabase/migrations/005_documents.sql` | Documents table with vector column |\n| `supabase/migrations/002_conversations_messages.sql` | Conversations and messages schema |\n| `supabase/migrations/003_config.sql` | Config table (stores system prompt) |\n| `lib/supabase/server.ts` | Cookie-based Supabase server client |\n| `components/chat/message-list.tsx` | Renders messages with streaming support |\n| `components/ai-elements/message.tsx` | Message UI primitives + Streamdown markdown rendering |\n| `components/chat/sources-button.tsx` | Opens right sidebar with RAG sources |\n| `components/chat/streaming-indicator.tsx` | Pulsing dots shown while waiting for first token |\n| `app/(protected)/chat/[id]/page.tsx` | Server component that loads existing conversation data |\n| `app/api/conversations/route.ts` | CRUD for conversations (creation triggers AI title gen) |\n\n---\n\n## 6. Sequence Diagram (Textual)\n\n```\nUser types message in ChatInput\n        |\n        v\nChatArea.handleSend()\n  |-- (if new chat) POST /api/conversations -> creates conversation row\n  |-- sendMessage({ text }, { body: { conversationId } })\n        |\n        v\nuseChat hook POSTs to /api/chat\n  Body: { messages: UIMessage[], conversationId: string }\n        |\n        v\nAPI Route: POST /api/chat\n  1. Auth check (Supabase cookie session)\n  2. Active user check (profiles.is_active)\n  3. Conversation ownership check\n  4. Extract last user message text\n  5. RAG pipeline:\n     a. embedQuery(userText) -> OpenAI text-embedding-3-large -> 3072-dim vector\n     b. match_documents RPC -> pgvector cosine similarity search -> matched docs\n     c. Build contextText + Source[] from matched docs\n  6. Fetch system prompt from config table\n  7. Append RAG context to system prompt\n  8. Persist user message to messages table\n  9. Update conversation.updated_at\n 10. Create UI message stream:\n     a. convertToModelMessages(messages) -> provider-agnostic format\n     b. streamText({ model, system, messages }) -> LLM streaming call\n     c. writer.merge(result.toUIMessageStream()) -> pipe LLM tokens to stream\n     d. writer.write(source-url parts) -> append source metadata\n     e. onFinish: persist assistant message + sources to messages table\n 11. Return createUIMessageStreamResponse({ stream })\n        |\n        v (streaming response)\nuseChat hook consumes stream\n  - Updates messages[] incrementally (token by token)\n  - status: \"submitted\" -> \"streaming\" -> \"ready\"\n        |\n        v\nMessageList renders messages\n  - Streamdown renders markdown with animation while streaming\n  - StreamingIndicator shown during \"submitted\" phase\n  - onFinish extracts source-url parts -> messageSources state\n  - SourcesButton appears on assistant messages with sources\n```\n"}], "grading": {"expectations": [{"text": "Includes file:line references for key claims (e.g., route.ts:42)", "passed": true, "evidence": "References like 'lines 58-67', 'line 33-37' used in Step 2b, 2c, etc. Also includes file-level references like 'File: app/api/chat/route.ts'. Less granular than the with_skill version but present."}, {"text": "Follows the code path step by step (request -> auth -> RAG -> LLM -> stream)", "passed": true, "evidence": "Detailed sequence diagram covering: ChatInput -> ChatArea.handleSend -> useChat POST -> API Route steps 1-11 -> stream consumption -> MessageList rendering. Covers both client and server side."}, {"text": "Describes the authentication/session check in the route", "passed": true, "evidence": "Step 2a 'Authentication and Authorization': verify user identity, check active status, verify conversation ownership"}, {"text": "Describes how RAG retrieval is integrated into the chat flow", "passed": true, "evidence": "Step 2c 'RAG Retrieval' with 3 sub-steps: embed query, vector similarity search, build sources and context"}, {"text": "Describes the streaming response mechanism (streamText or similar)", "passed": true, "evidence": "Step 2f 'Stream the LLM Response' with code example and 6-point breakdown of createUIMessageStream, convertToModelMessages, streamText, writer.merge, source-url parts, and createUIMessageStreamResponse"}, {"text": "Does not suggest code changes, improvements, or critique the implementation", "passed": true, "evidence": "Purely descriptive throughout. No improvement suggestions or critiques."}], "summary": {"passed": 6, "failed": 0, "total": 6, "pass_rate": 1.0}}}, {"id": "analyzer-rag-retrieval-with_skill", "prompt": "How does the RAG retrieval process work - from query embedding to results?", "eval_id": 4, "outputs": [{"name": "response.md", "type": "text", "content": "## Analysis: RAG Retrieval Process\n\n### Overview\n\nWhen a user sends a chat message, the API route extracts the query text, calls `retrieveContext()` which embeds the query via OpenAI's `text-embedding-3-large` model (3072 dimensions), then runs a pgvector cosine-similarity search against the `documents` table using the `match_documents` Postgres function. The resulting documents are formatted into a `contextText` string that is prepended to the system prompt, and individual source metadata objects are streamed back to the client as `source-url` stream parts.\n\n### Entry Points\n\n- `/app/api/chat/route.ts:70` \u00e2\u20ac\u201d RAG is triggered conditionally: `const { contextText, sources } = userText.trim() ? await retrieveContext(userText) : { contextText: \"\", sources: [] };`\n- `/lib/rag/retrieve.ts:64` \u00e2\u20ac\u201d `retrieveContext(query: string)` \u00e2\u20ac\u201d primary retrieval function\n- `/lib/rag/embed.ts:11` \u00e2\u20ac\u201d `embedQuery(text: string)` \u00e2\u20ac\u201d embedding function\n\n---\n\n### Core Implementation\n\n#### 1. Query Embedding (`/lib/rag/embed.ts:11-18`)\n\n`embedQuery(text)` is called with the raw user message text. It lazily initializes a singleton `OpenAI` client at line 4-9 using `process.env.OPENAI_API_KEY`. It calls `openai.embeddings.create` with model `\"text-embedding-3-large\"` and the raw query text as `input`. The response at line 17 returns `response.data[0].embedding`, which is a `number[]` of 3072 dimensions.\n\n#### 2. Configuration Read (`/lib/rag/retrieve.ts:68-69`)\n\nAt the start of `retrieveContext`, two environment variables are parsed:\n- `RAG_MATCH_COUNT` \u00e2\u20ac\u201d parsed as integer via `parseInt(..., 10)`, controls how many documents to return\n- `RAG_MATCH_THRESHOLD` \u00e2\u20ac\u201d parsed as float via `parseFloat(...)`, controls the minimum similarity score\n\n#### 3. Embedding Call with Error Boundary (`/lib/rag/retrieve.ts:71-77`)\n\n`embedQuery(query)` is called inside a `try/catch`. If embedding fails, the function logs the error to `console.error(\"[RAG] Embedding failed:\", err)` and returns `{ contextText: \"\", sources: [] }` \u00e2\u20ac\u201d an empty result that causes the chat to proceed without RAG context.\n\n#### 4. Database Similarity Search (`/lib/rag/retrieve.ts:79-83`)\n\nA singleton Supabase client is created at lines 4-13 using the service role key (`SUPABASE_SERVICE_ROLE_KEY`), bypassing RLS. The RPC call `.rpc(\"match_documents\", { query_embedding, match_count, match_threshold })` invokes the `match_documents` Postgres function defined in `/supabase/migrations/006_match_documents.sql`.\n\nThe SQL function at lines 3-28 of that migration:\n- Accepts a `VECTOR(3072)` query embedding, an integer `match_count` (default 5), and a float `match_threshold` (default 0.7)\n- Computes similarity as `1 - (d.embedding <=> query_embedding)` \u00e2\u20ac\u201d the `<=>` operator is pgvector's cosine distance, so subtracting from 1 converts distance to similarity\n- Filters rows with `WHERE 1 - (d.embedding <=> query_embedding) > match_threshold`\n- Orders results by `d.embedding <=> query_embedding` ascending (closest first)\n- Returns at most `match_count` rows with columns: `id`, `content`, `metadata` (JSONB), `similarity` (FLOAT)\n\nThe `documents` table (`/supabase/migrations/005_documents.sql:3-8`) stores: `id` (BIGINT), `content` (TEXT), `metadata` (JSONB), and `embedding` (VECTOR(3072)).\n\n#### 5. RPC Error Handling (`/lib/rag/retrieve.ts:85-88`)\n\nIf the Supabase RPC returns an error, it is logged as `\"[RAG] match_documents RPC error:\"` and the function returns `{ contextText: \"\", sources: [] }`, again allowing the chat to proceed without context.\n\n#### 6. Source Object Construction (`/lib/rag/retrieve.ts:92-99`)\n\nEach `MatchedDocument` (typed at lines 24-37) is mapped to a `Source` object (typed at lines 15-22):\n- `title` \u00e2\u20ac\u201d built by `buildSourceTitle(doc.metadata)` (see below)\n- `subtitle` \u00e2\u20ac\u201d `doc.metadata.article_title ?? \"\"`\n- `url` \u00e2\u20ac\u201d `doc.metadata.url ?? \"\"`\n- `snippet` \u00e2\u20ac\u201d first 200 characters of `doc.content` via `.slice(0, 200)`\n- `source` \u00e2\u20ac\u201d `doc.metadata.url ?? doc.metadata.title ?? \"\"`\n- `content` \u00e2\u20ac\u201d the full `doc.content`\n\n#### 7. Title Construction (`/lib/rag/retrieve.ts:39-62`)\n\n`buildSourceTitle(meta)` assembles a display title from metadata fields:\n- `pub_type` \u00e2\u20ac\u201d capitalized (first letter upper, rest lower)\n- `pub_month` + `pub_year` \u00e2\u20ac\u201d combined as `\"Month, Year\"` or individually if only one is present. Month conversion is done by `formatMonthName()` at lines 44-51, which handles both numeric months (1-12 mapped to `MONTH_NAMES` array) and string month names (normalized to capitalized first letter)\n- Parts are joined with `\", \"`, falling back to `\"Untitled\"` if no parts exist\n\n#### 8. Context Text Assembly (`/lib/rag/retrieve.ts:101-103`)\n\nThe matched documents are joined into a single `contextText` string. Each document is formatted as:\n```\n[Source N: <title>]\n<full content>\n```\nDocuments are separated by `\"\\n\\n\"`.\n\n#### 9. System Prompt Injection (`/app/api/chat/route.ts:75-78`)\n\n`getSystemPrompt()` at lines 12-20 fetches the prompt from the `config` table (key `\"system_prompt\"`), falling back to a hardcoded default. If `contextText` is non-empty, it is appended to the system prompt as:\n```\n<system_prompt>\n\n---\nContext from knowledge base:\n\n<contextText>\n---\n```\nThis combined string becomes the `system` parameter passed to `streamText`.\n\n#### 10. Source Streaming to Client (`/app/api/chat/route.ts:115-130`)\n\nAfter merging the LLM text stream at line 112, each `Source` is written to the UI message stream as a `source-url` stream part with:\n- `type: \"source-url\"`\n- `sourceId` \u00e2\u20ac\u201d a fresh `crypto.randomUUID()`\n- `url` \u00e2\u20ac\u201d `source.url || \"#\"`\n- `title` \u00e2\u20ac\u201d `source.title`\n- `providerMetadata.custom` \u00e2\u20ac\u201d contains `snippet`, `subtitle`, `content`, and `source`\n\n#### 11. Source Persistence (`/app/api/chat/route.ts:100-108`)\n\nInside `streamText`'s `onFinish` callback, the assistant message is persisted to the `messages` table with `sources: sources.length > 0 ? sources : null`, storing the full sources array as a JSONB column.\n\n---\n\n### Data Flow\n\n1. POST request arrives at `/app/api/chat/route.ts:22`\n2. Auth and profile checks at lines 23-41\n3. Last user message text extracted at lines 58-67\n4. `retrieveContext(userText)` called at `/app/api/chat/route.ts:71`\n5. `RAG_MATCH_COUNT` and `RAG_MATCH_THRESHOLD` read from env at `/lib/rag/retrieve.ts:68-69`\n6. `embedQuery(userText)` called at `/lib/rag/retrieve.ts:73` \u00e2\u2020\u2019 `/lib/rag/embed.ts:11`\n7. OpenAI `text-embedding-3-large` returns `number[3072]` at `/lib/rag/embed.ts:17`\n8. `match_documents` RPC called with embedding + thresholds at `/lib/rag/retrieve.ts:79`\n9. Postgres cosine search executes in `match_documents` function (`/supabase/migrations/006_match_documents.sql:17-26`)\n10. Results typed as `MatchedDocument[]` at `/lib/rag/retrieve.ts:90`\n11. Sources mapped and `contextText` assembled at `/lib/rag/retrieve.ts:92-103`\n12. `contextText` injected into system prompt at `/app/api/chat/route.ts:76-78`\n13. LLM streams response using augmented system prompt at lines 96-99\n14. Source objects written as `source-url` stream parts at lines 115-130\n15. Sources persisted to `messages.sources` at lines 102-107\n\n### Key Patterns\n\n- **Lazy Singleton Clients**: Both the OpenAI client (`/lib/rag/embed.ts:3-9`) and Supabase service client (`/lib/rag/retrieve.ts:4-13`) are initialized once and reused across invocations.\n- **Graceful Degradation**: Both the embedding step (`/lib/rag/retrieve.ts:71-77`) and the RPC step (`/lib/rag/retrieve.ts:85-88`) return empty results on failure rather than throwing, allowing the chat to continue without RAG context.\n- **Service Role Bypass**: The Supabase client in `retrieve.ts` uses `SUPABASE_SERVICE_ROLE_KEY` to bypass RLS on the `documents` table, which is otherwise restricted to `service_role` only (`/supabase/migrations/005_documents.sql:10-17`).\n- **Skip on Empty Query**: The RAG call at `/app/api/chat/route.ts:70-72` is skipped entirely when the user message is empty or whitespace-only.\n\n### Configuration\n\n- `OPENAI_API_KEY` \u00e2\u20ac\u201d used exclusively for embeddings regardless of the chat LLM provider (`/lib/rag/embed.ts:6`)\n- `RAG_MATCH_COUNT` \u00e2\u20ac\u201d integer, controls maximum documents returned (`/lib/rag/retrieve.ts:68`)\n- `RAG_MATCH_THRESHOLD` \u00e2\u20ac\u201d float, minimum cosine similarity to include a document (`/lib/rag/retrieve.ts:69`); the SQL default is `0.7` (`/supabase/migrations/006_match_documents.sql:6`)\n- `NEXT_PUBLIC_SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` \u00e2\u20ac\u201d used to connect to the Postgres instance for the RPC call (`/lib/rag/retrieve.ts:7-9`)\n\n### Relevant Files\n\n- `/lib/rag/embed.ts` \u00e2\u20ac\u201d query embedding via OpenAI\n- `/lib/rag/retrieve.ts` \u00e2\u20ac\u201d full retrieval pipeline, source mapping, context assembly\n- `/app/api/chat/route.ts` \u00e2\u20ac\u201d orchestrates RAG within the chat POST handler\n- `/supabase/migrations/005_documents.sql` \u00e2\u20ac\u201d `documents` table schema with `VECTOR(3072)` column\n- `/supabase/migrations/006_match_documents.sql` \u00e2\u20ac\u201d `match_documents` Postgres function with cosine similarity logic\n"}], "grading": {"expectations": [{"text": "Includes file:line references for key claims", "passed": true, "evidence": "Extensive references: 'lib/rag/embed.ts:11-18', 'lib/rag/retrieve.ts:68-69', 'lib/rag/retrieve.ts:71-77', 'lib/rag/retrieve.ts:79-83', 'supabase/migrations/006_match_documents.sql:17-26', etc."}, {"text": "Explains how query text is converted to embeddings (model, dimensions)", "passed": true, "evidence": "Section '1. Query Embedding': 'openai.embeddings.create with model text-embedding-3-large... number[] of 3072 dimensions'"}, {"text": "Explains the pgvector similarity search mechanism", "passed": true, "evidence": "Section '4. Database Similarity Search': 'cosine similarity as 1 - (d.embedding <=> query_embedding) \u00e2\u20ac\u201d the <=> operator is pgvector's cosine distance, so subtracting from 1 converts distance to similarity'"}, {"text": "References RAG_MATCH_COUNT or RAG_MATCH_THRESHOLD configuration", "passed": true, "evidence": "Section '2. Configuration Read': 'RAG_MATCH_COUNT \u00e2\u20ac\u201d parsed as integer... controls how many documents to return' and 'RAG_MATCH_THRESHOLD \u00e2\u20ac\u201d parsed as float... controls the minimum similarity score'. Also in Configuration section with defaults."}, {"text": "Does not suggest code changes or critique the implementation", "passed": true, "evidence": "Purely descriptive. Key Patterns section documents what exists (lazy singletons, graceful degradation, service role bypass, skip on empty query) without suggesting changes."}], "summary": {"passed": 5, "failed": 0, "total": 5, "pass_rate": 1.0}}}, {"id": "analyzer-rag-retrieval-without_skill", "prompt": "How does the RAG retrieval process work - from query embedding to results?", "eval_id": 4, "outputs": [{"name": "response.md", "type": "text", "content": "# RAG Retrieval Process: From Query Embedding to Results\n\n## Overview\n\nThe RAG pipeline in this project follows a straightforward four-stage flow: **extract user text** -> **embed query** -> **vector similarity search** -> **inject context into system prompt**. The entire pipeline executes on each chat API request before the LLM generates a response.\n\n---\n\n## Stage 1: User Message Extraction\n\n**File:** `app/api/chat/route.ts` (lines 58-67)\n\nWhen a POST request arrives at `/api/chat`, the route handler extracts the last user message from the conversation's `messages` array. It filters message parts for `type: \"text\"` and joins them into a single string (`userText`). If the resulting text is empty (after trimming), RAG retrieval is skipped entirely and both `contextText` and `sources` default to empty.\n\n---\n\n## Stage 2: Query Embedding\n\n**File:** `lib/rag/embed.ts`\n\nThe `embedQuery()` function converts the user's text query into a 3072-dimensional vector using OpenAI's `text-embedding-3-large` model. Key details:\n\n- **Model:** `text-embedding-3-large` (always OpenAI, regardless of which LLM provider is configured for chat)\n- **Dimensions:** 3072 (matching the `VECTOR(3072)` column in the `documents` table)\n- **Client:** A lazily-initialized singleton OpenAI client using `OPENAI_API_KEY`\n- **Error handling:** If embedding fails, the function in `retrieve.ts` catches the error, logs it, and returns empty results (the chat continues without RAG context)\n\n---\n\n## Stage 3: Vector Similarity Search\n\n**File:** `lib/rag/retrieve.ts` (the `retrieveContext()` function, lines 64-106)\n**Database function:** `supabase/migrations/006_match_documents.sql`\n\n### 3a. RPC Call\n\nThe `retrieveContext()` function calls a Supabase RPC function named `match_documents` with three parameters:\n\n| Parameter | Source | Default |\n|-----------|--------|---------|\n| `query_embedding` | The 3072-dim vector from Stage 2 | -- |\n| `match_count` | `RAG_MATCH_COUNT` env var | `5` |\n| `match_threshold` | `RAG_MATCH_THRESHOLD` env var | `0.7` |\n\n### 3b. The `match_documents` PostgreSQL Function\n\nDefined in `supabase/migrations/006_match_documents.sql`, this function:\n\n1. Computes **cosine similarity** for each document using the formula `1 - (d.embedding <=> query_embedding)`. The `<=>` operator is pgvector's cosine distance operator.\n2. **Filters** out any document whose similarity score is at or below `match_threshold`.\n3. **Orders** results by cosine distance ascending (most similar first).\n4. **Limits** results to `match_count` rows.\n\nReturns columns: `id` (INT8), `content` (TEXT), `metadata` (JSONB), `similarity` (FLOAT).\n\n### 3c. The `documents` Table\n\nDefined in `supabase/migrations/005_documents.sql`:\n\n- `id`: BIGINT auto-generated identity\n- `content`: TEXT (the chunk text)\n- `metadata`: JSONB (contains fields like `title`, `url`, `pub_type`, `pub_month`, `pub_year`, `article_title`)\n- `embedding`: VECTOR(3072)\n- Protected by RLS; only `service_role` has access\n\nThe `retrieve.ts` module uses a Supabase client initialized with the **service role key** to bypass RLS.\n\n---\n\n## Stage 4: Result Formatting\n\n**File:** `lib/rag/retrieve.ts` (lines 92-105)\n\nThe matched documents are transformed into two outputs:\n\n### Sources Array\n\nEach document becomes a `Source` object:\n\n```\n{\n  title:    buildSourceTitle(metadata)   // e.g. \"Watchtower, March, 2024\"\n  subtitle: metadata.article_title       // article-level title\n  url:      metadata.url\n  snippet:  content.slice(0, 200)        // first 200 chars as preview\n  source:   metadata.url || metadata.title\n  content:  full document content\n}\n```\n\nThe `buildSourceTitle()` helper constructs a human-readable title from `pub_type`, `pub_month`, and `pub_year` metadata fields. Month numbers are converted to names (e.g., 3 -> \"March\").\n\n### Context Text\n\nA single string concatenating all matched documents in the format:\n\n```\n[Source 1: Watchtower, March, 2024]\n<full content of document 1>\n\n[Source 2: ...]\n<full content of document 2>\n```\n\n---\n\n## Stage 5: Context Injection into LLM\n\n**File:** `app/api/chat/route.ts` (lines 74-78, 93-132)\n\nThe system prompt (fetched from the `config` table in the database) is augmented with the context text:\n\n```\n<system prompt>\n\n---\nContext from knowledge base:\n\n<contextText>\n---\n```\n\nThis combined system prompt is passed to `streamText()` from the Vercel AI SDK, which streams the LLM response back to the client.\n\n---\n\n## Stage 6: Source Delivery to Frontend\n\n**File:** `app/api/chat/route.ts` (lines 114-130)\n\nAfter merging the LLM text stream, the API route writes each source as a `source-url` stream part using the AI SDK's `UIMessageStream` writer. Each source includes its metadata in `providerMetadata.custom`.\n\n### Client-Side Source Handling\n\n**File:** `components/chat/chat-area.tsx` (lines 69-96)\n\nThe `useChat` hook's `onFinish` callback extracts `source-url` parts from the completed message, reconstructs the `Source` objects, and stores them in a `messageSources` state map keyed by message ID.\n\n### Persistence\n\n**File:** `app/api/chat/route.ts` (lines 100-107)\n\nWhen the LLM stream finishes, the assistant message is persisted to the `messages` table with the `sources` JSONB column populated (or null if no sources). On page reload, `app/(protected)/chat/[id]/page.tsx` loads these persisted sources from the database and passes them as `initialSources` to `ChatArea`.\n\n### Display\n\n**File:** `components/sidebar/right-sidebar.tsx`\n\nSources are rendered in the right sidebar as `SourceCard` components, with visit tracking managed by the layout context.\n\n---\n\n## Key Files\n\n| File | Role |\n|------|------|\n| `lib/rag/embed.ts` | Query embedding via OpenAI text-embedding-3-large |\n| `lib/rag/retrieve.ts` | Orchestrates embedding + RPC call + result formatting |\n| `supabase/migrations/005_documents.sql` | Documents table schema (content, metadata, embedding) |\n| `supabase/migrations/006_match_documents.sql` | pgvector cosine similarity search function |\n| `app/api/chat/route.ts` | Chat API: triggers RAG, injects context, streams response, persists sources |\n| `components/chat/chat-area.tsx` | Client-side source extraction from stream |\n| `app/(protected)/chat/[id]/page.tsx` | Server-side source hydration from DB on page load |\n| `components/sidebar/right-sidebar.tsx` | Source display in right sidebar |\n| `lib/ai/provider.ts` | LLM provider abstraction (not RAG-specific, but receives the augmented prompt) |\n\n## Configuration\n\n| Env Variable | Purpose | Default |\n|-------------|---------|---------|\n| `OPENAI_API_KEY` | Always required for embeddings | -- |\n| `RAG_MATCH_COUNT` | Max documents to return | 5 |\n| `RAG_MATCH_THRESHOLD` | Minimum cosine similarity | 0.7 |\n"}], "grading": {"expectations": [{"text": "Includes file:line references for key claims", "passed": true, "evidence": "References like '(lines 58-67)', '(lines 64-106)', '(lines 92-105)', 'lines 74-78, 93-132', '(lines 69-96)'. File-level references throughout."}, {"text": "Explains how query text is converted to embeddings (model, dimensions)", "passed": true, "evidence": "Stage 2: 'text-embedding-3-large model... 3072-dimensional vector embedding', 'always uses OpenAI regardless of which LLM provider is configured'"}, {"text": "Explains the pgvector similarity search mechanism", "passed": true, "evidence": "Stage 3b: 'cosine similarity... 1 - (embedding <=> query_embedding) using pgvector's <=> (cosine distance) operator'"}, {"text": "References RAG_MATCH_COUNT or RAG_MATCH_THRESHOLD configuration", "passed": true, "evidence": "Table in Stage 3a lists both with sources and defaults. Configuration section has both with default values 5 and 0.7."}, {"text": "Does not suggest code changes or critique the implementation", "passed": true, "evidence": "Purely descriptive throughout. No suggestions, critiques, or improvement recommendations."}], "summary": {"passed": 5, "failed": 0, "total": 5, "pass_rate": 1.0}}}, {"id": "analyzer-middleware-auth-with_skill", "prompt": "How does the middleware handle authentication and deactivated user blocking?", "eval_id": 5, "outputs": [{"name": "response.md", "type": "text", "content": "## Analysis: Middleware Authentication and Deactivated User Blocking\n\n### Overview\n\nAuthentication and deactivated-user blocking are implemented across two files: `proxy.ts` at the project root is the actual Next.js middleware entry point, and `lib/supabase/middleware.ts` contains all logic inside the `updateSession` function. Every incoming request that is not a static asset or API route passes through this pipeline. The function constructs a Supabase SSR client, refreshes the session, then applies two sequential gate checks: unauthenticated users are redirected to `/login`, and authenticated users with `is_active = false` in the `profiles` table are signed out and redirected to `/login?error=deactivated`.\n\n### Entry Points\n\n- `proxy.ts:4` \u00e2\u20ac\u201d `proxy(request)` function exported as the Next.js middleware handler\n- `proxy.ts:8-19` \u00e2\u20ac\u201d `config.matcher` array, defines which URL patterns Next.js intercepts\n- `lib/supabase/middleware.ts:4` \u00e2\u20ac\u201d `updateSession(request)` function, contains all auth and blocking logic\n\n### Core Implementation\n\n#### 1. Route Matching (`proxy.ts:8-19`)\n\nThe `config` export at `proxy.ts:8` defines a single `matcher` regex pattern using a negative lookahead. Routes excluded from middleware processing are:\n\n- `_next/static` \u00e2\u20ac\u201d static file assets\n- `_next/image` \u00e2\u20ac\u201d image optimization\n- `favicon.ico`\n- `api/` \u00e2\u20ac\u201d the entire API route tree (API routes handle their own auth independently)\n- Files ending in `.svg`, `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`\n\nAll other paths, including the `(protected)/` route group, are included.\n\n#### 2. Supabase SSR Client Construction (`lib/supabase/middleware.ts:5-30`)\n\n`updateSession` first creates an initial `supabaseResponse` via `NextResponse.next()` at line 5. A Supabase client is instantiated at line 9 using `createServerClient` from `@supabase/ssr`, with `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`. A cookie adapter is passed with two methods:\n\n- `getAll()` at line 14 reads all cookies from `request.cookies`\n- `setAll()` at line 17 writes cookies both into `request.cookies` and into a new `NextResponse` that replaces `supabaseResponse` (lines 21-26)\n\nThis replacement pattern ensures any token updates are reflected in the response that ultimately goes back to the browser.\n\n#### 3. Session Refresh (`lib/supabase/middleware.ts:33-35`)\n\n`supabase.auth.getUser()` is called at line 35. The comment at line 32 notes this triggers `setAll` if tokens are updated. When the access token has expired, the Supabase client uses the refresh token to obtain new tokens, firing the `setAll` cookie adapter, which replaces `supabaseResponse` with a new response carrying updated `Set-Cookie` headers.\n\n#### 4. Unauthenticated User Redirect (`lib/supabase/middleware.ts:38-46`)\n\nWhen `user` is falsy and the request path does not start with `/login` or `/auth`, the function clones the current URL at line 43, sets its pathname to `/login`, and returns `NextResponse.redirect(url)` at line 45.\n\nThe `/auth` exclusion allows the OAuth callback handler at `app/auth/callback/route.ts` to complete without interception.\n\n#### 5. Deactivated User Blocking (`lib/supabase/middleware.ts:49-72`)\n\nWhen `user` is truthy and the path is not `/login` or `/auth`, a database query runs at lines 54-58:\n\n```ts\nconst { data: profile } = await supabase\n  .from(\"profiles\")\n  .select(\"is_active\")\n  .eq(\"id\", user.id)\n  .single();\n```\n\nIf `profile` exists and `profile.is_active` is `false`, the blocking sequence at lines 61-70 executes:\n\n1. `supabase.auth.signOut()` is called at line 61\n2. The current URL is cloned and its pathname set to `/login` at line 63\n3. `url.searchParams.set(\"error\", \"deactivated\")` appends the error parameter at line 64\n4. A new redirect response is created via `NextResponse.redirect(url)` at line 65\n5. All cookies currently on `supabaseResponse` (now containing sign-out cookies) are iterated at lines 67-69 and copied to `redirectResponse`\n6. `redirectResponse` is returned at line 70\n\n#### 6. Normal Request Flow (`lib/supabase/middleware.ts:74`)\n\nIf neither gate check triggers, `supabaseResponse` is returned with any refreshed tokens.\n\n### Deactivated Error Banner (`app/login/page.tsx:10-19`)\n\nThe login page receives `searchParams` as a Promise. At line 10, `error` is destructured from the resolved params. When `error === \"deactivated\"`, lines 15-18 render a red bordered banner with the message \"Your account has been deactivated. Please contact an administrator.\"\n\n### Data Flow\n\n1. Request arrives matching the pattern in `proxy.ts:18`\n2. Next.js calls `proxy(request)` at `proxy.ts:4`\n3. `updateSession(request)` called at `proxy.ts:5`\n4. Initial `supabaseResponse` created at `lib/supabase/middleware.ts:5`\n5. Supabase SSR client constructed with cookie adapter at `lib/supabase/middleware.ts:9-30`\n6. `getUser()` called at `lib/supabase/middleware.ts:35`; if tokens rotate, `supabaseResponse` is replaced with updated cookies\n7. If no user and path not `/login` or `/auth`: redirect to `/login` returned at `lib/supabase/middleware.ts:45`\n8. If user present and path not `/login` or `/auth`: `profiles` queried for `is_active` at `lib/supabase/middleware.ts:54-58`\n9. If `is_active` is false: sign out at line 61, redirect to `/login?error=deactivated` returned at line 70 with session-clearing cookies\n10. Otherwise: `supabaseResponse` returned at `lib/supabase/middleware.ts:74`\n\n### Route Protection Summary\n\n| Path | Auth check | Deactivated check |\n|---|---|---|\n| `/_next/static/**`, `/_next/image/**` | Skipped \u00e2\u20ac\u201d matcher excluded | Skipped \u00e2\u20ac\u201d matcher excluded |\n| `/api/**` | Skipped \u00e2\u20ac\u201d matcher excluded | Skipped \u00e2\u20ac\u201d matcher excluded |\n| `/favicon.ico`, image files | Skipped \u00e2\u20ac\u201d matcher excluded | Skipped \u00e2\u20ac\u201d matcher excluded |\n| `/login` | Skipped \u00e2\u20ac\u201d path condition | Skipped \u00e2\u20ac\u201d path condition |\n| `/auth/**` | Skipped \u00e2\u20ac\u201d path condition | Skipped \u00e2\u20ac\u201d path condition |\n| All other routes | Applied \u00e2\u20ac\u201d redirects to `/login` | Applied \u00e2\u20ac\u201d signs out, redirects to `/login?error=deactivated` |\n\n### Key Files\n\n- `proxy.ts` \u00e2\u20ac\u201d Next.js middleware entry point and route matcher configuration\n- `lib/supabase/middleware.ts` \u00e2\u20ac\u201d All auth and deactivation logic inside `updateSession`\n- `app/login/page.tsx` \u00e2\u20ac\u201d Renders the deactivated account error banner\n"}], "grading": {"expectations": [{"text": "Includes file:line references for key claims", "passed": true, "evidence": "Extensive: 'proxy.ts:4', 'proxy.ts:8-19', 'lib/supabase/middleware.ts:4', 'lib/supabase/middleware.ts:5-30', 'lib/supabase/middleware.ts:33-35', 'lib/supabase/middleware.ts:38-46', 'lib/supabase/middleware.ts:49-72', 'app/login/page.tsx:10-19'"}, {"text": "Explains how sessions are refreshed via Supabase", "passed": true, "evidence": "Section '3. Session Refresh': 'supabase.auth.getUser() is called... triggers setAll if tokens are updated. When the access token has expired, the Supabase client uses the refresh token to obtain new tokens'"}, {"text": "Explains how deactivated users are blocked (is_active check)", "passed": true, "evidence": "Section '5. Deactivated User Blocking': detailed 6-step sequence including signOut, URL clone, error param, redirect, cookie copying"}, {"text": "Explains which routes are protected and redirect behavior", "passed": true, "evidence": "Route Protection Summary table covering all path types with Auth check and Deactivated check columns. Also Section 1 lists matcher exclusions."}, {"text": "Does not suggest code changes or critique the implementation", "passed": true, "evidence": "Purely descriptive. Does not note that middleware may be broken (proxy.ts naming), simply documents what exists."}], "summary": {"passed": 5, "failed": 0, "total": 5, "pass_rate": 1.0}}}, {"id": "analyzer-middleware-auth-without_skill", "prompt": "How does the middleware handle authentication and deactivated user blocking?", "eval_id": 5, "outputs": [{"name": "response.md", "type": "text", "content": "# Middleware Authentication and Deactivated User Blocking Analysis\n\n## Current State: Middleware Is Disabled\n\nThe most critical finding is that **there is no active Next.js middleware running in this project**. Commit `7276b1f` (\"chore(middleware): remove unused middleware file\") renamed `middleware.ts` to `proxy.ts` and changed the exported function name from `middleware` to `proxy`. Next.js requires a root-level `middleware.ts` (or `.js`) exporting a function named `middleware` for it to be recognized. The `.next/server/middleware-manifest.json` confirms an empty middleware configuration:\n\n```json\n{\n  \"version\": 3,\n  \"middleware\": {},\n  \"sortedMiddleware\": [],\n  \"functions\": {}\n}\n```\n\nThe `proxy.ts` file at the project root is effectively dead code.\n\n## The Middleware Logic (in `lib/supabase/middleware.ts`)\n\nDespite the middleware not being active, the core logic still exists in `lib/supabase/middleware.ts` and is exported as `updateSession()`. If re-enabled, it would run on every matched request (everything except static assets, image optimization, favicons, API routes, and public assets).\n\n### Session Refresh\n\nThe `updateSession` function (lines 4-75 of `lib/supabase/middleware.ts`) creates a Supabase server client wired into the request/response cookie flow. It calls `supabase.auth.getUser()`, which:\n\n1. Reads the user's JWT from cookies.\n2. If the access token is expired but a refresh token exists, Supabase SDK automatically refreshes it.\n3. The `setAll` callback propagates any new tokens back into both the request cookies (for downstream server components) and the response cookies (so the browser receives updated tokens).\n\n### Unauthenticated User Redirect (lines 38-46)\n\nIf `getUser()` returns no user and the request path is not `/login` or `/auth`, the middleware redirects to `/login`.\n\n### Deactivated User Blocking (lines 48-72)\n\nFor authenticated users not on `/login` or `/auth`, the middleware:\n\n1. Queries the `profiles` table for the user's `is_active` flag.\n2. If `is_active` is `false`:\n   - Calls `supabase.auth.signOut()` to clear the session server-side.\n   - Copies the session-clearing cookies from the sign-out response to a redirect response.\n   - Redirects to `/login?error=deactivated`.\n3. The login page (`app/login/page.tsx`) reads this `error` query parameter and shows a red banner: \"Your account has been deactivated. Please contact an administrator.\"\n\n### Route Matcher Configuration (from the original `middleware.ts`, now in `proxy.ts`)\n\n```\n\"/((?!_next/static|_next/image|favicon.ico|api/|.*\\\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)\"\n```\n\nThis excludes:\n- `_next/static` and `_next/image` (framework assets)\n- `favicon.ico`\n- API routes (`/api/...`) -- these handle their own auth\n- Public image files (svg, png, jpg, etc.)\n\n## Defense-in-Depth: API Route Guards\n\nSince the middleware is currently disabled, authentication and deactivation checks are handled **entirely at the API route level**:\n\n### `/api/chat/route.ts`\n- Calls `supabase.auth.getUser()` and returns 401 if no user.\n- Queries `profiles.is_active` and returns 403 (\"Account deactivated\") if inactive.\n- Also verifies conversation ownership before proceeding.\n\n### `/api/conversations/route.ts`\n- Uses a shared `getActiveUser()` helper that combines both the auth check and the `is_active` check.\n- Returns 401 for unauthenticated or deactivated users on all three handlers (GET, POST, DELETE).\n\n### `/api/admin/users/route.ts`\n- Uses a `verifyAdmin()` helper that checks authentication and verifies the user's `role` is `\"admin\"` (using the service role client to bypass RLS).\n- Returns 403 for non-admin users.\n- Prevents admins from deactivating themselves.\n\n## Database Schema\n\nThe `profiles` table (migration `001_profiles.sql`) defines:\n- `is_active BOOLEAN NOT NULL DEFAULT TRUE` -- new users are active by default.\n- A trigger `on_auth_user_created` auto-creates a profile row when a user signs up via Supabase Auth.\n- RLS policies are in place on all tables (as noted in the project conventions).\n\n## Key Files\n\n| File | Role |\n|------|------|\n| `C:\\Users\\alexa\\Desktop\\jw-assistant\\lib\\supabase\\middleware.ts` | Core middleware logic: session refresh, auth redirect, deactivation blocking |\n| `C:\\Users\\alexa\\Desktop\\jw-assistant\\proxy.ts` | Dead code -- renamed from `middleware.ts`, not recognized by Next.js |\n| `C:\\Users\\alexa\\Desktop\\jw-assistant\\app\\login\\page.tsx` | Displays deactivation error message |\n| `C:\\Users\\alexa\\Desktop\\jw-assistant\\app\\api\\chat\\route.ts` | API-level auth + deactivation guard |\n| `C:\\Users\\alexa\\Desktop\\jw-assistant\\app\\api\\conversations\\route.ts` | API-level auth + deactivation guard via `getActiveUser()` |\n| `C:\\Users\\alexa\\Desktop\\jw-assistant\\app\\api\\admin\\users\\route.ts` | Admin-only auth guard via `verifyAdmin()` |\n| `C:\\Users\\alexa\\Desktop\\jw-assistant\\app\\auth\\callback\\route.ts` | OAuth callback -- exchanges code for session |\n| `C:\\Users\\alexa\\Desktop\\jw-assistant\\lib\\supabase\\server.ts` | Server-side Supabase client factory (used by API routes) |\n| `C:\\Users\\alexa\\Desktop\\jw-assistant\\lib\\supabase\\client.ts` | Browser-side Supabase client factory |\n| `C:\\Users\\alexa\\Desktop\\jw-assistant\\supabase\\migrations\\001_profiles.sql` | Profiles table schema with `is_active` column |\n\n## Summary\n\nThe project was designed with a two-layer auth strategy: Next.js middleware for page-level protection plus API route guards for endpoint-level protection. However, the middleware layer was disabled in commit `7276b1f` when `middleware.ts` was renamed to `proxy.ts`. Currently, **only the API route guards are enforcing authentication and deactivation checks**. This means unauthenticated users can still reach protected page components (though they will fail when those components try to call the guarded API routes). The `updateSession` logic in `lib/supabase/middleware.ts` is intact and ready to be re-enabled by restoring the root `middleware.ts` file with the proper `middleware` export name.\n"}], "grading": {"expectations": [{"text": "Includes file:line references for key claims", "passed": true, "evidence": "References: 'lines 38-46', 'lines 48-72', 'lines 4-75'. File-level references throughout. Less granular than with_skill version."}, {"text": "Explains how sessions are refreshed via Supabase", "passed": true, "evidence": "'Session refresh' section: 'calls supabase.auth.getUser(), which reads the user's JWT from cookies... automatically refreshes it... setAll callback propagates any new tokens'"}, {"text": "Explains how deactivated users are blocked (is_active check)", "passed": true, "evidence": "'Deactivated User Blocking (lines 48-72)': 3-step description including signOut, cookie copying, redirect to /login?error=deactivated"}, {"text": "Explains which routes are protected and redirect behavior", "passed": true, "evidence": "Route Matcher Configuration section with regex pattern and exclusion list. Also describes API route guards that serve as defense-in-depth."}, {"text": "Does not suggest code changes or critique the implementation", "passed": true, "evidence": "While it identifies that middleware is disabled (a factual observation, not a suggestion), it does not recommend fixes. The observation about proxy.ts being dead code is descriptive."}], "summary": {"passed": 5, "failed": 0, "total": 5, "pass_rate": 1.0}}}], "previous_feedback": {}, "previous_outputs": {}, "benchmark": {"metadata": {"skill_name": "codebase-agents", "skill_path": ".claude/agents/", "executor_model": "claude-sonnet-4-6", "timestamp": "2026-03-18T00:00:00Z", "evals_run": [0, 1, 2, 3, 4, 5], "runs_per_configuration": 1}, "runs": [{"eval_id": 0, "eval_name": "locator: RAG pipeline files", "configuration": "with_skill", "run_number": 1, "result": {"pass_rate": 1.0, "passed": 6, "failed": 0, "total": 6, "time_seconds": 80.8, "tokens": 10977, "tool_calls": 21, "errors": 0}, "expectations": [{"text": "Output organizes files into logical categories", "passed": true, "evidence": "7 clear sections"}, {"text": "Listed file paths actually exist in the project", "passed": true, "evidence": "All paths verified"}, {"text": "Finds lib/rag/embed.ts", "passed": true, "evidence": "Listed under Core RAG Implementation"}, {"text": "Finds lib/rag/retrieve.ts", "passed": true, "evidence": "Listed under Core RAG Implementation"}, {"text": "Finds app/api/chat/route.ts", "passed": true, "evidence": "Listed under API Route"}, {"text": "Focuses on file locations, not deep analysis", "passed": true, "evidence": "One-line descriptions only"}]}, {"eval_id": 0, "eval_name": "locator: RAG pipeline files", "configuration": "without_skill", "run_number": 1, "result": {"pass_rate": 0.83, "passed": 5, "failed": 1, "total": 6, "time_seconds": 160.6, "tokens": 64183, "tool_calls": 47, "errors": 0}, "expectations": [{"text": "Output organizes files into logical categories", "passed": true, "evidence": "Well organized sections"}, {"text": "Listed file paths actually exist in the project", "passed": true, "evidence": "All paths verified"}, {"text": "Finds lib/rag/embed.ts", "passed": true, "evidence": "Found"}, {"text": "Finds lib/rag/retrieve.ts", "passed": true, "evidence": "Found"}, {"text": "Finds app/api/chat/route.ts", "passed": true, "evidence": "Found"}, {"text": "Focuses on file locations, not deep analysis", "passed": false, "evidence": "Goes into deep implementation analysis with function-level details and data flow diagrams"}]}, {"eval_id": 1, "eval_name": "locator: auth logic files", "configuration": "with_skill", "run_number": 1, "result": {"pass_rate": 1.0, "passed": 6, "failed": 0, "total": 6, "time_seconds": 135.3, "tokens": 23544, "tool_calls": 41, "errors": 0}, "expectations": [{"text": "Output organizes files into logical categories", "passed": true, "evidence": "8 clear sections"}, {"text": "Finds middleware.ts", "passed": true, "evidence": "lib/supabase/middleware.ts listed"}, {"text": "Finds app/login/page.tsx", "passed": true, "evidence": "Listed under OAuth Login Flow"}, {"text": "Finds app/auth/callback/route.ts", "passed": true, "evidence": "Listed under OAuth Login Flow"}, {"text": "Finds lib/supabase/server.ts or client.ts", "passed": true, "evidence": "Both listed"}, {"text": "Finds SQL migration files with RLS policies", "passed": true, "evidence": "004_rls_policies.sql listed with detail"}]}, {"eval_id": 1, "eval_name": "locator: auth logic files", "configuration": "without_skill", "run_number": 1, "result": {"pass_rate": 1.0, "passed": 6, "failed": 0, "total": 6, "time_seconds": 155.0, "tokens": 45284, "tool_calls": 42, "errors": 0}, "expectations": [{"text": "Output organizes files into logical categories", "passed": true, "evidence": "7 sections plus summary table"}, {"text": "Finds middleware.ts", "passed": true, "evidence": "Found both proxy.ts and lib/supabase/middleware.ts"}, {"text": "Finds app/login/page.tsx", "passed": true, "evidence": "Listed"}, {"text": "Finds app/auth/callback/route.ts", "passed": true, "evidence": "Listed"}, {"text": "Finds lib/supabase/server.ts or client.ts", "passed": true, "evidence": "Both listed"}, {"text": "Finds SQL migration files with RLS policies", "passed": true, "evidence": "Found 004 and 005 migrations"}]}, {"eval_id": 2, "eval_name": "locator: admin panel files", "configuration": "with_skill", "run_number": 1, "result": {"pass_rate": 1.0, "passed": 5, "failed": 0, "total": 5, "time_seconds": 90.3, "tokens": 14348, "tool_calls": 18, "errors": 0}, "expectations": [{"text": "Output organizes files into logical categories", "passed": true, "evidence": "6 clear sections"}, {"text": "Finds app/(protected)/admin/page.tsx", "passed": true, "evidence": "Listed"}, {"text": "Finds files under app/api/admin/", "passed": true, "evidence": "Both route files listed"}, {"text": "Finds files under components/admin/", "passed": true, "evidence": "Both component files listed"}, {"text": "Focuses on file locations, not deep analysis", "passed": true, "evidence": "Brief role descriptions"}]}, {"eval_id": 2, "eval_name": "locator: admin panel files", "configuration": "without_skill", "run_number": 1, "result": {"pass_rate": 0.8, "passed": 4, "failed": 1, "total": 5, "time_seconds": 89.5, "tokens": 34209, "tool_calls": 28, "errors": 0}, "expectations": [{"text": "Output organizes files into logical categories", "passed": true, "evidence": "6 sections"}, {"text": "Finds app/(protected)/admin/page.tsx", "passed": true, "evidence": "Listed"}, {"text": "Finds files under app/api/admin/", "passed": true, "evidence": "Both listed"}, {"text": "Finds files under components/admin/", "passed": true, "evidence": "Both listed"}, {"text": "Focuses on file locations, not deep analysis", "passed": false, "evidence": "Deep implementation details about state management, API patterns, conditional rendering"}]}, {"eval_id": 3, "eval_name": "analyzer: chat streaming flow", "configuration": "with_skill", "run_number": 1, "result": {"pass_rate": 1.0, "passed": 6, "failed": 0, "total": 6, "time_seconds": 139.2, "tokens": 21137, "tool_calls": 19, "errors": 0}, "expectations": [{"text": "Includes file:line references for key claims", "passed": true, "evidence": "Extensive: route.ts:22, route.ts:23-41, etc."}, {"text": "Traces data flow step by step", "passed": true, "evidence": "18-step data flow section"}, {"text": "Describes the authentication check", "passed": true, "evidence": "Section 1 details auth"}, {"text": "Describes RAG integration", "passed": true, "evidence": "Section 4 with 4 sub-steps"}, {"text": "Describes streaming mechanism", "passed": true, "evidence": "Section 7 on stream construction"}, {"text": "No improvement suggestions", "passed": true, "evidence": "Purely descriptive throughout"}]}, {"eval_id": 3, "eval_name": "analyzer: chat streaming flow", "configuration": "without_skill", "run_number": 1, "result": {"pass_rate": 1.0, "passed": 6, "failed": 0, "total": 6, "time_seconds": 150.0, "tokens": 35000, "tool_calls": 30, "errors": 0}, "expectations": [{"text": "Includes file:line references for key claims", "passed": true, "evidence": "Line references present though less granular"}, {"text": "Traces data flow step by step", "passed": true, "evidence": "Detailed sequence diagram + step-by-step"}, {"text": "Describes the authentication check", "passed": true, "evidence": "Step 2a covers auth"}, {"text": "Describes RAG integration", "passed": true, "evidence": "Step 2c covers RAG"}, {"text": "Describes streaming mechanism", "passed": true, "evidence": "Step 2f with code examples"}, {"text": "No improvement suggestions", "passed": true, "evidence": "Descriptive throughout"}]}, {"eval_id": 4, "eval_name": "analyzer: RAG retrieval process", "configuration": "with_skill", "run_number": 1, "result": {"pass_rate": 1.0, "passed": 5, "failed": 0, "total": 5, "time_seconds": 78.7, "tokens": 10388, "tool_calls": 8, "errors": 0}, "expectations": [{"text": "Includes file:line references", "passed": true, "evidence": "embed.ts:11-18, retrieve.ts:68-69, etc."}, {"text": "Describes embedding process", "passed": true, "evidence": "text-embedding-3-large, 3072 dimensions"}, {"text": "Describes similarity search", "passed": true, "evidence": "Cosine similarity formula explained"}, {"text": "References RAG config params", "passed": true, "evidence": "Both RAG_MATCH_COUNT and RAG_MATCH_THRESHOLD"}, {"text": "No improvement suggestions", "passed": true, "evidence": "Purely descriptive"}]}, {"eval_id": 4, "eval_name": "analyzer: RAG retrieval process", "configuration": "without_skill", "run_number": 1, "result": {"pass_rate": 1.0, "passed": 5, "failed": 0, "total": 5, "time_seconds": 109.1, "tokens": 22226, "tool_calls": 17, "errors": 0}, "expectations": [{"text": "Includes file:line references", "passed": true, "evidence": "Line references throughout"}, {"text": "Describes embedding process", "passed": true, "evidence": "Model and dimensions documented"}, {"text": "Describes similarity search", "passed": true, "evidence": "Cosine distance operator explained"}, {"text": "References RAG config params", "passed": true, "evidence": "Table with both params and defaults"}, {"text": "No improvement suggestions", "passed": true, "evidence": "Descriptive throughout"}]}, {"eval_id": 5, "eval_name": "analyzer: middleware auth", "configuration": "with_skill", "run_number": 1, "result": {"pass_rate": 1.0, "passed": 5, "failed": 0, "total": 5, "time_seconds": 127.1, "tokens": 24691, "tool_calls": 16, "errors": 0}, "expectations": [{"text": "Includes file:line references", "passed": true, "evidence": "proxy.ts:4, middleware.ts:5-30, etc."}, {"text": "Describes session refresh", "passed": true, "evidence": "Section 3 on getUser() and token refresh"}, {"text": "Describes deactivated user blocking", "passed": true, "evidence": "Section 5 with 6-step sequence"}, {"text": "Describes route protection", "passed": true, "evidence": "Route protection summary table"}, {"text": "No improvement suggestions", "passed": true, "evidence": "Purely descriptive"}]}, {"eval_id": 5, "eval_name": "analyzer: middleware auth", "configuration": "without_skill", "run_number": 1, "result": {"pass_rate": 1.0, "passed": 5, "failed": 0, "total": 5, "time_seconds": 147.5, "tokens": 26543, "tool_calls": 32, "errors": 0}, "expectations": [{"text": "Includes file:line references", "passed": true, "evidence": "Line references present"}, {"text": "Describes session refresh", "passed": true, "evidence": "Session refresh section"}, {"text": "Describes deactivated user blocking", "passed": true, "evidence": "3-step description"}, {"text": "Describes route protection", "passed": true, "evidence": "Matcher config + API route guards"}, {"text": "No improvement suggestions", "passed": true, "evidence": "Factual observations only"}]}], "run_summary": {"with_skill": {"pass_rate": {"mean": 1.0, "stddev": 0.0, "min": 1.0, "max": 1.0}, "time_seconds": {"mean": 108.6, "stddev": 25.5, "min": 78.7, "max": 139.2}, "tokens": {"mean": 17514, "stddev": 5800, "min": 10388, "max": 24691}}, "without_skill": {"pass_rate": {"mean": 0.94, "stddev": 0.09, "min": 0.8, "max": 1.0}, "time_seconds": {"mean": 135.3, "stddev": 25.0, "min": 89.5, "max": 160.6}, "tokens": {"mean": 37908, "stddev": 15000, "min": 22226, "max": 64183}}, "delta": {"pass_rate": "+0.06", "time_seconds": "-26.7", "tokens": "-20394"}}, "notes": ["EFFICIENCY: With-skill agents use 54% fewer tokens on average (17.5K vs 37.9K) \u00e2\u20ac\u201d the specialized agents stay focused and avoid reading unnecessary files.", "SPEED: With-skill agents are 20% faster on average (108.6s vs 135.3s).", "LOCATOR DISCIPLINE: The codebase-locator agent consistently avoids content analysis (passes 'no-content-analysis' assertion 100%), while the general-purpose baseline fails this 2 out of 3 times \u00e2\u20ac\u201d it naturally drifts into explaining how code works instead of just finding files.", "ANALYZER PARITY: Both codebase-analyzer and general-purpose agents pass all analyzer assertions at 100%. The analyzer agent's value is in efficiency (fewer tokens) rather than accuracy.", "INTERESTING FINDING: The general-purpose baseline for middleware-auth caught that the middleware is disabled (proxy.ts rename), while the codebase-analyzer did not flag this. The analyzer stayed in its 'documentarian' lane as instructed, but missed a potentially important finding.", "TOKEN EFFICIENCY: The biggest token savings are in locator tasks \u00e2\u20ac\u201d codebase-locator used 10-23K tokens vs the baseline's 34-64K. The locator's lack of a Read tool forces it to stay at the file-finding level.", "TOOL CALLS: With-skill agents use fewer tool calls on average (20.5 vs 33) because they don't read file contents unnecessarily."]}};
+
+    // ---- State ----
+    let feedbackMap = {};  // run_id -> feedback text
+    let currentIndex = 0;
+    let visitedRuns = new Set();
+
+    // ---- Init ----
+    async function init() {
+      // Load saved feedback from server — but only if this isn't a fresh
+      // iteration (indicated by previous_feedback being present). When
+      // previous feedback exists, the feedback.json on disk is stale from
+      // the prior iteration and should not pre-fill the textareas.
+      const hasPrevious = Object.keys(EMBEDDED_DATA.previous_feedback || {}).length > 0
+        || Object.keys(EMBEDDED_DATA.previous_outputs || {}).length > 0;
+      if (!hasPrevious) {
+        try {
+          const resp = await fetch("/api/feedback");
+          const data = await resp.json();
+          if (data.reviews) {
+            for (const r of data.reviews) feedbackMap[r.run_id] = r.feedback;
+          }
+        } catch { /* first run, no feedback yet */ }
+      }
+
+      document.getElementById("skill-name").textContent = EMBEDDED_DATA.skill_name;
+      showRun(0);
+
+      // Wire up feedback auto-save
+      const textarea = document.getElementById("feedback");
+      let saveTimeout = null;
+      textarea.addEventListener("input", () => {
+        clearTimeout(saveTimeout);
+        document.getElementById("feedback-status").textContent = "";
+        saveTimeout = setTimeout(() => saveCurrentFeedback(), 800);
+      });
+    }
+
+    // ---- Navigation ----
+    function navigate(delta) {
+      const newIndex = currentIndex + delta;
+      if (newIndex >= 0 && newIndex < EMBEDDED_DATA.runs.length) {
+        saveCurrentFeedback();
+        showRun(newIndex);
+      }
+    }
+
+    function updateNavButtons() {
+      document.getElementById("prev-btn").disabled = currentIndex === 0;
+      document.getElementById("next-btn").disabled =
+        currentIndex === EMBEDDED_DATA.runs.length - 1;
+    }
+
+    // ---- Show a run ----
+    function showRun(index) {
+      currentIndex = index;
+      const run = EMBEDDED_DATA.runs[index];
+
+      // Progress
+      document.getElementById("progress").textContent =
+        `${index + 1} of ${EMBEDDED_DATA.runs.length}`;
+
+      // Prompt
+      document.getElementById("prompt-text").textContent = run.prompt;
+
+      // Config badge
+      const badge = document.getElementById("config-badge");
+      const configMatch = run.id.match(/(with_skill|without_skill|new_skill|old_skill)/);
+      if (configMatch) {
+        const config = configMatch[1];
+        const isBaseline = config === "without_skill" || config === "old_skill";
+        badge.textContent = config.replace(/_/g, " ");
+        badge.className = "config-badge " + (isBaseline ? "config-baseline" : "config-primary");
+        badge.style.display = "inline-block";
+      } else {
+        badge.style.display = "none";
+      }
+
+      // Outputs
+      renderOutputs(run);
+
+      // Previous outputs
+      renderPrevOutputs(run);
+
+      // Grades
+      renderGrades(run);
+
+      // Previous feedback
+      const prevFb = (EMBEDDED_DATA.previous_feedback || {})[run.id];
+      const prevEl = document.getElementById("prev-feedback");
+      if (prevFb) {
+        document.getElementById("prev-feedback-text").textContent = prevFb;
+        prevEl.style.display = "block";
+      } else {
+        prevEl.style.display = "none";
+      }
+
+      // Feedback
+      document.getElementById("feedback").value = feedbackMap[run.id] || "";
+      document.getElementById("feedback-status").textContent = "";
+
+      updateNavButtons();
+
+      // Track visited runs and promote done button when all visited
+      visitedRuns.add(index);
+      const doneBtn = document.getElementById("done-btn");
+      if (visitedRuns.size >= EMBEDDED_DATA.runs.length) {
+        doneBtn.classList.add("ready");
+      }
+
+      // Scroll main content to top
+      document.querySelector(".main").scrollTop = 0;
+    }
+
+    // ---- Render outputs ----
+    function renderOutputs(run) {
+      const container = document.getElementById("outputs-body");
+      container.innerHTML = "";
+
+      const outputs = run.outputs || [];
+      if (outputs.length === 0) {
+        container.innerHTML = '<div class="empty-state">No output files</div>';
+        return;
+      }
+
+      for (const file of outputs) {
+        const fileDiv = document.createElement("div");
+        fileDiv.className = "output-file";
+
+        // Always show file header with download link
+        const header = document.createElement("div");
+        header.className = "output-file-header";
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = file.name;
+        header.appendChild(nameSpan);
+        const dlBtn = document.createElement("a");
+        dlBtn.className = "dl-btn";
+        dlBtn.textContent = "Download";
+        dlBtn.download = file.name;
+        dlBtn.href = getDownloadUri(file);
+        header.appendChild(dlBtn);
+        fileDiv.appendChild(header);
+
+        const content = document.createElement("div");
+        content.className = "output-file-content";
+
+        if (file.type === "text") {
+          const pre = document.createElement("pre");
+          pre.textContent = file.content;
+          content.appendChild(pre);
+        } else if (file.type === "image") {
+          const img = document.createElement("img");
+          img.src = file.data_uri;
+          img.alt = file.name;
+          content.appendChild(img);
+        } else if (file.type === "pdf") {
+          const iframe = document.createElement("iframe");
+          iframe.src = file.data_uri;
+          content.appendChild(iframe);
+        } else if (file.type === "xlsx") {
+          renderXlsx(content, file.data_b64);
+        } else if (file.type === "binary") {
+          const a = document.createElement("a");
+          a.className = "download-link";
+          a.href = file.data_uri;
+          a.download = file.name;
+          a.textContent = "Download " + file.name;
+          content.appendChild(a);
+        } else if (file.type === "error") {
+          const pre = document.createElement("pre");
+          pre.textContent = file.content;
+          pre.style.color = "var(--red)";
+          content.appendChild(pre);
+        }
+
+        fileDiv.appendChild(content);
+        container.appendChild(fileDiv);
+      }
+    }
+
+    // ---- XLSX rendering via SheetJS ----
+    function renderXlsx(container, b64Data) {
+      try {
+        const raw = Uint8Array.from(atob(b64Data), c => c.charCodeAt(0));
+        const wb = XLSX.read(raw, { type: "array" });
+
+        for (let i = 0; i < wb.SheetNames.length; i++) {
+          const sheetName = wb.SheetNames[i];
+          const ws = wb.Sheets[sheetName];
+
+          if (wb.SheetNames.length > 1) {
+            const sheetLabel = document.createElement("div");
+            sheetLabel.style.cssText =
+              "font-weight:600; font-size:0.8rem; color:#b0aea5; margin-top:0.5rem; margin-bottom:0.25rem;";
+            sheetLabel.textContent = "Sheet: " + sheetName;
+            container.appendChild(sheetLabel);
+          }
+
+          const htmlStr = XLSX.utils.sheet_to_html(ws, { editable: false });
+          const wrapper = document.createElement("div");
+          wrapper.innerHTML = htmlStr;
+          container.appendChild(wrapper);
+        }
+      } catch (err) {
+        container.textContent = "Error rendering spreadsheet: " + err.message;
+      }
+    }
+
+    // ---- Grades ----
+    function renderGrades(run) {
+      const section = document.getElementById("grades-section");
+      const content = document.getElementById("grades-content");
+
+      if (!run.grading) {
+        section.style.display = "none";
+        return;
+      }
+
+      const grading = run.grading;
+      section.style.display = "block";
+      // Reset to collapsed
+      content.classList.remove("open");
+      document.getElementById("grades-arrow").classList.remove("open");
+
+      const summary = grading.summary || {};
+      const expectations = grading.expectations || [];
+
+      let html = '<div style="padding: 1rem;">';
+
+      // Summary line
+      const passRate = summary.pass_rate != null
+        ? Math.round(summary.pass_rate * 100) + "%"
+        : "?";
+      const badgeClass = summary.pass_rate >= 0.8 ? "grade-pass" : summary.pass_rate >= 0.5 ? "" : "grade-fail";
+      html += '<div class="grades-summary">';
+      html += '<span class="grade-badge ' + badgeClass + '">' + passRate + '</span>';
+      html += '<span>' + (summary.passed || 0) + ' passed, ' + (summary.failed || 0) + ' failed of ' + (summary.total || 0) + '</span>';
+      html += '</div>';
+
+      // Assertions list
+      html += '<ul class="assertion-list">';
+      for (const exp of expectations) {
+        const statusClass = exp.passed ? "pass" : "fail";
+        const statusIcon = exp.passed ? "\u2713" : "\u2717";
+        html += '<li class="assertion-item">';
+        html += '<span class="assertion-status ' + statusClass + '">' + statusIcon + '</span>';
+        html += '<span>' + escapeHtml(exp.text) + '</span>';
+        if (exp.evidence) {
+          html += '<div class="assertion-evidence">' + escapeHtml(exp.evidence) + '</div>';
+        }
+        html += '</li>';
+      }
+      html += '</ul>';
+
+      html += '</div>';
+      content.innerHTML = html;
+    }
+
+    function toggleGrades() {
+      const content = document.getElementById("grades-content");
+      const arrow = document.getElementById("grades-arrow");
+      content.classList.toggle("open");
+      arrow.classList.toggle("open");
+    }
+
+    // ---- Previous outputs (collapsible) ----
+    function renderPrevOutputs(run) {
+      const section = document.getElementById("prev-outputs-section");
+      const content = document.getElementById("prev-outputs-content");
+      const prevOutputs = (EMBEDDED_DATA.previous_outputs || {})[run.id];
+
+      if (!prevOutputs || prevOutputs.length === 0) {
+        section.style.display = "none";
+        return;
+      }
+
+      section.style.display = "block";
+      // Reset to collapsed
+      content.classList.remove("open");
+      document.getElementById("prev-outputs-arrow").classList.remove("open");
+
+      // Render the files into the content area
+      content.innerHTML = "";
+      const wrapper = document.createElement("div");
+      wrapper.style.padding = "1rem";
+
+      for (const file of prevOutputs) {
+        const fileDiv = document.createElement("div");
+        fileDiv.className = "output-file";
+
+        const header = document.createElement("div");
+        header.className = "output-file-header";
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = file.name;
+        header.appendChild(nameSpan);
+        const dlBtn = document.createElement("a");
+        dlBtn.className = "dl-btn";
+        dlBtn.textContent = "Download";
+        dlBtn.download = file.name;
+        dlBtn.href = getDownloadUri(file);
+        header.appendChild(dlBtn);
+        fileDiv.appendChild(header);
+
+        const fc = document.createElement("div");
+        fc.className = "output-file-content";
+
+        if (file.type === "text") {
+          const pre = document.createElement("pre");
+          pre.textContent = file.content;
+          fc.appendChild(pre);
+        } else if (file.type === "image") {
+          const img = document.createElement("img");
+          img.src = file.data_uri;
+          img.alt = file.name;
+          fc.appendChild(img);
+        } else if (file.type === "pdf") {
+          const iframe = document.createElement("iframe");
+          iframe.src = file.data_uri;
+          fc.appendChild(iframe);
+        } else if (file.type === "xlsx") {
+          renderXlsx(fc, file.data_b64);
+        } else if (file.type === "binary") {
+          const a = document.createElement("a");
+          a.className = "download-link";
+          a.href = file.data_uri;
+          a.download = file.name;
+          a.textContent = "Download " + file.name;
+          fc.appendChild(a);
+        }
+
+        fileDiv.appendChild(fc);
+        wrapper.appendChild(fileDiv);
+      }
+
+      content.appendChild(wrapper);
+    }
+
+    function togglePrevOutputs() {
+      const content = document.getElementById("prev-outputs-content");
+      const arrow = document.getElementById("prev-outputs-arrow");
+      content.classList.toggle("open");
+      arrow.classList.toggle("open");
+    }
+
+    // ---- Feedback (saved to server -> feedback.json) ----
+    function saveCurrentFeedback() {
+      const run = EMBEDDED_DATA.runs[currentIndex];
+      const text = document.getElementById("feedback").value;
+
+      if (text.trim() === "") {
+        delete feedbackMap[run.id];
+      } else {
+        feedbackMap[run.id] = text;
+      }
+
+      // Build reviews array from map
+      const reviews = [];
+      for (const [run_id, feedback] of Object.entries(feedbackMap)) {
+        if (feedback.trim()) {
+          reviews.push({ run_id, feedback, timestamp: new Date().toISOString() });
+        }
+      }
+
+      fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reviews, status: "in_progress" }),
+      }).then(() => {
+        document.getElementById("feedback-status").textContent = "Saved";
+      }).catch(() => {
+        // Static mode or server unavailable — no-op on auto-save,
+        // feedback will be downloaded on final submit
+        document.getElementById("feedback-status").textContent = "Will download on submit";
+      });
+    }
+
+    // ---- Done ----
+    function showDoneDialog() {
+      // Save current textarea to feedbackMap (but don't POST yet)
+      const run = EMBEDDED_DATA.runs[currentIndex];
+      const text = document.getElementById("feedback").value;
+      if (text.trim() === "") {
+        delete feedbackMap[run.id];
+      } else {
+        feedbackMap[run.id] = text;
+      }
+
+      // POST once with status: complete — include ALL runs so the model
+      // can distinguish "no feedback" (looks good) from "not reviewed"
+      const reviews = [];
+      const ts = new Date().toISOString();
+      for (const r of EMBEDDED_DATA.runs) {
+        reviews.push({ run_id: r.id, feedback: feedbackMap[r.id] || "", timestamp: ts });
+      }
+      const payload = JSON.stringify({ reviews, status: "complete" }, null, 2);
+      fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+      }).then(() => {
+        document.getElementById("done-overlay").classList.add("visible");
+      }).catch(() => {
+        // Server not available (static mode) — download as file
+        const blob = new Blob([payload], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "feedback.json";
+        a.click();
+        URL.revokeObjectURL(url);
+        document.getElementById("done-overlay").classList.add("visible");
+      });
+    }
+
+    function closeDoneDialog() {
+      // Reset status back to in_progress
+      saveCurrentFeedback();
+      document.getElementById("done-overlay").classList.remove("visible");
+    }
+
+    // ---- Toast ----
+    function showToast(message) {
+      const toast = document.getElementById("toast");
+      toast.textContent = message;
+      toast.classList.add("visible");
+      setTimeout(() => toast.classList.remove("visible"), 2000);
+    }
+
+    // ---- Keyboard nav ----
+    document.addEventListener("keydown", (e) => {
+      // Don't capture when typing in textarea
+      if (e.target.tagName === "TEXTAREA") return;
+
+      if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+        e.preventDefault();
+        navigate(-1);
+      } else if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+        e.preventDefault();
+        navigate(1);
+      }
+    });
+
+    // ---- Util ----
+    function getDownloadUri(file) {
+      if (file.data_uri) return file.data_uri;
+      if (file.data_b64) return "data:application/octet-stream;base64," + file.data_b64;
+      if (file.type === "text") return "data:text/plain;charset=utf-8," + encodeURIComponent(file.content);
+      return "#";
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // ---- View switching ----
+    function switchView(view) {
+      document.querySelectorAll(".view-tab").forEach(t => t.classList.remove("active"));
+      document.querySelectorAll(".view-panel").forEach(p => p.classList.remove("active"));
+      document.querySelector(`[onclick="switchView('${view}')"]`).classList.add("active");
+      document.getElementById("panel-" + view).classList.add("active");
+    }
+
+    // ---- Benchmark rendering ----
+    function renderBenchmark() {
+      const data = EMBEDDED_DATA.benchmark;
+      if (!data) return;
+
+      // Show the tabs
+      document.getElementById("view-tabs").style.display = "flex";
+
+      const container = document.getElementById("benchmark-content");
+      const summary = data.run_summary || {};
+      const metadata = data.metadata || {};
+      const notes = data.notes || [];
+
+      let html = "";
+
+      // Header
+      html += "<h2 style='font-family: Poppins, sans-serif; margin-bottom: 0.5rem;'>Benchmark Results</h2>";
+      html += "<p style='color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1.25rem;'>";
+      if (metadata.skill_name) html += "<strong>" + escapeHtml(metadata.skill_name) + "</strong> &mdash; ";
+      if (metadata.timestamp) html += metadata.timestamp + " &mdash; ";
+      if (metadata.evals_run) html += "Evals: " + metadata.evals_run.join(", ") + " &mdash; ";
+      html += (metadata.runs_per_configuration || "?") + " runs per configuration";
+      html += "</p>";
+
+      // Summary table
+      html += '<table class="benchmark-table">';
+
+      function fmtStat(stat, pct) {
+        if (!stat) return "—";
+        const suffix = pct ? "%" : "";
+        const m = pct ? (stat.mean * 100).toFixed(0) : stat.mean.toFixed(1);
+        const s = pct ? (stat.stddev * 100).toFixed(0) : stat.stddev.toFixed(1);
+        return m + suffix + " ± " + s + suffix;
+      }
+
+      function deltaClass(val) {
+        if (!val) return "";
+        const n = parseFloat(val);
+        if (n > 0) return "benchmark-delta-positive";
+        if (n < 0) return "benchmark-delta-negative";
+        return "";
+      }
+
+      // Discover config names dynamically (everything except "delta")
+      const configs = Object.keys(summary).filter(k => k !== "delta");
+      const configA = configs[0] || "config_a";
+      const configB = configs[1] || "config_b";
+      const labelA = configA.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+      const labelB = configB.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+      const a = summary[configA] || {};
+      const b = summary[configB] || {};
+      const delta = summary.delta || {};
+
+      html += "<thead><tr><th>Metric</th><th>" + escapeHtml(labelA) + "</th><th>" + escapeHtml(labelB) + "</th><th>Delta</th></tr></thead>";
+      html += "<tbody>";
+
+      html += "<tr><td><strong>Pass Rate</strong></td>";
+      html += "<td>" + fmtStat(a.pass_rate, true) + "</td>";
+      html += "<td>" + fmtStat(b.pass_rate, true) + "</td>";
+      html += '<td class="' + deltaClass(delta.pass_rate) + '">' + (delta.pass_rate || "—") + "</td></tr>";
+
+      // Time (only show row if data exists)
+      if (a.time_seconds || b.time_seconds) {
+        html += "<tr><td><strong>Time (s)</strong></td>";
+        html += "<td>" + fmtStat(a.time_seconds, false) + "</td>";
+        html += "<td>" + fmtStat(b.time_seconds, false) + "</td>";
+        html += '<td class="' + deltaClass(delta.time_seconds) + '">' + (delta.time_seconds ? delta.time_seconds + "s" : "—") + "</td></tr>";
+      }
+
+      // Tokens (only show row if data exists)
+      if (a.tokens || b.tokens) {
+        html += "<tr><td><strong>Tokens</strong></td>";
+        html += "<td>" + fmtStat(a.tokens, false) + "</td>";
+        html += "<td>" + fmtStat(b.tokens, false) + "</td>";
+        html += '<td class="' + deltaClass(delta.tokens) + '">' + (delta.tokens || "—") + "</td></tr>";
+      }
+
+      html += "</tbody></table>";
+
+      // Per-eval breakdown (if runs data available)
+      const runs = data.runs || [];
+      if (runs.length > 0) {
+        const evalIds = [...new Set(runs.map(r => r.eval_id))].sort((a, b) => a - b);
+
+        html += "<h3 style='font-family: Poppins, sans-serif; margin-bottom: 0.75rem;'>Per-Eval Breakdown</h3>";
+
+        const hasTime = runs.some(r => r.result && r.result.time_seconds != null);
+        const hasErrors = runs.some(r => r.result && r.result.errors > 0);
+
+        for (const evalId of evalIds) {
+          const evalRuns = runs.filter(r => r.eval_id === evalId);
+          const evalName = evalRuns[0] && evalRuns[0].eval_name ? evalRuns[0].eval_name : "Eval " + evalId;
+
+          html += "<h4 style='font-family: Poppins, sans-serif; margin: 1rem 0 0.5rem; color: var(--text);'>" + escapeHtml(evalName) + "</h4>";
+          html += '<table class="benchmark-table">';
+          html += "<thead><tr><th>Config</th><th>Run</th><th>Pass Rate</th>";
+          if (hasTime) html += "<th>Time (s)</th>";
+          if (hasErrors) html += "<th>Crashes During Execution</th>";
+          html += "</tr></thead>";
+          html += "<tbody>";
+
+          // Group by config and render with average rows
+          const configGroups = [...new Set(evalRuns.map(r => r.configuration))];
+          for (let ci = 0; ci < configGroups.length; ci++) {
+            const config = configGroups[ci];
+            const configRuns = evalRuns.filter(r => r.configuration === config);
+            if (configRuns.length === 0) continue;
+
+            const rowClass = ci === 0 ? "benchmark-row-with" : "benchmark-row-without";
+            const configLabel = config.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+
+            for (const run of configRuns) {
+              const r = run.result || {};
+              const prClass = r.pass_rate >= 0.8 ? "benchmark-delta-positive" : r.pass_rate < 0.5 ? "benchmark-delta-negative" : "";
+              html += '<tr class="' + rowClass + '">';
+              html += "<td>" + configLabel + "</td>";
+              html += "<td>" + run.run_number + "</td>";
+              html += '<td class="' + prClass + '">' + ((r.pass_rate || 0) * 100).toFixed(0) + "% (" + (r.passed || 0) + "/" + (r.total || 0) + ")</td>";
+              if (hasTime) html += "<td>" + (r.time_seconds != null ? r.time_seconds.toFixed(1) : "—") + "</td>";
+              if (hasErrors) html += "<td>" + (r.errors || 0) + "</td>";
+              html += "</tr>";
+            }
+
+            // Average row
+            const rates = configRuns.map(r => (r.result || {}).pass_rate || 0);
+            const avgRate = rates.reduce((a, b) => a + b, 0) / rates.length;
+            const avgPrClass = avgRate >= 0.8 ? "benchmark-delta-positive" : avgRate < 0.5 ? "benchmark-delta-negative" : "";
+            html += '<tr class="benchmark-row-avg ' + rowClass + '">';
+            html += "<td>" + configLabel + "</td>";
+            html += "<td>Avg</td>";
+            html += '<td class="' + avgPrClass + '">' + (avgRate * 100).toFixed(0) + "%</td>";
+            if (hasTime) {
+              const times = configRuns.map(r => (r.result || {}).time_seconds).filter(t => t != null);
+              html += "<td>" + (times.length ? (times.reduce((a, b) => a + b, 0) / times.length).toFixed(1) : "—") + "</td>";
+            }
+            if (hasErrors) html += "<td></td>";
+            html += "</tr>";
+          }
+          html += "</tbody></table>";
+
+          // Per-assertion detail for this eval
+          const runsWithExpectations = {};
+          for (const config of configGroups) {
+            runsWithExpectations[config] = evalRuns.filter(r => r.configuration === config && r.expectations && r.expectations.length > 0);
+          }
+          const hasAnyExpectations = Object.values(runsWithExpectations).some(runs => runs.length > 0);
+          if (hasAnyExpectations) {
+            // Collect all unique assertion texts across all configs
+            const allAssertions = [];
+            const seen = new Set();
+            for (const config of configGroups) {
+              for (const run of runsWithExpectations[config]) {
+                for (const exp of (run.expectations || [])) {
+                  if (!seen.has(exp.text)) {
+                    seen.add(exp.text);
+                    allAssertions.push(exp.text);
+                  }
+                }
+              }
+            }
+
+            html += '<table class="benchmark-table" style="margin-top: 0.5rem;">';
+            html += "<thead><tr><th>Assertion</th>";
+            for (const config of configGroups) {
+              const label = config.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+              html += "<th>" + escapeHtml(label) + "</th>";
+            }
+            html += "</tr></thead><tbody>";
+
+            for (const assertionText of allAssertions) {
+              html += "<tr><td>" + escapeHtml(assertionText) + "</td>";
+
+              for (const config of configGroups) {
+                html += "<td>";
+                for (const run of runsWithExpectations[config]) {
+                  const exp = (run.expectations || []).find(e => e.text === assertionText);
+                  if (exp) {
+                    const cls = exp.passed ? "benchmark-delta-positive" : "benchmark-delta-negative";
+                    const icon = exp.passed ? "\u2713" : "\u2717";
+                    html += '<span class="' + cls + '" title="Run ' + run.run_number + ': ' + escapeHtml(exp.evidence || "") + '">' + icon + "</span> ";
+                  } else {
+                    html += "— ";
+                  }
+                }
+                html += "</td>";
+              }
+              html += "</tr>";
+            }
+            html += "</tbody></table>";
+          }
+        }
+      }
+
+      // Notes
+      if (notes.length > 0) {
+        html += '<div class="benchmark-notes">';
+        html += "<h3>Analysis Notes</h3>";
+        html += "<ul>";
+        for (const note of notes) {
+          html += "<li>" + escapeHtml(note) + "</li>";
+        }
+        html += "</ul></div>";
+      }
+
+      container.innerHTML = html;
+    }
+
+    // ---- Start ----
+    init();
+    renderBenchmark();
+  </script>
+</body>
+</html>

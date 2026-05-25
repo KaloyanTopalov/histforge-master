@@ -1,0 +1,20 @@
+# Normalize line endings to LF in the repo on commit.
+# Keeps diffs clean across WSL/Windows/macOS checkouts of this repo.
+* text=auto eol=lf
+
+# Known binaries — never touch.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.mp3 binary
+*.mp4 binary
+*.wav binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.zip binary
+*.gz binary
+*.db binary

@@ -1,0 +1,35 @@
+{
+  "expectations": [
+    {
+      "text": "Output organizes files into logical categories",
+      "passed": true,
+      "evidence": "Sections: Entry Point Middleware, OAuth Login Flow, Supabase Client Helpers, API Route Authorization Checks, Database Schema, Database Authorization RLS, Protected Route Group, Related Directories Summary"
+    },
+    {
+      "text": "Finds middleware.ts (auth middleware)",
+      "passed": true,
+      "evidence": "Listed: 'lib/supabase/middleware.ts — The updateSession function'"
+    },
+    {
+      "text": "Finds app/login/page.tsx (login page)",
+      "passed": true,
+      "evidence": "Listed: 'app/login/page.tsx — Login page. Renders LoginCard'"
+    },
+    {
+      "text": "Finds app/auth/callback/route.ts (OAuth callback)",
+      "passed": true,
+      "evidence": "Listed: 'app/auth/callback/route.ts — OAuth callback route'"
+    },
+    {
+      "text": "Finds lib/supabase/server.ts or client.ts",
+      "passed": true,
+      "evidence": "Both listed: 'lib/supabase/server.ts — Server-side Supabase client factory' and 'lib/supabase/client.ts — Browser-side Supabase client factory'"
+    },
+    {
+      "text": "Finds SQL migration files with RLS policies",
+      "passed": true,
+      "evidence": "Listed: 'supabase/migrations/004_rls_policies.sql — Defines all RLS policies' with detailed policy descriptions"
+    }
+  ],
+  "summary": { "passed": 6, "failed": 0, "total": 6, "pass_rate": 1.0 }
+}

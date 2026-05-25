@@ -1,0 +1,17 @@
+# Operator-local Python venv
+venv/
+.venv/
+
+# Voice files (operator-supplied; not committed)
+voices/*
+reference_audio/*
+!voices/.gitkeep
+!reference_audio/.gitkeep
+
+# Bytecode + pip cache
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Hugging Face cache (if HF_HOME is set inside this dir)
+hf_cache/

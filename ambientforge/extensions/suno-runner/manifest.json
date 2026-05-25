@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "AmbientForge Suno Runner",
+  "version": "0.1.0",
+  "description": "Polls the AmbientForge bridge on localhost:7341 and drives suno.com to fulfill submit / poll / download / credits actions.",
+  "permissions": ["storage", "alarms", "tabs", "scripting"],
+  "host_permissions": [
+    "https://suno.com/*",
+    "https://*.suno.com/*",
+    "https://studio-api.suno.ai/*",
+    "http://localhost:7341/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://suno.com/*", "https://*.suno.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "AmbientForge Suno Runner",
+    "default_popup": "popup.html"
+  }
+}

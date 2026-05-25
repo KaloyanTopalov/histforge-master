@@ -1,0 +1,294 @@
+{
+  "modules": [
+    "script",
+    "tts",
+    "image",
+    "video",
+    "glue",
+    "music_video"
+  ],
+  "steps": [
+    {
+      "name": "research_outline",
+      "module": "script",
+      "label": "Research Outline",
+      "description": "Generates a chapter-by-chapter outline from title + topic.",
+      "inputs": [],
+      "produces": [
+        "script/01_outline.md"
+      ],
+      "for_each": null
+    },
+    {
+      "name": "write_hook",
+      "module": "script",
+      "label": "Write Hook",
+      "description": "Drafts the cold-open hook from the outline.",
+      "inputs": [
+        "script/01_outline.md"
+      ],
+      "produces": [
+        "script/03_hook.md"
+      ],
+      "for_each": null
+    },
+    {
+      "name": "write_chapters",
+      "module": "script",
+      "label": "Write Chapters",
+      "description": "Drafts each chapter in batches against the running story-so-far summary.",
+      "inputs": [
+        "script/01_outline.md"
+      ],
+      "produces": [
+        "script/04_chapter_*.md",
+        "script/04_outline_structured.json",
+        "script/story_so_far.md"
+      ],
+      "for_each": "chapters"
+    },
+    {
+      "name": "assemble_script",
+      "module": "glue",
+      "label": "Assemble Script",
+      "description": "Concatenates the hook and chapter files into the full script.",
+      "inputs": [
+        "script/03_hook.md",
+        "script/04_chapter_*.md"
+      ],
+      "produces": [
+        "script/full_script.md"
+      ],
+      "for_each": null
+    },
+    {
+      "name": "voiceover",
+      "module": "tts",
+      "label": "Voiceover",
+      "description": "Synthesizes the script narration via the TTS provider.",
+      "inputs": [
+        "script/full_script.md"
+      ],
+      "produces": [
+        "audio/narration.mp3",
+        "audio/narration.srt",
+        "audio/narration.json"
+      ],
+      "for_each": null
+    },
+    {
+      "name": "align",
+      "module": "glue",
+      "label": "Align",
+      "description": "Aligns the script against narration audio with aeneas.",
+      "inputs": [
+        "script/full_script.md",
+        "audio/narration.mp3"
+      ],
+      "produces": [
+        "alignment/alignment.json"
+      ],
+      "for_each": null
+    },
+    {
+      "name": "chunk_clips_then_images",
+      "module": "glue",
+      "label": "Chunk (clips + images)",
+      "description": "Splits aligned sentences into a leading run of clip chunks and a body of image chunks.",
+      "inputs": [
+        "alignment/alignment.json"
+      ],
+      "produces": [
+        "chunks/chunks.json"
+      ],
+      "for_each": null
+    },
+    {
+      "name": "chunk_images_only",
+      "module": "glue",
+      "label": "Chunk (images only)",
+      "description": "Splits aligned sentences into image-paired chunks covering the full narration.",
+      "inputs": [
+        "alignment/alignment.json"
+      ],
+      "produces": [
+        "chunks/chunks.json"
+      ],
+      "for_each": null
+    },
+    {
+      "name": "chunk_clips_only",
+      "module": "glue",
+      "label": "Chunk (clips only)",
+      "description": "Splits aligned sentences into clip-paired chunks covering the full narration.",
+      "inputs": [
+        "alignment/alignment.json"
+      ],
+      "produces": [
+        "chunks/chunks.json"
+      ],
+      "for_each": null
+    },
+    {
+      "name": "generate_visual_prompts",
+      "module": "glue",
+      "label": "Generate visual prompts",
+      "description": "Generates a visual prompt for each chunk via batched LLM calls.",
+      "inputs": [
+        "chunks/chunks.json"
+      ],
+      "produces": [
+        "chunks/chunks.json"
+      ],
+      "for_each": "chunks"
+    },
+    {
+      "name": "generate_images",
+      "module": "image",
+      "label": "Generate images",
+      "description": "Generates images for each image chunk via the workflow's image provider.",
+      "inputs": [
+        "chunks/chunks.json"
+      ],
+      "produces": [
+        "images/*.png"
+      ],
+      "for_each": "chunks"
+    },
+    {
+      "name": "generate_clips",
+      "module": "video",
+      "label": "Generate clips",
+      "description": "Generates a video clip for each clip chunk via the workflow's video provider.",
+      "inputs": [
+        "chunks/chunks.json"
+      ],
+      "produces": [
+        "videos/clip/*.mp4"
+      ],
+      "for_each": "chunks"
+    },
+    {
+      "name": "render",
+      "module": "glue",
+      "label": "Render",
+      "description": "Renders the final video with ffmpeg from chunks, audio, images, and clips.",
+      "inputs": [
+        "chunks/chunks.json",
+        "audio/narration.mp3",
+        "images/*.png",
+        "videos/clip/*.mp4"
+      ],
+      "produces": [
+        "final.mp4"
+      ],
+      "for_each": null
+    },
+    {
+      "name": "cleanup",
+      "module": "glue",
+      "label": "Cleanup",
+      "description": "Deletes intermediate artifacts; keeps final.mp4 and full_script.md.",
+      "inputs": [],
+      "produces": [],
+      "for_each": null
+    },
+    {
+      "name": "generate_loop_image",
+      "module": "music_video",
+      "label": "Generate loop image",
+      "description": "Enqueues an image-hitl task on the magnific_queue and waits for the operator to pick a Magnific variation.",
+      "inputs": [],
+      "produces": [
+        "loop_image.png"
+      ],
+      "for_each": null
+    },
+    {
+      "name": "generate_loop_clip",
+      "module": "music_video",
+      "label": "Generate loop clip",
+      "description": "Enqueues an image-to-video task on the magnific_queue and waits for the Magnific Seedance executor to deliver the looped clip.",
+      "inputs": [
+        "loop_image.png"
+      ],
+      "produces": [
+        "loop_clip.mp4"
+      ],
+      "for_each": null
+    },
+    {
+      "name": "make_thumbnail",
+      "module": "music_video",
+      "label": "Make thumbnail",
+      "description": "Crops loop_image.png into a 1920×1080 thumbnail.jpg via ffmpeg.",
+      "inputs": [
+        "loop_image.png"
+      ],
+      "produces": [
+        "thumbnail.jpg"
+      ],
+      "for_each": null
+    },
+    {
+      "name": "generate_music",
+      "module": "music_video",
+      "label": "Generate music",
+      "description": "Stub: no-op until Plan 3 wires the Suno queue.",
+      "inputs": [],
+      "produces": [],
+      "for_each": null
+    },
+    {
+      "name": "download_music",
+      "module": "music_video",
+      "label": "Download music",
+      "description": "Stub: synthesises N 1-second silent WAVs (one per song_count) under songs/.",
+      "inputs": [],
+      "produces": [
+        "songs/"
+      ],
+      "for_each": null
+    },
+    {
+      "name": "render_music_video",
+      "module": "music_video",
+      "label": "Render music video",
+      "description": "Muxes the looped Magnific clip with silent audio (Plan 2) or the concatenated Suno songs (Plan 3) into final.mp4.",
+      "inputs": [
+        "loop_clip.mp4",
+        "songs/"
+      ],
+      "produces": [
+        "final.mp4"
+      ],
+      "for_each": null
+    }
+  ],
+  "providers": {
+    "script": [
+      "openrouter",
+      "claude_cli"
+    ],
+    "tts": [
+      "ai33",
+      "genaipro",
+      "chatterbox",
+      "chatterbox-fast"
+    ],
+    "image": [
+      "comfyui",
+      "google_flow",
+      "magnific"
+    ],
+    "video": [
+      "comfyui",
+      "google_flow",
+      "magnific"
+    ]
+  },
+  "kinds": [
+    "narrative",
+    "music_video"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "eval_id": 2,
+  "eval_name": "locator-admin-panel",
+  "prompt": "Locate all admin panel related files",
+  "assertions": [
+    {
+      "id": "files-grouped-by-purpose",
+      "description": "Output organizes files into logical categories",
+      "type": "qualitative"
+    },
+    {
+      "id": "finds-admin-page",
+      "description": "Finds app/(protected)/admin/page.tsx",
+      "type": "programmatic"
+    },
+    {
+      "id": "finds-admin-api",
+      "description": "Finds files under app/api/admin/",
+      "type": "programmatic"
+    },
+    {
+      "id": "finds-admin-components",
+      "description": "Finds files under components/admin/",
+      "type": "programmatic"
+    },
+    {
+      "id": "no-content-analysis",
+      "description": "Focuses on file locations, not deep analysis of how code works",
+      "type": "qualitative"
+    }
+  ]
+}

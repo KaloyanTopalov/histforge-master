@@ -1,0 +1,30 @@
+{
+  "expectations": [
+    {
+      "text": "Includes file:line references for key claims",
+      "passed": true,
+      "evidence": "Extensive references: 'lib/rag/embed.ts:11-18', 'lib/rag/retrieve.ts:68-69', 'lib/rag/retrieve.ts:71-77', 'lib/rag/retrieve.ts:79-83', 'supabase/migrations/006_match_documents.sql:17-26', etc."
+    },
+    {
+      "text": "Explains how query text is converted to embeddings (model, dimensions)",
+      "passed": true,
+      "evidence": "Section '1. Query Embedding': 'openai.embeddings.create with model text-embedding-3-large... number[] of 3072 dimensions'"
+    },
+    {
+      "text": "Explains the pgvector similarity search mechanism",
+      "passed": true,
+      "evidence": "Section '4. Database Similarity Search': 'cosine similarity as 1 - (d.embedding <=> query_embedding) — the <=> operator is pgvector's cosine distance, so subtracting from 1 converts distance to similarity'"
+    },
+    {
+      "text": "References RAG_MATCH_COUNT or RAG_MATCH_THRESHOLD configuration",
+      "passed": true,
+      "evidence": "Section '2. Configuration Read': 'RAG_MATCH_COUNT — parsed as integer... controls how many documents to return' and 'RAG_MATCH_THRESHOLD — parsed as float... controls the minimum similarity score'. Also in Configuration section with defaults."
+    },
+    {
+      "text": "Does not suggest code changes or critique the implementation",
+      "passed": true,
+      "evidence": "Purely descriptive. Key Patterns section documents what exists (lazy singletons, graceful degradation, service role bypass, skip on empty query) without suggesting changes."
+    }
+  ],
+  "summary": { "passed": 5, "failed": 0, "total": 5, "pass_rate": 1.0 }
+}

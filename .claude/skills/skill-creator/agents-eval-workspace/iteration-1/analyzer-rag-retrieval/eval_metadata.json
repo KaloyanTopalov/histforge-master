@@ -1,0 +1,32 @@
+{
+  "eval_id": 4,
+  "eval_name": "analyzer-rag-retrieval",
+  "prompt": "How does the RAG retrieval process work - from query embedding to results?",
+  "assertions": [
+    {
+      "id": "has-file-line-references",
+      "description": "Includes file:line references for key claims",
+      "type": "programmatic"
+    },
+    {
+      "id": "describes-embedding",
+      "description": "Explains how query text is converted to embeddings (model, dimensions)",
+      "type": "programmatic"
+    },
+    {
+      "id": "describes-similarity-search",
+      "description": "Explains the pgvector similarity search mechanism",
+      "type": "programmatic"
+    },
+    {
+      "id": "mentions-match-count-threshold",
+      "description": "References RAG_MATCH_COUNT or RAG_MATCH_THRESHOLD configuration",
+      "type": "programmatic"
+    },
+    {
+      "id": "no-improvement-suggestions",
+      "description": "Does not suggest code changes or critique the implementation",
+      "type": "qualitative"
+    }
+  ]
+}

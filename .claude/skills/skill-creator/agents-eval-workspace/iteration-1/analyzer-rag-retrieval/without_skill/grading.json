@@ -1,0 +1,30 @@
+{
+  "expectations": [
+    {
+      "text": "Includes file:line references for key claims",
+      "passed": true,
+      "evidence": "References like '(lines 58-67)', '(lines 64-106)', '(lines 92-105)', 'lines 74-78, 93-132', '(lines 69-96)'. File-level references throughout."
+    },
+    {
+      "text": "Explains how query text is converted to embeddings (model, dimensions)",
+      "passed": true,
+      "evidence": "Stage 2: 'text-embedding-3-large model... 3072-dimensional vector embedding', 'always uses OpenAI regardless of which LLM provider is configured'"
+    },
+    {
+      "text": "Explains the pgvector similarity search mechanism",
+      "passed": true,
+      "evidence": "Stage 3b: 'cosine similarity... 1 - (embedding <=> query_embedding) using pgvector's <=> (cosine distance) operator'"
+    },
+    {
+      "text": "References RAG_MATCH_COUNT or RAG_MATCH_THRESHOLD configuration",
+      "passed": true,
+      "evidence": "Table in Stage 3a lists both with sources and defaults. Configuration section has both with default values 5 and 0.7."
+    },
+    {
+      "text": "Does not suggest code changes or critique the implementation",
+      "passed": true,
+      "evidence": "Purely descriptive throughout. No suggestions, critiques, or improvement recommendations."
+    }
+  ],
+  "summary": { "passed": 5, "failed": 0, "total": 5, "pass_rate": 1.0 }
+}

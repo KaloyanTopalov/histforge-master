@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "AmbientForge Freepik Runner",
+  "version": "0.1.0",
+  "description": "AmbientForge executor that polls the freepik-bridge on localhost:7344 and drives www.freepik.com/ai/image-generator to produce ambient-video source.jpg renders via Seedream 5.",
+  "permissions": [
+    "storage",
+    "alarms",
+    "tabs",
+    "scripting",
+    "debugger"
+  ],
+  "host_permissions": [
+    "https://www.freepik.com/*",
+    "https://*.freepik.com/*",
+    "https://www.magnific.com/*",
+    "https://*.magnific.com/*",
+    "https://magnific.ai/*",
+    "https://*.magnific.ai/*",
+    "https://*.freepikcompany.com/*",
+    "https://*.cdnpk.net/*"
+  ],
+  "optional_host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.freepik.com/*",
+        "https://www.magnific.com/*",
+        "https://magnific.ai/*",
+        "https://*.magnific.ai/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "AmbientForge Freepik Runner 0.1.0",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "logo-16.png",
+      "48": "logo-48.png",
+      "128": "logo-128.png"
+    }
+  },
+  "icons": {
+    "16": "logo-16.png",
+    "48": "logo-48.png",
+    "128": "logo-128.png"
+  }
+}

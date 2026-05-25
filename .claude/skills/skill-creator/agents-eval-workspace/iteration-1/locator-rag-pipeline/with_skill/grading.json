@@ -1,0 +1,35 @@
+{
+  "expectations": [
+    {
+      "text": "Output organizes files into logical categories (implementation, config, API routes, etc.)",
+      "passed": true,
+      "evidence": "Output has clear sections: Core RAG Implementation, API Route, Database Migrations, Source Display UI Components, Configuration, Documentation, Related Directories"
+    },
+    {
+      "text": "Listed file paths actually exist in the project",
+      "passed": true,
+      "evidence": "All listed paths (lib/rag/embed.ts, lib/rag/retrieve.ts, app/api/chat/route.ts, etc.) are known project files per CLAUDE.md architecture"
+    },
+    {
+      "text": "Finds lib/rag/embed.ts (the embedding module)",
+      "passed": true,
+      "evidence": "Listed under Core RAG Implementation: 'lib/rag/embed.ts - Query embedding using OpenAI text-embedding-3-large (3072 dimensions)'"
+    },
+    {
+      "text": "Finds lib/rag/retrieve.ts (the retrieval module)",
+      "passed": true,
+      "evidence": "Listed under Core RAG Implementation: 'lib/rag/retrieve.ts - pgvector similarity search'"
+    },
+    {
+      "text": "Finds app/api/chat/route.ts (the API route that uses RAG)",
+      "passed": true,
+      "evidence": "Listed under API Route: 'app/api/chat/route.ts - Imports retrieveContext from lib/rag/retrieve'"
+    },
+    {
+      "text": "Focuses on file locations, not deep analysis of how code works",
+      "passed": true,
+      "evidence": "Each file has a one-line description of its role. No deep code tracing, no line numbers, no function-level analysis."
+    }
+  ],
+  "summary": { "passed": 6, "failed": 0, "total": 6, "pass_rate": 1.0 }
+}

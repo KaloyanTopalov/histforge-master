@@ -1,0 +1,62 @@
+{
+  "name": "ambientforge",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "concurrently -n web,worker,suno-br,flow-br,dk-br -c blue,magenta,cyan,yellow,green \"next dev -p 3003\" \"tsx watch src/worker/runner.ts\" \"tsx extensions/suno-runner/bridge.ts\" \"tsx extensions/flow-runner/bridge.ts\" \"tsx extensions/distrokid-runner/bridge.ts\"",
+    "dev:web": "next dev -p 3003",
+    "dev:worker": "tsx watch src/worker/runner.ts",
+    "build": "next build",
+    "start": "concurrently -n web,worker -c blue,magenta \"next start -p 3003\" \"tsx src/worker/runner.ts\"",
+    "lint": "next lint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:init": "tsx scripts/db-init.ts",
+    "db:seed": "tsx scripts/db-seed.ts",
+    "suno:bridge": "tsx extensions/suno-runner/bridge.ts",
+    "suno:login": "tsx scripts/suno-login.ts",
+    "flow:bridge": "tsx extensions/flow-runner/bridge.ts",
+    "flow:login": "tsx scripts/flow-login.ts",
+    "freepik:bridge": "tsx extensions/freepik-runner/bridge.ts",
+    "freepik:login": "tsx scripts/freepik-login.ts",
+    "medieval": "concurrently -n suno,fp-br,chrome,worker -c cyan,green,blue,magenta \"tsx extensions/suno-runner/bridge.ts\" \"tsx extensions/freepik-runner/bridge.ts\" \"tsx scripts/freepik-login.ts\" \"tsx scripts/make-medieval-video.ts\"",
+    "distrokid:bridge": "tsx extensions/distrokid-runner/bridge.ts",
+    "distrokid:login": "tsx scripts/distrokid-login.ts",
+    "fixtures:setup": "tsx tests/fixtures/suno/setup.ts && tsx tests/fixtures/flow/setup.ts && tsx tests/fixtures/distrokid/setup.ts && tsx tests/fixtures/audio/setup.ts",
+    "postinstall": "node scripts/ensure-native-modules.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.5.0",
+    "dotenv": "^16.4.5",
+    "googleapis": "^144.0.0",
+    "next": "14.2.18",
+    "node-cron": "^3.0.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "ulid": "^2.3.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^20.16.10",
+    "@types/node-cron": "^3.0.11",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "@types/ws": "^8.18.1",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^8.2.2",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "14.2.18",
+    "playwright": "^1.60.0",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.13",
+    "tsc-alias": "^1.8.10",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2",
+    "vitest": "^1.6.0",
+    "ws": "^8.20.0"
+  }
+}

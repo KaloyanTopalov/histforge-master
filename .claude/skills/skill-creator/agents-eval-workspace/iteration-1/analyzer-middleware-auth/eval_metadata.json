@@ -1,0 +1,32 @@
+{
+  "eval_id": 5,
+  "eval_name": "analyzer-middleware-auth",
+  "prompt": "How does the middleware handle authentication and deactivated user blocking?",
+  "assertions": [
+    {
+      "id": "has-file-line-references",
+      "description": "Includes file:line references for key claims",
+      "type": "programmatic"
+    },
+    {
+      "id": "describes-session-refresh",
+      "description": "Explains how sessions are refreshed via Supabase",
+      "type": "programmatic"
+    },
+    {
+      "id": "describes-deactivated-blocking",
+      "description": "Explains how deactivated users are blocked (is_active check)",
+      "type": "programmatic"
+    },
+    {
+      "id": "describes-route-protection",
+      "description": "Explains which routes are protected and redirect behavior",
+      "type": "programmatic"
+    },
+    {
+      "id": "no-improvement-suggestions",
+      "description": "Does not suggest code changes or critique the implementation",
+      "type": "qualitative"
+    }
+  ]
+}

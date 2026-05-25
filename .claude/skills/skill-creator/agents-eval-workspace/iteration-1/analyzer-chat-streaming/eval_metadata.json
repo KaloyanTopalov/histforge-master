@@ -1,0 +1,37 @@
+{
+  "eval_id": 3,
+  "eval_name": "analyzer-chat-streaming",
+  "prompt": "How does the chat streaming API route work? Trace the data flow from request to response.",
+  "assertions": [
+    {
+      "id": "has-file-line-references",
+      "description": "Includes file:line references for key claims (e.g., route.ts:42)",
+      "type": "programmatic"
+    },
+    {
+      "id": "traces-data-flow",
+      "description": "Follows the code path step by step (request -> auth -> RAG -> LLM -> stream)",
+      "type": "qualitative"
+    },
+    {
+      "id": "mentions-auth-check",
+      "description": "Describes the authentication/session check in the route",
+      "type": "programmatic"
+    },
+    {
+      "id": "mentions-rag-integration",
+      "description": "Describes how RAG retrieval is integrated into the chat flow",
+      "type": "programmatic"
+    },
+    {
+      "id": "mentions-streaming",
+      "description": "Describes the streaming response mechanism (streamText or similar)",
+      "type": "programmatic"
+    },
+    {
+      "id": "no-improvement-suggestions",
+      "description": "Does not suggest code changes, improvements, or critique the implementation",
+      "type": "qualitative"
+    }
+  ]
+}

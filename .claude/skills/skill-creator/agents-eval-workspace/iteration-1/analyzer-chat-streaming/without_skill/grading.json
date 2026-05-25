@@ -1,0 +1,35 @@
+{
+  "expectations": [
+    {
+      "text": "Includes file:line references for key claims (e.g., route.ts:42)",
+      "passed": true,
+      "evidence": "References like 'lines 58-67', 'line 33-37' used in Step 2b, 2c, etc. Also includes file-level references like 'File: app/api/chat/route.ts'. Less granular than the with_skill version but present."
+    },
+    {
+      "text": "Follows the code path step by step (request -> auth -> RAG -> LLM -> stream)",
+      "passed": true,
+      "evidence": "Detailed sequence diagram covering: ChatInput -> ChatArea.handleSend -> useChat POST -> API Route steps 1-11 -> stream consumption -> MessageList rendering. Covers both client and server side."
+    },
+    {
+      "text": "Describes the authentication/session check in the route",
+      "passed": true,
+      "evidence": "Step 2a 'Authentication and Authorization': verify user identity, check active status, verify conversation ownership"
+    },
+    {
+      "text": "Describes how RAG retrieval is integrated into the chat flow",
+      "passed": true,
+      "evidence": "Step 2c 'RAG Retrieval' with 3 sub-steps: embed query, vector similarity search, build sources and context"
+    },
+    {
+      "text": "Describes the streaming response mechanism (streamText or similar)",
+      "passed": true,
+      "evidence": "Step 2f 'Stream the LLM Response' with code example and 6-point breakdown of createUIMessageStream, convertToModelMessages, streamText, writer.merge, source-url parts, and createUIMessageStreamResponse"
+    },
+    {
+      "text": "Does not suggest code changes, improvements, or critique the implementation",
+      "passed": true,
+      "evidence": "Purely descriptive throughout. No improvement suggestions or critiques."
+    }
+  ],
+  "summary": { "passed": 6, "failed": 0, "total": 6, "pass_rate": 1.0 }
+}

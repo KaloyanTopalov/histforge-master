@@ -1,0 +1,23 @@
+<!-- mock-response: {"tracks":[{"trackNumber":1,"title":"Cold Steel","lyrics":"Verse 1\nI come from the cold side, where the streets stay frozen\nEvery word that I write is a path that I've chosen\nMicrophone in my hand like a torch in the dark\nLeave a flame on the track, let it ignite the spark\n\nChorus\nCold steel, hot fire, that's the way I move\nNothing left to prove, only paths to choose"},{"trackNumber":2,"title":"Night Drive","lyrics":"Verse 1\nNeon on the asphalt, midnight in my chest\nCity never sleeping, never let me rest\nWindow down, bass up, every stoplight a verse\nWriting my own story before it gets worse\n\nChorus\nNight drive, slow tide, riding through the rain\nEvery mile a memory, every memory a chain"},{"trackNumber":3,"title":"Underground","lyrics":"Verse 1\nUnderground where the real ones live and breathe\nNo billboards, no contracts, just the words I leave\nEvery cypher a battlefield, every line a sword\nNothing handed to me, every inch I scored\n\nChorus\nUnderground, holding ground, this is where we stand\nReal recognize real, that's the brotherhood plan"},{"trackNumber":4,"title":"Glass House","lyrics":"Verse 1\nThey live in glass houses but they throwing stones\nReading from the script while I write my own\nCritics in the cheap seats with no skin in the game\nI'd rather lose loud than win without a name\n\nChorus\nGlass house, loud mouth, all of that will break\nReal ones know the difference, all the rest are fake"},{"trackNumber":5,"title":"Hourglass","lyrics":"Verse 1\nHourglass tipping, every grain a regret\nTime is the one debt you can never forget\nYesterday's promise, tomorrow's tax\nCount your blessings now before the count collapse\n\nChorus\nHourglass, slipping fast, can't outrun the sand\nMake the moment matter, make it understand"},{"trackNumber":6,"title":"Slow Burn","lyrics":"Verse 1\nSlow burn, no return, this is patience pay\nEvery setback teaches me a smarter way\nQuiet grind louder than the loudest noise\nReal weight ain't measured by the toys\n\nChorus\nSlow burn, lessons learn, pressure makes the steel\nThis ain't lucky timing, this is what is real"},{"trackNumber":7,"title":"Concrete Roses","lyrics":"Verse 1\nConcrete roses growing where they said nothing could\nProving every doubter that they got it wrong, they should\nLook a little closer at the cracks before they speak\nHardest places hide the strongest peaks\n\nChorus\nConcrete roses, broken poses, beauty in the gray\nEvery hood a garden if you find the right way"},{"trackNumber":8,"title":"Echo Chamber","lyrics":"Verse 1\nEcho chamber feedback, all the same complaints\nWhile the real conversation happens in the saints\nClimb above the noise, listen for the truth\nWisdom older than the crowd, ancient roots\n\nChorus\nEcho chamber, stranger danger, hearing what you want\nReal ones step outside, take the road that's gaunt"},{"trackNumber":9,"title":"Weight Of Crowns","lyrics":"Verse 1\nWeight of crowns heavier than a thousand chains\nUneasy lies the head that calls and reigns\nThrone room cold, every advisor a knife\nKing in his own kingdom is a lonely life\n\nChorus\nWeight of crowns, sit it down, take a breath and see\nRoyalty's a posture, freedom's where to be"},{"trackNumber":10,"title":"Last Light","lyrics":"Verse 1\nLast light fading on a city that I built\nEvery brick a story, every story tilt\nLook back, I'm standing on the man I used to be\nClosing out the chapter that finally set me free\n\nChorus\nLast light, fade to night, dawn is on the way\nEvery ending teaches you another way to stay"}]} -->
+
+You are writing {{tracksPerAlbum}} track briefs for the rap album "{{album.albumTitle}}" by "{{channel.displayName}}".
+
+Album style: {{album.sunoStylePrompt}}
+Genre: {{album.primaryGenre}}
+Channel voice / style seed (may be empty): {{channel.sunoStylePrompt}}
+
+Return ONLY valid JSON, no prose, no code fences, of this exact shape:
+{
+  "tracks": [
+    { "trackNumber": 1, "title": "...", "lyrics": "..." },
+    ... (exactly {{tracksPerAlbum}} entries, trackNumber 1..{{tracksPerAlbum}} in order)
+  ]
+}
+
+Lyrics constraints (rap-specific):
+- Every track has full vocal lyrics — at least one verse + chorus, ~12-32 lines total.
+- Use distinct sections labeled "Verse 1", "Chorus", "Verse 2", "Bridge", etc. on their own lines.
+- Match the album's energy (boom bap = lyric-forward, drill = punchy short bars, trap = melodic hooks). Stay coherent across tracks (same protagonist voice).
+- No profanity placeholders like [explicit] — write the words you mean. AmbientForge ships explicit=false for now, so keep the language cinematic, not gratuitous.
+
+Title constraints: 1-4 words, evocative ("Cold Steel", "Night Drive", "Glass House"). No surrounding quotes.

@@ -1,0 +1,14 @@
+import { openDb } from '../src/lib/db';
+const db = openDb();
+const ALBUM_ID = '01KQCD4R12J9WB2YKVR105HGJH';
+const album = db.prepare('SELECT * FROM albums WHERE id = ?').get(ALBUM_ID);
+console.log('=== album row ===');
+console.log(JSON.stringify(album, null, 2));
+const tracks = db.prepare('SELECT track_number, title, suno_task_id, audio_path, duration FROM tracks WHERE album_id = ? ORDER BY track_number').all(ALBUM_ID) as Array<Record<string, unknown>>;
+console.log(`\n=== tracks (${tracks.length}) ===`);
+const submitted = tracks.filter((t) => t.suno_task_id !== null).length;
+const downloaded = tracks.filter((t) => t.audio_path !== null).length;
+console.log(`submitted (have suno_task_id): ${submitted}/${tracks.length}`);
+console.log(`downloaded (have audio_path): ${downloaded}/${tracks.length}`);
+for (const t of tracks.slice(0, 10)) console.log(`  ${t.track_number}: title="${t.title}" task=${t.suno_task_id ?? 'NULL'} dur=${t.duration}`);
+if (tracks.length > 10) console.log(`  ... and ${tracks.length - 10} more`);

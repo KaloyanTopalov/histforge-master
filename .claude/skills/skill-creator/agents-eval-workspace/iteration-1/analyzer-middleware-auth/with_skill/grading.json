@@ -1,0 +1,30 @@
+{
+  "expectations": [
+    {
+      "text": "Includes file:line references for key claims",
+      "passed": true,
+      "evidence": "Extensive: 'proxy.ts:4', 'proxy.ts:8-19', 'lib/supabase/middleware.ts:4', 'lib/supabase/middleware.ts:5-30', 'lib/supabase/middleware.ts:33-35', 'lib/supabase/middleware.ts:38-46', 'lib/supabase/middleware.ts:49-72', 'app/login/page.tsx:10-19'"
+    },
+    {
+      "text": "Explains how sessions are refreshed via Supabase",
+      "passed": true,
+      "evidence": "Section '3. Session Refresh': 'supabase.auth.getUser() is called... triggers setAll if tokens are updated. When the access token has expired, the Supabase client uses the refresh token to obtain new tokens'"
+    },
+    {
+      "text": "Explains how deactivated users are blocked (is_active check)",
+      "passed": true,
+      "evidence": "Section '5. Deactivated User Blocking': detailed 6-step sequence including signOut, URL clone, error param, redirect, cookie copying"
+    },
+    {
+      "text": "Explains which routes are protected and redirect behavior",
+      "passed": true,
+      "evidence": "Route Protection Summary table covering all path types with Auth check and Deactivated check columns. Also Section 1 lists matcher exclusions."
+    },
+    {
+      "text": "Does not suggest code changes or critique the implementation",
+      "passed": true,
+      "evidence": "Purely descriptive. Does not note that middleware may be broken (proxy.ts naming), simply documents what exists."
+    }
+  ],
+  "summary": { "passed": 5, "failed": 0, "total": 5, "pass_rate": 1.0 }
+}

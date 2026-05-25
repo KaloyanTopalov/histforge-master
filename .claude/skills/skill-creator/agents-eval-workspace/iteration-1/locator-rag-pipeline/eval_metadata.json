@@ -1,0 +1,37 @@
+{
+  "eval_id": 0,
+  "eval_name": "locator-rag-pipeline",
+  "prompt": "Find all files related to the RAG pipeline in this project",
+  "assertions": [
+    {
+      "id": "files-grouped-by-purpose",
+      "description": "Output organizes files into logical categories (implementation, config, API routes, etc.)",
+      "type": "qualitative"
+    },
+    {
+      "id": "paths-are-valid",
+      "description": "Listed file paths actually exist in the project",
+      "type": "programmatic"
+    },
+    {
+      "id": "finds-embed-ts",
+      "description": "Finds lib/rag/embed.ts (the embedding module)",
+      "type": "programmatic"
+    },
+    {
+      "id": "finds-retrieve-ts",
+      "description": "Finds lib/rag/retrieve.ts (the retrieval module)",
+      "type": "programmatic"
+    },
+    {
+      "id": "finds-chat-route",
+      "description": "Finds app/api/chat/route.ts (the API route that uses RAG)",
+      "type": "programmatic"
+    },
+    {
+      "id": "no-content-analysis",
+      "description": "Focuses on file locations, not deep analysis of how code works",
+      "type": "qualitative"
+    }
+  ]
+}

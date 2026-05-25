@@ -1,0 +1,35 @@
+{
+  "expectations": [
+    {
+      "text": "Includes file:line references for key claims (e.g., route.ts:42)",
+      "passed": true,
+      "evidence": "Extensive file:line refs throughout: 'route.ts:22', 'route.ts:23-41', 'route.ts:43-56', 'route.ts:58-67', 'lib/rag/embed.ts:11-18', etc. Every section has precise line references."
+    },
+    {
+      "text": "Follows the code path step by step (request -> auth -> RAG -> LLM -> stream)",
+      "passed": true,
+      "evidence": "18-step data flow section traces: POST arrives -> session validated -> is_active checked -> body parsed -> ownership verified -> text extracted -> RAG -> system prompt -> message persisted -> stream created -> LLM called -> tokens merged -> sources written -> response returned"
+    },
+    {
+      "text": "Describes the authentication/session check in the route",
+      "passed": true,
+      "evidence": "Section '1. Session Authentication (app/api/chat/route.ts:23-41)' details cookie-bound Supabase client, getUser(), is_active check, 401/403 responses"
+    },
+    {
+      "text": "Describes how RAG retrieval is integrated into the chat flow",
+      "passed": true,
+      "evidence": "Section '4. RAG Context Retrieval' with 4 sub-steps: embedding, vector search, source assembly, context text assembly. Plus section 5 on system prompt injection."
+    },
+    {
+      "text": "Describes the streaming response mechanism (streamText or similar)",
+      "passed": true,
+      "evidence": "Section '7. Stream Construction and LLM Call' details createUIMessageStream, convertToModelMessages, streamText, writer.merge, source-url stream parts, and createUIMessageStreamResponse"
+    },
+    {
+      "text": "Does not suggest code changes, improvements, or critique the implementation",
+      "passed": true,
+      "evidence": "Entire output is purely descriptive. No suggestions, critiques, or 'should' statements. Key Patterns section describes what exists, not what should change."
+    }
+  ],
+  "summary": { "passed": 6, "failed": 0, "total": 6, "pass_rate": 1.0 }
+}

@@ -1,0 +1,35 @@
+{
+  "expectations": [
+    {
+      "text": "Output organizes files into logical categories (implementation, config, API routes, etc.)",
+      "passed": true,
+      "evidence": "Output has sections: Core RAG Library, Database Schema, API Routes, UI Components, Supporting Files, Documentation, Data Flow Summary"
+    },
+    {
+      "text": "Listed file paths actually exist in the project",
+      "passed": true,
+      "evidence": "All 16+ listed paths match known project structure"
+    },
+    {
+      "text": "Finds lib/rag/embed.ts (the embedding module)",
+      "passed": true,
+      "evidence": "Listed: 'lib/rag/embed.ts - Role: Query embedding'"
+    },
+    {
+      "text": "Finds lib/rag/retrieve.ts (the retrieval module)",
+      "passed": true,
+      "evidence": "Listed: 'lib/rag/retrieve.ts - Role: Vector similarity search and source formatting'"
+    },
+    {
+      "text": "Finds app/api/chat/route.ts (the API route that uses RAG)",
+      "passed": true,
+      "evidence": "Listed: 'app/api/chat/route.ts - Role: The central orchestration point of the RAG pipeline'"
+    },
+    {
+      "text": "Focuses on file locations, not deep analysis of how code works",
+      "passed": false,
+      "evidence": "Output goes well beyond file locations into deep implementation analysis. For example, the retrieve.ts entry explains 4 sub-steps of retrieveContext(), describes Source type fields, and helper functions. The chat route entry has an 8-step numbered list of implementation details. Includes a full data flow diagram with internal function calls."
+    }
+  ],
+  "summary": { "passed": 5, "failed": 1, "total": 6, "pass_rate": 0.83 }
+}

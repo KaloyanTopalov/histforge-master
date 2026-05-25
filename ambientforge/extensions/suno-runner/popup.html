@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'" />
+    <title>AmbientForge Suno Runner</title>
+    <style>
+      body {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        font-size: 12px;
+        margin: 0;
+        padding: 12px;
+        width: 240px;
+      }
+      h1 {
+        font-size: 13px;
+        margin: 0 0 8px;
+      }
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 8px;
+        border-radius: 4px;
+        background: #f4f4f5;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #71717a;
+      }
+      .dot.ok {
+        background: #16a34a;
+      }
+      .dot.err {
+        background: #dc2626;
+      }
+      .row {
+        margin-top: 8px;
+        font-family: ui-monospace, monospace;
+        color: #52525b;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>AmbientForge Suno Runner</h1>
+    <div class="status">
+      <span id="dot" class="dot"></span>
+      <span id="label">Checking…</span>
+    </div>
+    <div class="row" id="bridge">bridge: localhost:7341</div>
+    <div class="row" id="info">Open suno.com and log in to begin polling.</div>
+    <script src="popup.js"></script>
+  </body>
+</html>

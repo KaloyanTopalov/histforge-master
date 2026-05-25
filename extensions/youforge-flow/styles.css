@@ -1,0 +1,358 @@
+/* YouForge Flow — popup styles */
+
+:root {
+  --bg: #0b0e1a;
+  --surface: #141828;
+  --surface-2: #1a1f35;
+  --border: #232842;
+  --border-strong: #2d3354;
+  --text: #e8eaf4;
+  --text-dim: #a4a9c0;
+  --text-mute: #6c7088;
+  --accent: #6366f1;
+  --accent-hover: #7c80f4;
+  --green: #10b981;
+  --green-hover: #059669;
+  --red: #ef4444;
+  --red-hover: #dc2626;
+  --blue: #3b82f6;
+  --blue-hover: #2563eb;
+  --radius: 8px;
+  --radius-sm: 6px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.container {
+  width: 520px;
+  padding: 18px 20px 20px;
+}
+
+/* ─── Header ─────────────────────────────────────────────────────────── */
+
+.header {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.logo-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-text {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.header-text h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.version {
+  font-size: 11px;
+  color: var(--text-mute);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Form ───────────────────────────────────────────────────────────── */
+
+.config-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.section-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.field-half {
+  max-width: 220px;
+}
+
+.field-hint {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--text-mute);
+  font-style: italic;
+}
+
+label {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+input[type="text"],
+input[type="url"],
+input[type="password"],
+input[type="number"] {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+input:hover:not(:focus) {
+  border-color: var(--border-strong);
+}
+
+input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+}
+
+input::placeholder {
+  color: var(--text-mute);
+}
+
+/* Hide number input spinners for a cleaner look */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] { -moz-appearance: textfield; }
+
+/* ─── Grid layouts ───────────────────────────────────────────────────── */
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+}
+
+/* ─── Checkboxes ─────────────────────────────────────────────────────── */
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 400;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* ─── Advanced fieldset ──────────────────────────────────────────────── */
+
+.advanced {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.advanced > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  user-select: none;
+}
+
+.advanced > summary::-webkit-details-marker { display: none; }
+
+.advanced > summary::before {
+  content: "›";
+  display: inline-block;
+  width: 10px;
+  font-size: 14px;
+  color: var(--text-mute);
+  transition: transform 0.15s ease;
+}
+
+.advanced[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.advanced[open] > summary {
+  margin-bottom: 12px;
+}
+
+.advanced-group + .advanced-group {
+  margin-top: 18px;
+}
+
+.advanced-group-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--accent-hover);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.advanced-group-title::before {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 12px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+/* ─── Action row & buttons ───────────────────────────────────────────── */
+
+.action-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.btn {
+  flex: 1;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background-color 0.15s ease, transform 0.05s ease, box-shadow 0.15s ease;
+  letter-spacing: 0.01em;
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Start — green (go) */
+.btn-start {
+  background: var(--green);
+  color: #fff;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.btn-start:hover:not(:disabled) { background: var(--green-hover); }
+
+/* Stop — red (halt) */
+.btn-stop {
+  background: var(--red);
+  color: #fff;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.btn-stop:hover:not(:disabled) { background: var(--red-hover); }
+
+/* Test — blue (info) */
+.btn-test {
+  background: var(--blue);
+  color: #fff;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.btn-test:hover:not(:disabled) { background: var(--blue-hover); }
+
+/* Grant — outlined accent */
+.btn-grant {
+  flex: 1 1 100%;
+  background: transparent;
+  border-color: var(--accent);
+  color: var(--accent-hover);
+}
+.btn-grant:hover:not(:disabled) {
+  background: rgba(99, 102, 241, 0.12);
+}
+
+/* ─── Status line ────────────────────────────────────────────────────── */
+
+.status-line {
+  margin-top: 14px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--text-dim);
+  min-height: 18px;
+  word-break: break-word;
+}
+
+/* ─── Self-test results ──────────────────────────────────────────────── */
+
+.self-test-results {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  list-style: none;
+  font-size: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.self-test-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 0;
+  word-break: break-word;
+}
+
+.self-test-dot {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.self-test-pass .self-test-dot { color: #4ade80; }
+.self-test-fail .self-test-dot { color: #f87171; }
+.self-test-skip .self-test-dot { color: var(--text-mute); }

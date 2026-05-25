@@ -1,0 +1,30 @@
+{
+  "expectations": [
+    {
+      "text": "Includes file:line references for key claims",
+      "passed": true,
+      "evidence": "References: 'lines 38-46', 'lines 48-72', 'lines 4-75'. File-level references throughout. Less granular than with_skill version."
+    },
+    {
+      "text": "Explains how sessions are refreshed via Supabase",
+      "passed": true,
+      "evidence": "'Session refresh' section: 'calls supabase.auth.getUser(), which reads the user's JWT from cookies... automatically refreshes it... setAll callback propagates any new tokens'"
+    },
+    {
+      "text": "Explains how deactivated users are blocked (is_active check)",
+      "passed": true,
+      "evidence": "'Deactivated User Blocking (lines 48-72)': 3-step description including signOut, cookie copying, redirect to /login?error=deactivated"
+    },
+    {
+      "text": "Explains which routes are protected and redirect behavior",
+      "passed": true,
+      "evidence": "Route Matcher Configuration section with regex pattern and exclusion list. Also describes API route guards that serve as defense-in-depth."
+    },
+    {
+      "text": "Does not suggest code changes or critique the implementation",
+      "passed": true,
+      "evidence": "While it identifies that middleware is disabled (a factual observation, not a suggestion), it does not recommend fixes. The observation about proxy.ts being dead code is descriptive."
+    }
+  ],
+  "summary": { "passed": 5, "failed": 0, "total": 5, "pass_rate": 1.0 }
+}

@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "AmbientForge Flow Runner",
+  "version": "0.1.0",
+  "description": "AmbientForge fork of YouForge Flow — dumb executor that polls the AmbientForge bridge on localhost:7343 and drives labs.google/fx/tools/flow to produce album cover and YouTube thumbnail images.",
+  "permissions": [
+    "storage",
+    "alarms",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://labs.google/*",
+    "https://aisandbox-pa.googleapis.com/*",
+    "https://storage.googleapis.com/*"
+  ],
+  "optional_host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://labs.google/*"],
+      "js": ["recaptcha-hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://labs.google/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://labs.google/*"],
+      "js": ["content-bridge.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "AmbientForge Flow Runner 0.1.0",
+    "default_icon": {
+      "16": "logo-16.png",
+      "48": "logo-48.png",
+      "128": "logo-128.png"
+    }
+  },
+  "icons": {
+    "16": "logo-16.png",
+    "48": "logo-48.png",
+    "128": "logo-128.png"
+  }
+}

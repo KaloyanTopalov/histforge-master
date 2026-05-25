@@ -1,0 +1,30 @@
+{
+  "expectations": [
+    {
+      "text": "Output organizes files into logical categories",
+      "passed": true,
+      "evidence": "Sections: Page & UI Components, API Routes, Database Migrations, Middleware, Related Files, Skill Documentation"
+    },
+    {
+      "text": "Finds app/(protected)/admin/page.tsx",
+      "passed": true,
+      "evidence": "Listed as 'Admin Page (entry point)'"
+    },
+    {
+      "text": "Finds files under app/api/admin/",
+      "passed": true,
+      "evidence": "Both users/route.ts and config/route.ts listed"
+    },
+    {
+      "text": "Finds files under components/admin/",
+      "passed": true,
+      "evidence": "Both user-management.tsx and system-prompt-editor.tsx listed"
+    },
+    {
+      "text": "Focuses on file locations, not deep analysis of how code works",
+      "passed": false,
+      "evidence": "Goes into implementation details: 'Client component. Receives a users array as prop, manages local copy in state. Renders a table with avatar, role badge...'. Describes state management patterns, API call patterns, and conditional rendering logic."
+    }
+  ],
+  "summary": { "passed": 4, "failed": 1, "total": 5, "pass_rate": 0.80 }
+}
