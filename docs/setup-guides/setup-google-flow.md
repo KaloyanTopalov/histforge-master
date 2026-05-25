@@ -49,14 +49,24 @@ Repeat steps 2–4 for each additional Google account, each in its own Chrome pr
 
 Optional but recommended for series that follow a single recurring character. The lock pins every image task to a saved Flow Character so the visual identity stays stable across chapters. One-time setup per Chrome profile — the value is stored in the extension popup.
 
-1. The character must already exist as a saved **Character** in Flow. Open `https://labs.google/fx/tools/flow` and confirm the Character is listed in the Characters panel.
-2. Open the Character so its reference image is rendered on the page.
-3. Press `F12` to open DevTools → **Elements** tab → locate the character's `<img>` element. Its `src` URL contains a query parameter like `?name=622f1a75-b4f1-45a8-9d77-948e0e93c8f7` (a UUID in 8-4-4-4-12 lowercase hex format — Google Flow's media ID).
-4. Copy just the UUID value (without `?name=`).
-5. In the YouForge Flow popup, paste it into **Character lock media ID** and click **Start** (or wait for the debounced save). The popup rejects the value with an inline error if it isn't a UUID.
-6. The next image task should attach the lock automatically. Verify in the extension service-worker console — every image task logs `[api] Task <id> ingredient=<UUID>`.
+Flow identifies a saved Character by an **entity ID** (a UUID). When Flow's own UI generates an image with a Character attached, the request body includes `referenceEntities: [{ entityId: <UUID> }]`. The extension reproduces that exact shape when the lock is set.
+
+Capturing your Character's entity ID:
+
+1. The character must already exist as a saved **Character** in Flow. Open `https://labs.google/fx/tools/flow` and confirm it's in the Characters panel.
+2. Open a Flow project where the Character is attached. (Empirical note: in Flow's UI, saved Characters can appear scoped to the project they were created in. We don't yet know whether entity IDs resolve cross-project at the API level — see Caveats below.)
+3. Press `F12` → **Network** tab → filter URL contains `aisandbox-pa.googleapis.com`. Clear the log.
+4. In the Flow UI, generate an image **using the Character** (any prompt). One of the network rows will be `POST flowMedia:batchGenerateImages`.
+5. Click that row → **Payload** tab → expand `requests[0]` → find `referenceEntities[0].entityId`. That UUID is your Character's entity ID.
+6. In the YouForge Flow popup, paste it into **Character lock entity ID**. The popup rejects the value with an inline error if it isn't a UUID. Save (debounced) or click **Start**.
+7. The next image task should attach the lock automatically. Verify in the extension service-worker console — every image task logs `[api] Task <id> characterLock=<UUID>`.
 
 To clear the lock, blank the field and save — the cache is cleared via a dedicated `setCharacterLockReference` message (an empty value can't round-trip through the schema-coercion path).
+
+**Caveats:**
+
+- The lock is wired by entity ID. We've matched Flow's own wire format (`referenceEntities[].entityId`), but we have **not yet verified** that an entity ID created in project A still resolves when referenced from project B. HistForge creates a fresh per-`(video, account)` Flow project for every video (see `extensions/youforge-flow/src/project-mgmt.js`), so if entity IDs turn out to be project-bound at the API, the lock will not bind to images generated from per-video projects. Test empirically before relying on it for a full production run.
+- The "media ID" terminology used in earlier drafts of this guide was wrong — Flow uses `mediaId` (or `name`) for uploaded reference images in `imageInputs`, and `entityId` for saved Characters in `referenceEntities`. They are two separate namespaces.
 
 ## 5. Smoke test end-to-end
 

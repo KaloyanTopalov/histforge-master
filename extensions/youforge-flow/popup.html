@@ -58,9 +58,9 @@
       <section class="section">
         <h2 class="section-title">Character lock</h2>
         <div class="field">
-          <label for="character-lock-reference">Character lock media ID</label>
+          <label for="character-lock-reference">Character lock entity ID</label>
           <input type="text" id="character-lock-reference" name="characterLockReference" placeholder="622f1a75-b4f1-45a8-9d77-948e0e93c8f7" spellcheck="false" autocomplete="off">
-          <p class="field-hint">Open your saved Character in Flow, inspect the image element, copy the <code>name</code> parameter from its src URL. Empty = no lock.</p>
+          <p class="field-hint">A saved Flow Character's <code>entityId</code> UUID. See <code>docs/setup-guides/setup-google-flow.md</code> &rarr; &quot;Step: Lock a character&quot; for how to capture it. Empty = no lock.</p>
           <p class="field-error" id="character-lock-error" hidden></p>
         </div>
       </section>

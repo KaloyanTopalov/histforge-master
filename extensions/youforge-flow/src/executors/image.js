@@ -6,11 +6,17 @@
 // settings.imgUpscale.
 //
 // Character lock: when settings.characterLockReference is a valid Flow
-// media ID UUID, it is prepended to imageInputs as the first
-// IMAGE_INPUT_TYPE_REFERENCE — no upload step, the ID is used verbatim.
-// Malformed lock values throw BadCharacterLockError before any Flow API
-// call; the popup validates on save, this is a defensive belt for
-// corrupt-storage / direct-write paths.
+// Character entityId UUID, the request body gains
+// `referenceEntities: [{ entityId: <UUID> }]` — the same shape Flow's
+// own UI sends (recon: outbound flowMedia:batchGenerateImages payload
+// from a Pinhole image-gen action with a saved Character attached).
+// `referenceEntities` is a parallel array to `imageInputs`; the lock
+// does NOT go into imageInputs (that path is for uploaded reference
+// images, addressed by media `name`, not Character `entityId`). No
+// upload step — the entityId is used verbatim. Malformed lock values
+// throw BadCharacterLockError before any Flow API call; the popup
+// validates on save, this is a defensive belt for corrupt-storage /
+// direct-write paths.
 //
 // Runtime deps (resolved at call time): buildClientContext, safeLog,
 // crypto.randomUUID, AISANDBOX_BASE, upscaleImages (src/executors/shared.js),
@@ -51,27 +57,30 @@ async function runImageGen(task, ctx) {
     log.safeLog('Uploaded', referenceImageIds.length, 'reference images');
   }
 
-  log.safeLog(`[api] Task ${taskId} ingredient=${characterLockReference || 'none'}`);
+  log.safeLog(`[api] Task ${taskId} characterLock=${characterLockReference || 'none'}`);
   log.safeLog('Generating image:', prompt?.substring(0, 80), `model: ${modelName} (from ${modelSource})`);
 
   const batchId = crypto.randomUUID();
-  const imageInputs = [];
-  if (characterLockReference) {
-    imageInputs.push({ imageInputType: 'IMAGE_INPUT_TYPE_REFERENCE', name: characterLockReference });
-  }
-  for (const id of referenceImageIds) {
-    imageInputs.push({ imageInputType: 'IMAGE_INPUT_TYPE_REFERENCE', name: id });
-  }
+  const imageInputs = referenceImageIds.map((id) => ({
+    imageInputType: 'IMAGE_INPUT_TYPE_REFERENCE', name: id,
+  }));
+  const referenceEntities = characterLockReference
+    ? [{ entityId: characterLockReference }]
+    : [];
   const imgRequests = [];
   for (let i = 0; i < outputCount; i++) {
-    imgRequests.push({
+    const req = {
       clientContext: buildClientContext({ projectId, recaptchaToken, sessionId }),
       imageModelName: modelName,
       imageAspectRatio: imageAspect,
       structuredPrompt: { parts: [{ text: prompt }] },
       seed: Math.floor(Math.random() * 100000),
       imageInputs,
-    });
+    };
+    if (referenceEntities.length > 0) {
+      req.referenceEntities = referenceEntities;
+    }
+    imgRequests.push(req);
   }
   const imgBody = {
     clientContext: buildClientContext({ projectId, recaptchaToken, sessionId }),

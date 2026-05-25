@@ -38,16 +38,21 @@ results back. HistForge owns the queue, per-account state, and routing.
 
 ## Character lock
 
-The image executor attaches an operator-supplied Google Flow media ID
-as a reference on every image task — no upload step. Storage key:
-`characterLockReference` (UUID string in `chrome.storage.local`, edited
-via the popup). Empty = no lock. Malformed values throw
-`BadCharacterLockError` before any Flow API call. Task-supplied
-`referenceImage` URLs still flow through `uploadImage()` with the
-existing log-and-continue contract; only the lock skips upload because
-the operator copies the saved-Character media ID straight out of
-Flow's UI (see `docs/setup-guides/setup-google-flow.md` → "Step: Lock
-a character").
+The image executor attaches an operator-supplied Google Flow saved
+Character on every image task. The wire shape is
+`request.referenceEntities: [{ entityId: <UUID> }]` — the same shape
+Flow's own UI sends when generating an image with a Character attached.
+No upload step: the entity ID is used verbatim. `imageInputs` is left
+alone for the existing task-supplied uploaded-reference path
+(`uploadImage()` + `name`).
+
+Storage key: `characterLockReference` (UUID string in
+`chrome.storage.local`, edited via the popup). Empty = no lock.
+Malformed values throw `BadCharacterLockError` before any Flow API
+call.
+
+See `docs/setup-guides/setup-google-flow.md` → "Step: Lock a character"
+for how to capture a Character's entity ID from Flow's network calls.
 
 ## Loading the extension
 
