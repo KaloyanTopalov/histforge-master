@@ -81,13 +81,21 @@ export function resolveWhisperInstall(): WhisperInstallState {
     };
   }
 
-  // Vendor fallback: look for either of whisper.cpp's two binary names.
+  // Vendor fallback: look for either of whisper.cpp's two binary names,
+  // both at the root of vendor/whisper/ AND inside vendor/whisper/Release/.
+  // The current Windows release zip extracts a `Release/` subfolder
+  // containing the binaries + DLLs; older release shapes (or a manual
+  // copy) might land them at the root. The DLLs whisper-cli needs sit
+  // next to the .exe regardless, so we just resolve to wherever the
+  // exe lives and let Windows' DLL search find them locally.
   // Recent releases use `whisper-cli.exe`; older ones use `main.exe`.
-  // The model name is fixed by what we download in setupWhisper().
-  const candidates = ["whisper-cli.exe", "main.exe", "whisper-cli", "main"];
-  const venBin = candidates
-    .map((n) => join(VENDOR_DIR, n))
-    .find((p) => existsSync(p));
+  const candidates: string[] = [];
+  for (const dir of [VENDOR_DIR, join(VENDOR_DIR, "Release")]) {
+    for (const name of ["whisper-cli.exe", "main.exe", "whisper-cli", "main"]) {
+      candidates.push(join(dir, name));
+    }
+  }
+  const venBin = candidates.find((p) => existsSync(p));
   const venModel = join(VENDOR_DIR, DEFAULT_MODEL_NAME);
   if (venBin && existsSync(venModel)) {
     return {
@@ -162,12 +170,17 @@ export async function setupWhisper(opts: SetupOptions = {}): Promise<SetupResult
   mkdirSync(vendorDir, { recursive: true });
 
   // Step 1: download the Windows binary zip if no extracted exe is
-  // already present. The exe names mirror what resolveWhisperInstall
-  // looks for — finding any of them means "binary stage is done".
-  const expectedExes = ["whisper-cli.exe", "main.exe"];
-  const existingExe = expectedExes
-    .map((n) => join(vendorDir, n))
-    .find((p) => existsSync(p));
+  // already present. The exe names + subdir mirror what
+  // resolveWhisperInstall looks for — finding any of them means
+  // "binary stage is done". whisper.cpp's current Windows release zip
+  // extracts into a `Release/` subfolder; older shapes land at root.
+  const exeCandidates: string[] = [];
+  for (const dir of [vendorDir, join(vendorDir, "Release")]) {
+    for (const name of ["whisper-cli.exe", "main.exe"]) {
+      exeCandidates.push(join(dir, name));
+    }
+  }
+  const existingExe = exeCandidates.find((p) => existsSync(p));
   let binPath: string;
   if (existingExe) {
     binPath = existingExe;
@@ -192,12 +205,10 @@ export async function setupWhisper(opts: SetupOptions = {}): Promise<SetupResult
     // Leave the zip behind on partial failure (lets a retry reuse the
     // download); only delete after a successful extract.
     try { unlinkSync(zipPath); } catch { /* best effort */ }
-    const extracted = expectedExes
-      .map((n) => join(vendorDir, n))
-      .find((p) => existsSync(p));
+    const extracted = exeCandidates.find((p) => existsSync(p));
     if (!extracted) {
       throw new WhisperInstallError(
-        `Extracted archive at ${vendorDir} did not contain whisper-cli.exe or main.exe.`,
+        `Extracted archive at ${vendorDir} did not contain whisper-cli.exe or main.exe (checked the root and a Release/ subfolder).`,
         "extract_binary",
       );
     }
