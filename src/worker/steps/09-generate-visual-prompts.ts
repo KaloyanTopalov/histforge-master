@@ -19,6 +19,43 @@ interface BatchItem {
 const MAX_PARSE_ATTEMPTS = 2;
 
 /**
+ * Character-lock + style-lock: hard system instruction prepended to every
+ * visual-prompt LLM call. Tells the model not to describe the character's
+ * appearance or art style — the style and negative-prompt blocks are
+ * appended verbatim by post-processing below, and re-describing them in
+ * the LLM output is wasted tokens and a drift risk.
+ */
+const SYSTEM_INSTRUCTION =
+  "Do not describe the character's appearance or art style. Only describe " +
+  "the environment, the character's posture and action, and what is around " +
+  "the character. The character is locked by a reference ingredient and the " +
+  "style is appended by code.";
+
+/**
+ * Append the two operator-editable lock segments verbatim onto a single
+ * LLM-returned prompt. Empty segments are skipped — an operator who
+ * wants no lock leaves the textarea blank, and the final prompt has no
+ * dangling ". Negative: ." artifact.
+ *
+ * Format (with both non-empty):
+ *   `<prompt>. <styleLock>. Negative: <negativeLock>.`
+ *
+ * The exact form (separators, trailing period on each segment) is the
+ * plan's spec; see __tests__/image/prompt-assembly.test.ts.
+ */
+function applyLocks(
+  prompt: string,
+  styleLock: string,
+  negativeLock: string
+): string {
+  const segments: string[] = [];
+  if (styleLock.length > 0) segments.push(styleLock);
+  if (negativeLock.length > 0) segments.push(`Negative: ${negativeLock}`);
+  if (segments.length === 0) return prompt;
+  return `${prompt}. ${segments.join(". ")}.`;
+}
+
+/**
  * Raised by `parseEnvelopeReply` when the LLM's response is malformed.
  * The per-chunk fallback in `runOneBatch` only fires on this class —
  * transport errors (network, abort, etc.) bubble up to the orchestrator
@@ -71,6 +108,11 @@ export const step: Step = {
     const snapshot = parseVisualStyleSnapshot(video?.visual_style_snapshot);
     const stylePrompt = snapshot?.prompt ?? "";
     const K = getSetting("visual_prompts_batch_size", ctx.db);
+    // Lock settings: read once at step entry, applied as a post-process
+    // on every persisted prompt. Empty = skip that segment. See
+    // applyLocks() above for the exact format.
+    const styleLock = getSetting("style_lock_description", ctx.db);
+    const negativeLock = getSetting("character_lock_negative", ctx.db);
 
     // Eager prompt_history sweep: clear lineage on the to-regenerate
     // subset *before* any LLM call so a mid-step crash leaves consistent
@@ -110,6 +152,18 @@ export const step: Step = {
       return writeLock;
     };
 
+    // Wrap a Map<id, raw-llm-prompt> with the lock-segment post-process
+    // before handing it to persistBatch. Applied uniformly on the main
+    // batch and per-chunk fallback paths so all persisted prompts carry
+    // the locks.
+    const enrich = (raw: Map<string, string>): Map<string, string> => {
+      const out = new Map<string, string>();
+      for (const [id, prompt] of raw) {
+        out.set(id, applyLocks(prompt, styleLock, negativeLock));
+      }
+      return out;
+    };
+
     const runOneBatch = async (batch: BatchItem[]): Promise<void> => {
       try {
         const results = await callBatchWithRetry(batch, {
@@ -118,7 +172,7 @@ export const step: Step = {
           promptsDir: ctx.promptsDir,
           stylePrompt,
         });
-        await persistBatch(results);
+        await persistBatch(enrich(results));
       } catch (err) {
         // Only parse failures trigger the per-chunk fallback. Transport
         // errors (network, abort) propagate up to the orchestrator.
@@ -135,7 +189,7 @@ export const step: Step = {
             promptsDir: ctx.promptsDir,
             stylePrompt,
           });
-          await persistBatch(results);
+          await persistBatch(enrich(results));
         }
       }
     };
@@ -213,7 +267,10 @@ async function callBatchWithRetry(
   for (let attempt = 0; attempt < MAX_PARSE_ATTEMPTS; attempt++) {
     const content = attempt === 0 ? userPrompt : `${userPrompt}${retryReminder}`;
     const reply = await deps.chat(
-      [{ role: "user", content }],
+      [
+        { role: "system", content: SYSTEM_INSTRUCTION },
+        { role: "user", content },
+      ],
       { db: deps.db }
     );
     try {

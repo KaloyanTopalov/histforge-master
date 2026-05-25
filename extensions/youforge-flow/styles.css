@@ -111,6 +111,13 @@ body {
   font-style: italic;
 }
 
+.field-error {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--danger, #d33);
+  font-weight: 500;
+}
+
 label {
   font-size: 11px;
   color: var(--text-dim);

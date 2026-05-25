@@ -1,11 +1,28 @@
 // YouForge Flow - image generation executor
-// Handles `createimage` / `imagegen` modes. Uploads any reference images
-// (comma-separated list supported), then calls flowMedia:batchGenerateImages
-// with N request entries (settings.outputCount). After generation, runs
-// optional upscaling per settings.imgUpscale.
+// Handles `createimage` / `imagegen` modes. Uploads any task-supplied
+// reference images (comma-separated list supported), then calls
+// flowMedia:batchGenerateImages with N request entries
+// (settings.outputCount). After generation, runs optional upscaling per
+// settings.imgUpscale.
+//
+// Character lock: when settings.characterLockReference is a valid Flow
+// Character entityId UUID, the request body gains
+// `referenceEntities: [{ entityId: <UUID> }]` — the same shape Flow's
+// own UI sends (recon: outbound flowMedia:batchGenerateImages payload
+// from a Pinhole image-gen action with a saved Character attached).
+// `referenceEntities` is a parallel array to `imageInputs`; the lock
+// does NOT go into imageInputs (that path is for uploaded reference
+// images, addressed by media `name`, not Character `entityId`). No
+// upload step — the entityId is used verbatim. Malformed lock values
+// throw BadCharacterLockError before any Flow API call; the popup
+// validates on save, this is a defensive belt for corrupt-storage /
+// direct-write paths.
 //
 // Runtime deps (resolved at call time): buildClientContext, safeLog,
-// crypto.randomUUID, AISANDBOX_BASE, upscaleImages (src/executors/shared.js).
+// crypto.randomUUID, AISANDBOX_BASE, upscaleImages (src/executors/shared.js),
+// makeBadCharacterLockError (src/flow-error.js).
+
+const CHARACTER_LOCK_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 async function runImageGen(task, ctx) {
   const { projectId, sessionId, recaptchaToken, settings, pageCall, uploadImage } = ctx;
@@ -18,6 +35,11 @@ async function runImageGen(task, ctx) {
   const modelName = task.imageModel || settings.imageModelSetting;
   const modelSource = task.imageModel ? 'task' : 'settings';
   const outputCount = settings.outputCount || 1;
+
+  const characterLockReference = (settings.characterLockReference || '').trim();
+  if (characterLockReference && !CHARACTER_LOCK_UUID_RE.test(characterLockReference)) {
+    throw makeBadCharacterLockError(characterLockReference);
+  }
 
   const referenceImageIds = [];
   const refUrl = task.imagegenReference || task.referenceImage;
@@ -35,22 +57,30 @@ async function runImageGen(task, ctx) {
     log.safeLog('Uploaded', referenceImageIds.length, 'reference images');
   }
 
+  log.safeLog(`[api] Task ${taskId} characterLock=${characterLockReference || 'none'}`);
   log.safeLog('Generating image:', prompt?.substring(0, 80), `model: ${modelName} (from ${modelSource})`);
 
   const batchId = crypto.randomUUID();
   const imageInputs = referenceImageIds.map((id) => ({
     imageInputType: 'IMAGE_INPUT_TYPE_REFERENCE', name: id,
   }));
+  const referenceEntities = characterLockReference
+    ? [{ entityId: characterLockReference }]
+    : [];
   const imgRequests = [];
   for (let i = 0; i < outputCount; i++) {
-    imgRequests.push({
+    const req = {
       clientContext: buildClientContext({ projectId, recaptchaToken, sessionId }),
       imageModelName: modelName,
       imageAspectRatio: imageAspect,
       structuredPrompt: { parts: [{ text: prompt }] },
       seed: Math.floor(Math.random() * 100000),
       imageInputs,
-    });
+    };
+    if (referenceEntities.length > 0) {
+      req.referenceEntities = referenceEntities;
+    }
+    imgRequests.push(req);
   }
   const imgBody = {
     clientContext: buildClientContext({ projectId, recaptchaToken, sessionId }),

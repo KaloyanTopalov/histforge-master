@@ -84,6 +84,7 @@ function loadDispatcher(overrides: {
     getVideoModel: () => (storage.videoModel ?? "fast"),
     getImgUpscale: () => (storage.imgUpscale ?? "none"),
     getVidUpscale: () => (storage.vidUpscale ?? "none"),
+    getCharacterLockReference: () => (storage.characterLockReference ?? ""),
     crypto: globalThis.crypto,
     runImageGen,
     runTextToVideo,

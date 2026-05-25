@@ -33,7 +33,8 @@
 // pollVideoUntilDone (src/poll-video.js), runImageGen / runTextToVideo /
 // runImageToVideo / runFramesToVideo (sibling executor files),
 // getOutputCount / getAspectRatio / getImageModel / getVideoModel /
-// getImgUpscale / getVidUpscale (src/settings.js), safeLog,
+// getImgUpscale / getVidUpscale / getCharacterLockReference
+// (src/settings.js), safeLog,
 // assertNotStopped.
 
 async function buildExecutorContext(task, tabId, recaptchaAction, correlationId) {
@@ -63,6 +64,7 @@ async function buildExecutorContext(task, tabId, recaptchaAction, correlationId)
     videoModelQuality: getVideoModel(),
     imgUpscale: getImgUpscale(),
     vidUpscale: getVidUpscale(),
+    characterLockReference: getCharacterLockReference(),
   };
 
   if (settings.imgUpscale !== 'none' || settings.vidUpscale !== 'none') {

@@ -132,6 +132,11 @@ export function GoogleFlowAccounts(): JSX.Element {
             onRequestDelete={setConfirmDelete}
           />
         )}
+        <p className="mt-3 text-xs text-muted-foreground">
+          Character lock is managed in the YouForge Flow extension popup.
+          See <code>docs/setup-guides/setup-google-flow.md</code> → &quot;Step:
+          Lock a character.&quot;
+        </p>
       </section>
 
       {/* Not a <form>: this component is rendered inside the settings

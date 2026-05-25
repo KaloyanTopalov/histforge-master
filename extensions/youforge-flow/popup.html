@@ -14,7 +14,7 @@
         <img src="logo-48.png" alt="YouForge Flow" width="36" height="36">
         <div class="header-text">
           <h1>YouForge Flow</h1>
-          <span class="version">v0.1.0</span>
+          <span class="version">v0.1.1</span>
         </div>
       </div>
     </header>
@@ -53,6 +53,16 @@
           <input type="checkbox" id="notifications-enabled" name="notificationsEnabled" checked>
           Show Chrome notifications (e.g. session expired)
         </label>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">Character lock</h2>
+        <div class="field">
+          <label for="character-lock-reference">Character lock entity ID</label>
+          <input type="text" id="character-lock-reference" name="characterLockReference" placeholder="622f1a75-b4f1-45a8-9d77-948e0e93c8f7" spellcheck="false" autocomplete="off">
+          <p class="field-hint">A saved Flow Character's <code>entityId</code> UUID. See <code>docs/setup-guides/setup-google-flow.md</code> &rarr; &quot;Step: Lock a character&quot; for how to capture it. Empty = no lock.</p>
+          <p class="field-error" id="character-lock-error" hidden></p>
+        </div>
       </section>
 
       <details class="advanced">

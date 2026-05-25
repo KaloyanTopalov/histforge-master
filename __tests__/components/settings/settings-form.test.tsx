@@ -90,6 +90,8 @@ const defaultSettings: AllSettings = {
   magnific_relogin_needed: false,
   music_video_loop_trim_tail_seconds: 0.3,
   music_video_loop_xfade_seconds: 0.2,
+  style_lock_description: "seeded style lock",
+  character_lock_negative: "seeded negative",
 };
 
 beforeEach(() => {
@@ -556,25 +558,23 @@ describe("SettingsForm field distribution", () => {
     expect(screen.queryByText(/^styles$/i)).toBeNull();
   });
 
-  it("hides the bottom Save button on the Visual Style tab (empty TAB_FIELDS)", async () => {
+  it("renders the bottom Save button on the Visual Style tab (TAB_FIELDS owns the two lock textareas)", async () => {
+    // Character-lock + style-lock plan added style_lock_description and
+    // character_lock_negative to TAB_FIELDS["visual-style"]. The bottom
+    // Save button is gated on TAB_FIELDS[activeTab].length > 0, so it
+    // now appears on this tab.
     await renderForm();
-    // Save button is present on Script (the default tab).
     expect(
       screen.getByRole("button", { name: /^save$/i })
     ).toBeTruthy();
 
     clickTab(/visual style/i);
 
-    // Two save-named buttons would be wrong here — the bottom Save is
-    // gone, and any in-gallery Save is disabled until something is dirty.
-    // queryByRole returns the gallery's own Save button (disabled) since
-    // it shares the name; assert that the *bottom* Save (form-level,
-    // type="submit") is no longer in the DOM.
     const buttons = screen.queryAllByRole("button", { name: /^save$/i });
     const submitButtons = buttons.filter(
       (b) => (b as HTMLButtonElement).type === "submit"
     );
-    expect(submitButtons).toEqual([]);
+    expect(submitButtons.length).toBeGreaterThan(0);
   });
 
   it("Script tab: switching the Provider view to Claude CLI reveals the two Claude CLI model TextFields", async () => {

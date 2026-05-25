@@ -33,8 +33,26 @@ results back. HistForge owns the queue, per-account state, and routing.
 - `content.js` + `content-bridge.js` — session-token fetch plumbing.
 - The FIFO polling runner.
 - Content-policy error detection.
-- Upsample code paths and ingredients/frames modes (dormant in v1 of
-  the HistForge integration but left intact for future use).
+- Upsample code paths and the frames-to-video executor (dormant in v1
+  of the HistForge integration but left intact for future use).
+
+## Character lock
+
+The image executor attaches an operator-supplied Google Flow saved
+Character on every image task. The wire shape is
+`request.referenceEntities: [{ entityId: <UUID> }]` — the same shape
+Flow's own UI sends when generating an image with a Character attached.
+No upload step: the entity ID is used verbatim. `imageInputs` is left
+alone for the existing task-supplied uploaded-reference path
+(`uploadImage()` + `name`).
+
+Storage key: `characterLockReference` (UUID string in
+`chrome.storage.local`, edited via the popup). Empty = no lock.
+Malformed values throw `BadCharacterLockError` before any Flow API
+call.
+
+See `docs/setup-guides/setup-google-flow.md` → "Step: Lock a character"
+for how to capture a Character's entity ID from Flow's network calls.
 
 ## Loading the extension
 

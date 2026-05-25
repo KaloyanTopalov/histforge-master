@@ -165,21 +165,26 @@ export function TextArea({
   label,
   value,
   onChange,
+  hint,
+  rows,
 }: {
   id: string;
   label: string;
   value: string;
   onChange: (v: string) => void;
+  hint?: string;
+  rows?: number;
 }): JSX.Element {
   return (
     <div className="space-y-1.5">
       <FieldLabel id={id} label={label} />
       <Textarea
         id={id}
-        rows={3}
+        rows={rows ?? 3}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
 }
