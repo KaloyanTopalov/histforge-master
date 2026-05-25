@@ -44,6 +44,7 @@ import { FlowModerationPanel } from "./flow-moderation-panel";
 import { FlowProgressPanel } from "./flow-progress-panel";
 import { ArtifactsPanel } from "./artifacts-panel";
 import { VoiceoverUpload } from "./voiceover-upload";
+import { AlignmentUpload } from "./alignment-upload";
 
 export type { FlowSummary } from "@/lib/flow-summary";
 
@@ -570,6 +571,11 @@ export function VideoDetailClient({
         <VoiceoverUpload
           videoId={videoId}
           hasExistingVoiceover={artifacts.includes("audio/narration.mp3")}
+        />
+
+        <AlignmentUpload
+          videoId={videoId}
+          hasExistingAlignment={artifacts.includes("alignment/alignment.json")}
         />
 
         <ArtifactsPanel videoId={videoId} artifacts={artifacts} steps={steps} />
