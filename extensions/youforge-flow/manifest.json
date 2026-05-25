@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "YouForge Flow",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "HistForge-owned fork of VEO Flow API extension — runs as a dumb executor for HistForge task queues.",
   "permissions": [
     "storage",
     "alarms",
     "tabs",
     "scripting",
-    "notifications"
+    "notifications",
+    "webRequest"
   ],
   "host_permissions": [
     "https://labs.google/*",
@@ -41,7 +42,7 @@
     }
   ],
   "action": {
-    "default_title": "YouForge Flow 0.1.1",
+    "default_title": "YouForge Flow 0.2.0",
     "default_icon": {
       "16": "logo-16.png",
       "48": "logo-48.png",

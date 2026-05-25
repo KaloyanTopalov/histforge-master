@@ -25,6 +25,8 @@ const els = {
   notificationsEnabled: document.getElementById('notifications-enabled'),
   characterLockReference: document.getElementById('character-lock-reference'),
   characterLockError: document.getElementById('character-lock-error'),
+  detectedList: document.getElementById('detected-list'),
+  detectedEmpty: document.getElementById('detected-empty'),
   derivedHint: document.getElementById('derived-urls-hint'),
   advancedRoot: document.getElementById('advanced-root'),
   grantBtn: document.getElementById('grant-btn'),
@@ -66,11 +68,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   refreshEnabled();
   await refreshStatus();
   setInterval(refreshStatus, STATUS_REFRESH_MS);
+  await refreshDetectedCharacters();
 
   els.form.addEventListener('input', () => {
     queueSave();
     refreshEnabled();
   });
+  // The lock input changes (via direct typing OR via a "Use as lock"
+  // click) should re-render the detected panel so the active row
+  // highlight tracks the new lock value.
+  if (els.characterLockReference) {
+    els.characterLockReference.addEventListener('input', () => {
+      renderDetectedCharacters(lastDetectedSnapshot);
+    });
+  }
 
   els.grantBtn.addEventListener('click', requestHostPermission);
   els.startBtn.addEventListener('click', startPolling);
@@ -83,7 +94,83 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (chrome.permissions && chrome.permissions.onAdded) {
     chrome.permissions.onAdded.addListener(refreshHostPermission);
   }
+  // Live-refresh the detected panel when the SW writes a new entry.
+  if (chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local' || !changes.detectedCharacters) return;
+      void refreshDetectedCharacters();
+    });
+  }
 });
+
+let lastDetectedSnapshot = [];
+
+async function refreshDetectedCharacters() {
+  const { detectedCharacters } = await chrome.storage.local.get('detectedCharacters');
+  const list = Array.isArray(detectedCharacters) ? detectedCharacters : [];
+  lastDetectedSnapshot = list;
+  renderDetectedCharacters(list);
+}
+
+function renderDetectedCharacters(list) {
+  if (!els.detectedList || !els.detectedEmpty) return;
+  const items = Array.isArray(list) ? list : [];
+  els.detectedList.textContent = '';
+  if (items.length === 0) {
+    els.detectedEmpty.hidden = false;
+    els.detectedList.hidden = true;
+    return;
+  }
+  els.detectedEmpty.hidden = true;
+  els.detectedList.hidden = false;
+  const currentLock = (els.characterLockReference && els.characterLockReference.value || '').trim();
+  for (const entry of items) {
+    if (!entry || typeof entry.entityId !== 'string') continue;
+    const li = document.createElement('li');
+    li.className = 'detected-item';
+    const isActive = entry.entityId === currentLock;
+    if (isActive) li.classList.add('is-active');
+
+    const meta = document.createElement('div');
+    meta.className = 'detected-item-meta';
+    const labelEl = document.createElement('span');
+    labelEl.className = 'detected-item-label';
+    labelEl.textContent = entry.label || '(no prompt)';
+    const idEl = document.createElement('span');
+    idEl.className = 'detected-item-id';
+    idEl.textContent = entry.entityId;
+    meta.appendChild(labelEl);
+    meta.appendChild(idEl);
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'detected-item-action';
+    btn.textContent = isActive ? 'Active' : 'Use as lock';
+    btn.disabled = isActive;
+    if (!isActive) {
+      btn.addEventListener('click', () => useAsLock(entry.entityId));
+    }
+
+    li.appendChild(meta);
+    li.appendChild(btn);
+    els.detectedList.appendChild(li);
+  }
+}
+
+function useAsLock(entityId) {
+  if (!els.characterLockReference) return;
+  els.characterLockReference.value = entityId;
+  if (els.characterLockError) {
+    els.characterLockError.textContent = '';
+    els.characterLockError.hidden = true;
+  }
+  // Drive through the existing save path — debounced save fires + the
+  // dedicated setCharacterLockReference message pushes into the SW
+  // cache. Synthesise an `input` event so the form-wide input handler
+  // queues the save just like a user keystroke would.
+  els.characterLockReference.dispatchEvent(new Event('input', { bubbles: true }));
+  renderDetectedCharacters(lastDetectedSnapshot);
+}
 
 function renderAdvanced() {
   if (!els.advancedRoot) return;

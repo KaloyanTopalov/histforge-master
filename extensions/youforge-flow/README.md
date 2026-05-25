@@ -51,8 +51,22 @@ Storage key: `characterLockReference` (UUID string in
 Malformed values throw `BadCharacterLockError` before any Flow API
 call.
 
+### Character auto-detect
+
+`src/character-detector.js` registers a
+`chrome.webRequest.onBeforeRequest` observer scoped to
+`https://aisandbox-pa.googleapis.com/v1/projects/*/flowMedia:batchGenerateImages`.
+Whenever Flow's own UI fires an image generation with a Character
+attached, the detector parses the POST body's
+`requests[].referenceEntities[].entityId` and persists the entries to
+`chrome.storage.local` under `detectedCharacters` (move-to-front,
+capped to 10). The popup renders this list under the lock field as a
+one-click "Use as lock" panel. Observe-only — never blocks, never
+mutates headers/body. Requires the `webRequest` Chrome permission.
+
 See `docs/setup-guides/setup-google-flow.md` → "Step: Lock a character"
-for how to capture a Character's entity ID from Flow's network calls.
+for the operator-facing workflow (both auto-detect and manual
+DevTools-Network capture paths).
 
 ## Loading the extension
 
