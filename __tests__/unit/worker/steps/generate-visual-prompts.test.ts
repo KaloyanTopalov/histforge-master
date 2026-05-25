@@ -46,6 +46,15 @@ function tempDir(prefix: string): string {
 function freshDb(): DatabaseType {
   const db = createDb(":memory:");
   seedDefaultSettings(db);
+  // Step 09 post-processes every persisted prompt with the
+  // style/negative lock segments seeded by DEFAULT_SETTINGS. The tests
+  // in THIS file assert raw LLM-returned prompt strings (batching,
+  // retry, parse, mutex semantics — none of them are about lock
+  // semantics), so we blank both lock settings here to restore the
+  // pre-lock contract. Lock-specific tests live in
+  // __tests__/image/prompt-assembly.test.ts and lock-injection.test.ts.
+  setSetting("style_lock_description", "", db);
+  setSetting("character_lock_negative", "", db);
   openDbs.push(db);
   return db;
 }
@@ -173,7 +182,7 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
     const chunksPath = seedChunksFile(projectsDir, videoId, chunks);
 
     const chat = vi.fn(async (messages: { content: string }[]) => {
-      const batch = extractBatch(messages[0].content);
+      const batch = extractBatch(messages[1].content);
       return envelopeReply(batch, (id) => `prompt-for-${id}`);
     });
 
@@ -190,8 +199,8 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
 
     expect(chat).toHaveBeenCalledTimes(2);
 
-    const b0 = extractBatch(chat.mock.calls[0][0][0].content as string);
-    const b1 = extractBatch(chat.mock.calls[1][0][0].content as string);
+    const b0 = extractBatch(chat.mock.calls[0][0][1].content as string);
+    const b1 = extractBatch(chat.mock.calls[1][0][1].content as string);
     expect(b0).toHaveLength(4);
     expect(b1).toHaveLength(4);
     expect(b0.map((c) => c.id)).toEqual(
@@ -218,7 +227,7 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
     seedChunksFile(projectsDir, videoId, makeChunks(4));
 
     const chat = vi.fn(async (messages: { content: string }[]) => {
-      const batch = extractBatch(messages[0].content);
+      const batch = extractBatch(messages[1].content);
       return envelopeReply(batch, (id) => `p-${id}`);
     });
 
@@ -233,8 +242,8 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
       })
     );
 
-    const b0 = extractBatch(chat.mock.calls[0][0][0].content as string);
-    const b1 = extractBatch(chat.mock.calls[1][0][0].content as string);
+    const b0 = extractBatch(chat.mock.calls[0][0][1].content as string);
+    const b1 = extractBatch(chat.mock.calls[1][0][1].content as string);
 
     // First batch (chunks 1..2): chunk 1's prev_text empty, chunk 2's
     // next_text comes from chunk 3 — across the batch boundary.
@@ -257,7 +266,7 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
 
     seedChunksFile(projectsDir, videoId, makeChunks(4));
     const chat = vi.fn(async (messages: { content: string }[]) => {
-      const batch = extractBatch(messages[0].content);
+      const batch = extractBatch(messages[1].content);
       return envelopeReply(batch, (id) => `p-${id}`);
     });
 
@@ -273,7 +282,7 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
     );
 
     expect(chat).toHaveBeenCalledTimes(1);
-    expect(chat.mock.calls[0][0][0].content).toContain("STYLE=watercolor pastoral");
+    expect(chat.mock.calls[0][0][1].content).toContain("STYLE=watercolor pastoral");
   });
 
   it("substitutes an empty style_prompt when visual_style_snapshot is NULL ('Default (no style)')", async () => {
@@ -289,7 +298,7 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
 
     seedChunksFile(projectsDir, videoId, makeChunks(2));
     const chat = vi.fn(async (messages: { content: string }[]) => {
-      const batch = extractBatch(messages[0].content);
+      const batch = extractBatch(messages[1].content);
       return envelopeReply(batch, (id) => `p-${id}`);
     });
 
@@ -305,7 +314,7 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
     );
 
     expect(chat).toHaveBeenCalledTimes(1);
-    expect(chat.mock.calls[0][0][0].content).toContain("STYLE=\nBATCH=");
+    expect(chat.mock.calls[0][0][1].content).toContain("STYLE=\nBATCH=");
   });
 
   it("ignores the legacy style_prompt_default setting — only visual_style_snapshot drives style_prompt", async () => {
@@ -325,7 +334,7 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
 
     seedChunksFile(projectsDir, videoId, makeChunks(1));
     const chat = vi.fn(async (messages: { content: string }[]) => {
-      const batch = extractBatch(messages[0].content);
+      const batch = extractBatch(messages[1].content);
       return envelopeReply(batch, (id) => `p-${id}`);
     });
 
@@ -340,7 +349,7 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
       })
     );
 
-    const content = chat.mock.calls[0][0][0].content as string;
+    const content = chat.mock.calls[0][0][1].content as string;
     expect(content).toContain("STYLE=from-snapshot");
     expect(content).not.toContain("should-be-ignored");
   });
@@ -362,7 +371,7 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
     const chunksPath = seedChunksFile(projectsDir, videoId, chunks);
 
     const chat = vi.fn(async (messages: { content: string }[]) => {
-      const batch = extractBatch(messages[0].content);
+      const batch = extractBatch(messages[1].content);
       return envelopeReply(batch, (id) => `fresh-${id}`);
     });
 
@@ -378,7 +387,7 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
     );
 
     expect(chat).toHaveBeenCalledTimes(1);
-    const batch = extractBatch(chat.mock.calls[0][0][0].content as string);
+    const batch = extractBatch(chat.mock.calls[0][0][1].content as string);
     expect(batch.map((c) => c.id)).toEqual(["image_002", "image_004"]);
 
     const result: Chunk[] = JSON.parse(readFileSync(chunksPath, "utf-8"));
@@ -455,7 +464,7 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
       if (snapshotAtFirstCall === null) {
         snapshotAtFirstCall = JSON.parse(readFileSync(chunksPath, "utf-8"));
       }
-      const batch = extractBatch(messages[0].content);
+      const batch = extractBatch(messages[1].content);
       return envelopeReply(batch, (id) => `fresh-${id}`);
     });
 
@@ -495,7 +504,7 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
         JSON.stringify({ prompts: [{ id: "image_001", prompt: "p1" }] })
       )
       .mockImplementationOnce(async (messages: { content: string }[]) => {
-        const batch = extractBatch(messages[0].content);
+        const batch = extractBatch(messages[1].content);
         return envelopeReply(batch, (id) => `retry-${id}`);
       });
 
@@ -533,7 +542,7 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
         })
       )
       .mockImplementationOnce(async (messages: { content: string }[]) => {
-        const batch = extractBatch(messages[0].content);
+        const batch = extractBatch(messages[1].content);
         return envelopeReply(batch, (id) => `retry-${id}`);
       });
 
@@ -571,7 +580,7 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
         })
       )
       .mockImplementationOnce(async (messages: { content: string }[]) => {
-        const batch = extractBatch(messages[0].content);
+        const batch = extractBatch(messages[1].content);
         return envelopeReply(batch, (id) => `retry-${id}`);
       });
 
@@ -609,7 +618,7 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
         })
       )
       .mockImplementationOnce(async (messages: { content: string }[]) => {
-        const batch = extractBatch(messages[0].content);
+        const batch = extractBatch(messages[1].content);
         return envelopeReply(batch, (id) => `retry-${id}`);
       });
 
@@ -642,7 +651,7 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
     let call = 0;
     const chat = vi.fn(async (messages: { content: string }[]) => {
       call++;
-      const batch = extractBatch(messages[0].content);
+      const batch = extractBatch(messages[1].content);
       // First two calls (the K=3 batch + its retry) parse-fail; the
       // remaining calls succeed as single-chunk batches.
       if (call <= 2) {
@@ -690,7 +699,7 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
     let call = 0;
     const chat = vi.fn(async (messages: { content: string }[]) => {
       call++;
-      const batch = extractBatch(messages[0].content);
+      const batch = extractBatch(messages[1].content);
       // Calls 1 + 2 are batch 1 (K=4) and its retry, both parse-fail.
       // Calls 3-6 are batch 1's per-chunk fallback (K=1 each).
       // Call 7 is batch 2 as a single K=3 batch.
@@ -712,12 +721,12 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
     // 2 (batch 1 + retry) + 4 (per-chunk fallback) + 1 (batch 2) = 7.
     expect(chat).toHaveBeenCalledTimes(7);
     // Per-chunk fallback for batch 1: calls 3-6 each carry 1 item.
-    expect(extractBatch(chat.mock.calls[2][0][0].content as string)).toHaveLength(1);
-    expect(extractBatch(chat.mock.calls[3][0][0].content as string)).toHaveLength(1);
-    expect(extractBatch(chat.mock.calls[4][0][0].content as string)).toHaveLength(1);
-    expect(extractBatch(chat.mock.calls[5][0][0].content as string)).toHaveLength(1);
+    expect(extractBatch(chat.mock.calls[2][0][1].content as string)).toHaveLength(1);
+    expect(extractBatch(chat.mock.calls[3][0][1].content as string)).toHaveLength(1);
+    expect(extractBatch(chat.mock.calls[4][0][1].content as string)).toHaveLength(1);
+    expect(extractBatch(chat.mock.calls[5][0][1].content as string)).toHaveLength(1);
     // Batch 2 stayed batched — chunks 5..7 went through as a single call.
-    const batch2 = extractBatch(chat.mock.calls[6][0][0].content as string);
+    const batch2 = extractBatch(chat.mock.calls[6][0][1].content as string);
     expect(batch2.map((c) => c.id)).toEqual(["image_005", "image_006", "image_007"]);
   });
 
@@ -735,7 +744,7 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
     const chat = vi.fn(async (messages: { content: string }[]) => {
       call++;
       if (call === 2) throw new Error("LLM crashed");
-      const batch = extractBatch(messages[0].content);
+      const batch = extractBatch(messages[1].content);
       return envelopeReply(batch, (id) => `p-${id}`);
     });
 
@@ -781,7 +790,7 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
     // the latter. A mutex prevents that.
     const gates: Array<() => void> = [];
     const chat = vi.fn(async (messages: { content: string }[]) => {
-      const batch = extractBatch(messages[0].content);
+      const batch = extractBatch(messages[1].content);
       await new Promise<void>((resolve) => gates.push(resolve));
       return envelopeReply(batch, (id) => `p-${id}`);
     });
@@ -836,7 +845,7 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
     };
     const gates: Gate[] = [];
     const chat = vi.fn(async (messages: { content: string }[]) => {
-      const batch = extractBatch(messages[0].content);
+      const batch = extractBatch(messages[1].content);
       return new Promise<string>((resolve, reject) => {
         gates.push({ batch, resolve, reject });
       });
