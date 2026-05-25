@@ -63,10 +63,11 @@ Capturing your Character's entity ID:
 
 To clear the lock, blank the field and save — the cache is cleared via a dedicated `setCharacterLockReference` message (an empty value can't round-trip through the schema-coercion path).
 
-**Caveats:**
+**Notes:**
 
-- The lock is wired by entity ID. We've matched Flow's own wire format (`referenceEntities[].entityId`), but we have **not yet verified** that an entity ID created in project A still resolves when referenced from project B. HistForge creates a fresh per-`(video, account)` Flow project for every video (see `extensions/youforge-flow/src/project-mgmt.js`), so if entity IDs turn out to be project-bound at the API, the lock will not bind to images generated from per-video projects. Test empirically before relying on it for a full production run.
+- **Entity IDs are account-scoped at the API** (verified 2026-05-25): a Character created in project A resolves and conditions image generation when referenced from project B, via `referenceEntities: [{ entityId: <UUID> }]` on `flowMedia:batchGenerateImages`. HistForge creates a fresh per-`(video, account)` Flow project for every video, but this is fine — capture the entity ID once and it works across every subsequent HistForge-created project under the same Google account. The lock survives HistForge's project churn.
 - The "media ID" terminology used in earlier drafts of this guide was wrong — Flow uses `mediaId` (or `name`) for uploaded reference images in `imageInputs`, and `entityId` for saved Characters in `referenceEntities`. They are two separate namespaces.
+- The Flow UI's Characters panel filters to the current project, so saved Characters can *appear* missing when you open a new project. That's UI scoping only — the entity is still resolvable by ID at the API.
 
 ## 5. Smoke test end-to-end
 
