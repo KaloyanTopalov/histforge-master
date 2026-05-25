@@ -14,7 +14,7 @@
         <img src="logo-48.png" alt="YouForge Flow" width="36" height="36">
         <div class="header-text">
           <h1>YouForge Flow</h1>
-          <span class="version">v0.1.1</span>
+          <span class="version">v0.2.0</span>
         </div>
       </div>
     </header>
@@ -60,8 +60,13 @@
         <div class="field">
           <label for="character-lock-reference">Character lock entity ID</label>
           <input type="text" id="character-lock-reference" name="characterLockReference" placeholder="622f1a75-b4f1-45a8-9d77-948e0e93c8f7" spellcheck="false" autocomplete="off">
-          <p class="field-hint">A saved Flow Character's <code>entityId</code> UUID. See <code>docs/setup-guides/setup-google-flow.md</code> &rarr; &quot;Step: Lock a character&quot; for how to capture it. Empty = no lock.</p>
+          <p class="field-hint">A saved Flow Character's <code>entityId</code> UUID. Easiest: generate an image in Flow with your Character attached &mdash; the entityId appears in the panel below for one-click locking. Manual capture: see <code>docs/setup-guides/setup-google-flow.md</code>. Empty = no lock.</p>
           <p class="field-error" id="character-lock-error" hidden></p>
+        </div>
+        <div class="detected-panel">
+          <h3 class="detected-title">Detected Characters</h3>
+          <p class="field-hint" id="detected-empty">Generate an image in Flow with a Character attached and it&rsquo;ll appear here.</p>
+          <ul class="detected-list" id="detected-list" hidden></ul>
         </div>
       </section>
 

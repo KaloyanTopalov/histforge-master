@@ -46,6 +46,11 @@ importScripts('src/session-guard.js');
 importScripts('src/status.js');
 importScripts('src/self-test.js');
 importScripts('src/messages.js');
+// character-detector observes outbound Flow image-gen requests to harvest
+// saved-Character entity IDs for the popup's "Detected Characters"
+// panel. Observe-only — no blocking, no header/body mutation.
+importScripts('src/character-detector.js');
+registerCharacterDetector();
 
 chrome.runtime.onInstalled.addListener(async (details) => {
   safeLog('Extension installed / upgraded');
