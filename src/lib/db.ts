@@ -85,6 +85,14 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   // xfade = LOOP_CLIP_XFADE_S) so on-disk behavior is unchanged on a fresh DB.
   music_video_loop_trim_tail_seconds: "0.3",
   music_video_loop_xfade_seconds: "0.2",
+  // Character-lock + style-lock plan. Defaults are the verbatim spec
+  // text — keep in sync with the createDb INSERT OR IGNORE migration
+  // statements below (the dev-DB upgrade path) and the tests under
+  // __tests__/image/settings-defaults.test.ts.
+  style_lock_description:
+    "2D hand-drawn animation style, plain white background, pure black line work only, no color, no shading, no gradients, no 3D rendering, no photorealism, slight hand-drawn imperfection in linework. The character must be drawn in the exact same minimalist style as the reference ingredient.",
+  character_lock_negative:
+    "color, shading, gradient, 3D, photorealistic, vector-clean lines, multiple characters, child, cartoon mascot, anime, manga, smiling, happy expression",
 };
 
 export function seedDefaultSettings(db: DatabaseType): void {
@@ -844,6 +852,21 @@ export function createDb(path: string): DatabaseType {
   db.prepare(
     "INSERT OR IGNORE INTO settings (key, value) VALUES ('openrouter_visual_prompts_concurrency', '8')"
   ).run();
+
+  // Character-lock + style-lock plan. Two free-text settings consumed
+  // by step 09's prompt-assembly post-processing. Seed defaults on
+  // upgraded DBs that don't re-run db:init. Keep values in sync with
+  // DEFAULT_SETTINGS above.
+  db.prepare(
+    "INSERT OR IGNORE INTO settings (key, value) VALUES ('style_lock_description', ?)"
+  ).run(
+    "2D hand-drawn animation style, plain white background, pure black line work only, no color, no shading, no gradients, no 3D rendering, no photorealism, slight hand-drawn imperfection in linework. The character must be drawn in the exact same minimalist style as the reference ingredient."
+  );
+  db.prepare(
+    "INSERT OR IGNORE INTO settings (key, value) VALUES ('character_lock_negative', ?)"
+  ).run(
+    "color, shading, gradient, 3D, photorealistic, vector-clean lines, multiple characters, child, cartoon mascot, anime, manga, smiling, happy expression"
+  );
 
   // act_distribution was removed from the schema. Drop any orphan row
   // so getAllSettings() returns a clean shape on upgraded DBs.

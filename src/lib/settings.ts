@@ -183,6 +183,14 @@ const SETTING_SCHEMAS = {
   // pass 2 to a -stream_loop mux (see render-music-video.ts).
   music_video_loop_trim_tail_seconds: z.coerce.number().min(0).max(5),
   music_video_loop_xfade_seconds: z.coerce.number().min(0).max(2),
+  // Character-lock + style-lock plan. Both are free-text textareas
+  // operators can edit in /settings/visual-style; both are
+  // concatenated onto every assembled visual prompt in step 09 (see
+  // post-processing in src/worker/steps/09-generate-visual-prompts.ts).
+  // Empty string = "skip this segment". Provider-agnostic — affects
+  // ComfyUI and Google Flow image paths alike.
+  style_lock_description: z.string(),
+  character_lock_negative: z.string(),
 } as const;
 
 export type SettingKey = keyof typeof SETTING_SCHEMAS;

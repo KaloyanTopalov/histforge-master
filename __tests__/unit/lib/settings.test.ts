@@ -257,6 +257,10 @@ describe("getAllSettings", () => {
       magnific_relogin_needed: false,
       music_video_loop_trim_tail_seconds: 0.3,
       music_video_loop_xfade_seconds: 0.2,
+      style_lock_description:
+        "2D hand-drawn animation style, plain white background, pure black line work only, no color, no shading, no gradients, no 3D rendering, no photorealism, slight hand-drawn imperfection in linework. The character must be drawn in the exact same minimalist style as the reference ingredient.",
+      character_lock_negative:
+        "color, shading, gradient, 3D, photorealistic, vector-clean lines, multiple characters, child, cartoon mascot, anime, manga, smiling, happy expression",
     });
   });
 });
