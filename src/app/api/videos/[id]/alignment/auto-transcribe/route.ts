@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import * as videosRepo from "@/lib/repos/videos";
 import { parseSrtToAlignment } from "@/lib/srt";
+import { resolveWhisperInstall } from "@/lib/whisper-install";
 
 interface RouteCtx {
   params: { id: string };
@@ -88,19 +89,30 @@ export async function POST(_req: Request, ctx: RouteCtx): Promise<NextResponse> 
 
   mkdirSync(alignmentDir, { recursive: true });
 
-  // Local whisper.cpp mode wins if both env vars are set. Empty string
-  // or missing → fall through to the HTTP API path. The local path is
-  // free, has no upload cap, and runs entirely offline — preferred when
-  // available.
-  const localBin = (process.env.WHISPER_LOCAL_BIN || "").trim();
-  const localModel = (process.env.WHISPER_LOCAL_MODEL || "").trim();
-  if (localBin && localModel) {
+  // Local whisper.cpp mode wins when configured. Explicit env vars
+  // take priority and get granular error reporting (so a typo in
+  // WHISPER_LOCAL_BIN surfaces as local_bin_missing instead of being
+  // silently demoted to "not configured"). If env vars are blank, fall
+  // back to the auto-installed copy under vendor/whisper/.
+  const envBin = (process.env.WHISPER_LOCAL_BIN || "").trim();
+  const envModel = (process.env.WHISPER_LOCAL_MODEL || "").trim();
+  if (envBin && envModel) {
     return runLocalWhisper({
       projectRoot,
       audioPath,
       finalPath,
-      localBin,
-      localModel,
+      localBin: envBin,
+      localModel: envModel,
+    });
+  }
+  const installed = resolveWhisperInstall();
+  if (installed.source === "vendor" && installed.binPath && installed.modelPath) {
+    return runLocalWhisper({
+      projectRoot,
+      audioPath,
+      finalPath,
+      localBin: installed.binPath,
+      localModel: installed.modelPath,
     });
   }
 
@@ -110,7 +122,7 @@ export async function POST(_req: Request, ctx: RouteCtx): Promise<NextResponse> 
       {
         error: "whisper_not_configured",
         message:
-          "Neither local nor HTTP Whisper is configured. Set WHISPER_LOCAL_BIN + WHISPER_LOCAL_MODEL (offline) OR WHISPER_API_KEY (hosted) in .env, then restart the dev server.",
+          "Whisper isn't configured. Easiest: click \"Install local Whisper\" on the alignment card to auto-download whisper.cpp + a base model. Or set WHISPER_LOCAL_BIN + WHISPER_LOCAL_MODEL (offline) / WHISPER_API_KEY (hosted) in .env and restart the dev server.",
       },
       { status: 503 },
     );

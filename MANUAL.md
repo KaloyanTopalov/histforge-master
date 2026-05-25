@@ -201,7 +201,10 @@ Click a video title to open the detail page, which shows the step list, step tim
 
 **Local mode (recommended — offline, free, no upload cap):** uses whisper.cpp's binary against a ggml model file.
 
-1. Download a release binary from [github.com/ggerganov/whisper.cpp/releases](https://github.com/ggerganov/whisper.cpp/releases). On Windows look for `whisper-bin-x64.zip` — extract `whisper-cli.exe`.
+*Easiest path (Windows): click* **Install local Whisper** *on the Alignment card.* The dashboard downloads whisper.cpp's prebuilt x64 binary (~10 MB) + the `ggml-base.en` model (~150 MB) into `vendor/whisper/` and the next Auto-transcribe click uses them. Takes 1-3 minutes on broadband. The badge above the button shows install state — `Local Whisper installed under vendor/whisper/` once it's done. No env vars needed; the auto-transcribe route discovers the vendor install on its own.
+
+*Manual install (macOS/Linux, or if you want a different model):*
+1. Download a release binary from [github.com/ggerganov/whisper.cpp/releases](https://github.com/ggerganov/whisper.cpp/releases). On Windows look for `whisper-bin-x64.zip` — extract `whisper-cli.exe`. On macOS: `brew install whisper-cpp`. On Linux: build from source or `apt install whisper-cpp` where available.
 2. Download a ggml model from [huggingface.co/ggerganov/whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp/tree/main). `ggml-base.en.bin` (~150 MB) is good for English; `ggml-small.en.bin` (~500 MB) is noticeably better.
 3. Set in `.env`:
    ```
@@ -211,6 +214,8 @@ Click a video title to open the detail page, which shows the step list, step tim
    WHISPER_LOCAL_THREADS=         # optional, default = CPU count
    ```
 4. Restart `npm run dev`. The button now runs Whisper locally — ffmpeg converts narration.mp3 to mono 16 kHz PCM WAV, whisper.cpp produces an SRT, route parses + writes alignment.json. Expect ~real-time-to-2× audio length on a modern CPU; faster with a CUDA build.
+
+The route's resolution priority is **env vars > vendored install > HTTP API > error**. Env vars always win, so a misconfigured `WHISPER_LOCAL_BIN` won't silently fall back to the auto-installed copy — it surfaces as `local_bin_missing` so you can fix the typo.
 
 **HTTP API mode (fallback when local isn't configured):** the route reads `audio/narration.mp3`, ffmpeg-downsamples it to mono 16 kHz 24 kbps (so it fits Whisper's 25 MB upload cap up to ~2.5 hours of narration), POSTs it to an OpenAI-compatible `/v1/audio/transcriptions` endpoint, parses the returned SRT, and writes `alignment.json`. Env vars:
 
