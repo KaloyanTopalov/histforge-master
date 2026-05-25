@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { CheckCircle2, Loader2, Upload } from "lucide-react";
+import { CheckCircle2, Loader2, Sparkles, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
@@ -15,6 +15,11 @@ interface AlignmentUploadProps {
    * that fact and offers a "Replace" affordance.
    */
   hasExistingAlignment: boolean;
+  /**
+   * True when `audio/narration.mp3` is present. The auto-transcribe
+   * button is only enabled when there's audio to transcribe.
+   */
+  hasVoiceover: boolean;
 }
 
 /**
@@ -36,9 +41,11 @@ interface AlignmentUploadProps {
 export function AlignmentUpload({
   videoId,
   hasExistingAlignment,
+  hasVoiceover,
 }: AlignmentUploadProps): JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -80,6 +87,39 @@ export function AlignmentUpload({
     }
   }
 
+  async function onAutoTranscribe(): Promise<void> {
+    setTranscribing(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const r = await fetch(`/api/videos/${videoId}/alignment/auto-transcribe`, {
+        method: "POST",
+      });
+      const data = (await r.json().catch(() => ({}))) as {
+        ok?: boolean;
+        entries?: number;
+        model?: string;
+        durationSec?: number | null;
+        error?: string;
+        message?: string;
+      };
+      if (!r.ok) {
+        setError(data.message || data.error || `Auto-transcribe failed (HTTP ${r.status}).`);
+      } else {
+        const entries = typeof data.entries === "number" ? data.entries : 0;
+        const dur = typeof data.durationSec === "number" ? ` (${Math.round(data.durationSec)}s)` : "";
+        setSuccess(`Whisper produced ${entries} entries${dur} via ${data.model || "default model"}. Reloading…`);
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setTranscribing(false);
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -106,19 +146,19 @@ export function AlignmentUpload({
             </span>
           </p>
         )}
-        <div>
+        <div className="flex flex-wrap items-center gap-2">
           <input
             ref={inputRef}
             type="file"
             accept=".json,.srt,.vtt,application/json,text/plain"
             className="hidden"
             onChange={(e) => void onFileChange(e)}
-            disabled={busy}
+            disabled={busy || transcribing}
           />
           <Button
             type="button"
             variant="secondary"
-            disabled={busy}
+            disabled={busy || transcribing}
             onClick={() => inputRef.current?.click()}
           >
             {busy ? (
@@ -127,6 +167,24 @@ export function AlignmentUpload({
               <Upload className="mr-2 h-4 w-4" />
             )}
             {hasExistingAlignment ? "Replace alignment" : "Upload alignment"}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={busy || transcribing || !hasVoiceover}
+            title={
+              !hasVoiceover
+                ? "Upload or generate a voiceover first."
+                : "Run Whisper against audio/narration.mp3 and save the result as alignment.json."
+            }
+            onClick={() => void onAutoTranscribe()}
+          >
+            {transcribing ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="mr-2 h-4 w-4" />
+            )}
+            Auto-transcribe (Whisper)
           </Button>
         </div>
         {error && (

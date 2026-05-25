@@ -197,6 +197,16 @@ Click a video title to open the detail page, which shows the step list, step tim
 
 **Manual alignment upload (skip WSL/aeneas):** Same pattern as voiceover. The **Alignment** card accepts `.json` (aeneas-shape `[{id, text, begin, end}]`) or `.srt` / `.vtt` (parsed and converted server-side). Lands at `alignment/alignment.json`. The align step detects valid content at entry and skips the WSL/aeneas spawn — useful when WSL isn't installed on Windows, or when you already have a Whisper/Descript transcript. Malformed files fall through to aeneas (treated as if no upload happened) so a corrupt drop can't break the chunker downstream.
 
+**Auto-transcribe with Whisper:** The Alignment card has an **Auto-transcribe (Whisper)** button next to Upload. It reads `audio/narration.mp3`, ffmpeg-downsamples it to mono 16 kHz 24 kbps (so it fits Whisper's 25 MB upload cap up to ~2.5 hours of narration), POSTs it to an OpenAI-compatible `/v1/audio/transcriptions` endpoint with `response_format=srt`, parses the returned SRT, and writes `alignment.json`. Configure via three env vars in `.env`:
+
+```
+WHISPER_API_KEY=...                                   # required
+WHISPER_BASE_URL=https://api.openai.com/v1            # default
+WHISPER_MODEL=whisper-1                               # default
+```
+
+Works against any endpoint that implements the OpenAI shape — confirmed with OpenAI (`whisper-1`) and Groq (`https://api.groq.com/openai/v1` + `whisper-large-v3`). For narrations longer than the 25 MB cap can hold (~2.5 hours at mono 24 kbps), the route fails with `audio_too_long` and you fall back to uploading an SRT manually.
+
 ---
 
 ## 11. Copy Path (finished videos)

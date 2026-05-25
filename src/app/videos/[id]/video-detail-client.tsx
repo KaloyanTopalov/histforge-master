@@ -576,6 +576,7 @@ export function VideoDetailClient({
         <AlignmentUpload
           videoId={videoId}
           hasExistingAlignment={artifacts.includes("alignment/alignment.json")}
+          hasVoiceover={artifacts.includes("audio/narration.mp3")}
         />
 
         <ArtifactsPanel videoId={videoId} artifacts={artifacts} steps={steps} />
