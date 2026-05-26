@@ -53,6 +53,7 @@ const SETTING_SCHEMAS = {
   google_flow_image_model: z.enum(ENUM_VALUES.google_flow_image_model),
   google_flow_video_model: z.enum(ENUM_VALUES.google_flow_video_model),
   google_flow_aspect_ratio: z.enum(ENUM_VALUES.google_flow_aspect_ratio),
+  google_flow_image_aspect_ratio: z.enum(ENUM_VALUES.google_flow_image_aspect_ratio),
   // Per-clip duration for the Google Flow hook video provider, encoded
   // into the dispatched Veo `videoModelKey` at claim time. Stored as the
   // string form so the Zod schema can be a flat `z.enum(...)`; consumers

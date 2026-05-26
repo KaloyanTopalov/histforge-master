@@ -29,6 +29,7 @@ export const ENUM_VALUES = {
     "veo_3_1_t2v_lite_low_priority",
   ],
   google_flow_aspect_ratio: ["landscape", "portrait"],
+  google_flow_image_aspect_ratio: ["16:9", "4:3", "1:1", "3:4", "9:16"],
   // Per-clip duration for the Google Flow hook video provider. Storage
   // form is the string `"4"`/`"6"`/`"8"` so the Zod schema can use a
   // simple `z.enum(...)` mirror; the dispatch route uses the storage
@@ -100,6 +101,13 @@ export const SETTING_OPTION_LABELS: LabelOverrides = {
     h264_nvenc: "NVIDIA NVENC (GPU)",
     h264_amf: "AMD AMF (GPU)",
     av1_nvenc: "NVIDIA NVENC AV1 (GPU) (RTX 40-series and newer)",
+  },
+  google_flow_image_aspect_ratio: {
+    "16:9": "Landscape 16:9",
+    "4:3":  "Landscape 4:3",
+    "1:1":  "Square 1:1",
+    "3:4":  "Portrait 3:4",
+    "9:16": "Portrait 9:16",
   },
 };
 
