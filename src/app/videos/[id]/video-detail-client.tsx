@@ -45,6 +45,7 @@ import { FlowProgressPanel } from "./flow-progress-panel";
 import { ArtifactsPanel } from "./artifacts-panel";
 import { VoiceoverUpload } from "./voiceover-upload";
 import { AlignmentUpload } from "./alignment-upload";
+import { CharacterReferenceUpload } from "./character-reference-upload";
 
 export type { FlowSummary } from "@/lib/flow-summary";
 
@@ -576,6 +577,11 @@ export function VideoDetailClient({
         <AlignmentUpload
           videoId={videoId}
           hasExistingAlignment={artifacts.includes("alignment/alignment.json")}
+        />
+
+        <CharacterReferenceUpload
+          videoId={videoId}
+          hasExistingReference={artifacts.includes("character_reference.png")}
         />
 
         <ArtifactsPanel videoId={videoId} artifacts={artifacts} steps={steps} />
