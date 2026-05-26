@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VEO Video Downloader</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #1a1a2e; color: #e0e0e0; min-height: 100vh; padding: 2rem;
+  }
+  .container { max-width: 900px; margin: 0 auto; }
+  h1 { text-align: center; font-size: 1.8rem; margin-bottom: 0.3rem; color: #fff; }
+  .subtitle { text-align: center; color: #888; margin-bottom: 2rem; font-size: 0.9rem; }
+  .form-card { background: #16213e; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; border: 1px solid #0f3460; }
+  .form-row { display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
+  .form-group { flex: 1; min-width: 200px; }
+  .form-group label { display: block; font-size: 0.8rem; color: #aaa; margin-bottom: 0.3rem; font-weight: 500; }
+  .form-group input { width: 100%; padding: 0.6rem 0.8rem; background: #0f3460; border: 1px solid #1a4a8a; border-radius: 8px; color: #fff; font-size: 0.9rem; outline: none; transition: border-color 0.2s; }
+  .form-group input:focus { border-color: #e94560; }
+  .form-group input::placeholder { color: #555; }
+  .btn { padding: 0.6rem 1.5rem; border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: opacity 0.2s, transform 0.1s; }
+  .btn:active { transform: scale(0.97); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-primary { background: #e94560; color: #fff; }
+  .btn-primary:hover:not(:disabled) { opacity: 0.85; }
+  .btn-success { background: #28a745; color: #fff; }
+  .btn-success:hover:not(:disabled) { opacity: 0.85; }
+  .btn-row { display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap; }
+  .progress-section { background: #16213e; border-radius: 12px; padding: 1.2rem 1.5rem; margin-bottom: 1.5rem; border: 1px solid #0f3460; display: none; }
+  .progress-section.visible { display: block; }
+  .stats { display: flex; gap: 1.5rem; margin-bottom: 0.8rem; flex-wrap: wrap; }
+  .stat { font-size: 0.85rem; color: #aaa; }
+  .stat span { color: #fff; font-weight: 600; }
+  .progress-bar-bg { width: 100%; height: 8px; background: #0f3460; border-radius: 4px; overflow: hidden; }
+  .progress-bar-fill { height: 100%; background: linear-gradient(90deg, #e94560, #ff6b81); border-radius: 4px; width: 0%; transition: width 0.3s; }
+  .video-list { display: flex; flex-direction: column; gap: 0.5rem; }
+  .video-item { display: flex; align-items: center; gap: 0.8rem; background: #16213e; border: 1px solid #0f3460; border-radius: 10px; padding: 0.8rem 1rem; transition: border-color 0.2s; }
+  .video-item.downloading { border-color: #e94560; }
+  .video-item.done { border-color: #28a745; }
+  .video-item.error { border-color: #dc3545; }
+  .video-num { font-size: 0.75rem; color: #555; min-width: 28px; text-align: center; }
+  .video-info { flex: 1; min-width: 0; }
+  .video-filename { font-size: 0.85rem; color: #ddd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .video-prompt { font-size: 0.75rem; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .badge { font-size: 0.7rem; font-weight: 600; padding: 0.2rem 0.6rem; border-radius: 12px; text-transform: uppercase; white-space: nowrap; }
+  .badge-waiting { background: #333; color: #888; }
+  .badge-downloading { background: #e94560; color: #fff; }
+  .badge-done { background: #28a745; color: #fff; }
+  .badge-error { background: #dc3545; color: #fff; }
+  .save-link { font-size: 0.8rem; color: #e94560; text-decoration: none; white-space: nowrap; }
+  .save-link:hover { text-decoration: underline; }
+  .msg { text-align: center; padding: 2rem; color: #666; font-size: 0.9rem; }
+  .msg.error-msg { color: #dc3545; }
+  .advanced-toggle { font-size: 0.8rem; color: #666; cursor: pointer; user-select: none; margin-bottom: 0.8rem; }
+  .advanced-toggle:hover { color: #aaa; }
+  .advanced-fields { display: none; }
+  .advanced-fields.visible { display: block; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>VEO Video Downloader</h1>
+  <p class="subtitle">Download all generated videos from your Baserow table</p>
+  <div class="form-card">
+    <div class="form-row">
+      <div class="form-group" style="flex:2">
+        <label>Baserow API Token</label>
+        <input type="text" id="apiToken" placeholder="Enter your Baserow API token">
+      </div>
+      <div class="form-group" style="flex:1">
+        <label>Table ID</label>
+        <input type="text" id="tableId" placeholder="e.g. 12345">
+      </div>
+    </div>
+    <div class="advanced-toggle" id="advancedToggle">&#9660; Advanced Settings</div>
+    <div class="advanced-fields" id="advancedFields">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Video URL Field Name</label>
+          <input type="text" id="fieldName" placeholder="Video_URL" value="Video_URL">
+        </div>
+        <div class="form-group">
+          <label>Baserow URL (Self-hosted)</label>
+          <input type="text" id="baserowUrl" placeholder="https://api.baserow.io (default)">
+        </div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="loadBtn">Load Videos</button>
+      <button class="btn btn-success" id="downloadBtn" disabled>Download All</button>
+      <span id="statusText" style="font-size:0.85rem; color:#888;"></span>
+    </div>
+  </div>
+  <div class="progress-section" id="progressSection">
+    <div class="stats">
+      <div class="stat">Total: <span id="statTotal">0</span></div>
+      <div class="stat">Done: <span id="statDone">0</span></div>
+      <div class="stat">Errors: <span id="statErrors">0</span></div>
+      <div class="stat">Remaining: <span id="statRemaining">0</span></div>
+    </div>
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill" id="progressBar"></div>
+    </div>
+  </div>
+  <div id="videoListContainer">
+    <div class="msg" id="emptyMsg">Enter your credentials and click "Load Videos" to start.</div>
+  </div>
+</div>
+<script src="downloader.js"></script>
+</body>
+</html>
