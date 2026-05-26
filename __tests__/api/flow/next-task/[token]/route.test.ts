@@ -268,6 +268,73 @@ describe("POST /api/flow/next-task/:token", () => {
     expect(getSetting("google_flow_relogin_needed")).toBe(false);
   });
 
+  it("emits a referenceImage URL for createImage when reference_image is set on the row (phase A step 3)", async () => {
+    // When the worker found a per-video character_reference.png at
+    // enqueue time, it sets reference_image to the relative path. The
+    // dispatch route must project this into an absolute artifact URL
+    // the youforge-flow extension can GET. Mirrors Magnific's pattern.
+    await seedAccount({ token: "T-ref" });
+    await seedVideo("vid_ref");
+    await enqueue({
+      video_id: "vid_ref",
+      chunk_id: "img_ref",
+      kind: "image",
+      mode: "createImage",
+      prompt: "scene with character",
+      reference_image: "character_reference.png",
+      output_path: "images/img_ref.png",
+    });
+
+    const res = await callNextTask("T-ref", {
+      type: "TaskRequest",
+      accountToken: "T-ref",
+      mode: "createImage",
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // URL is bound to (token, external_task_id) so the artifact route
+    // can verify the calling account owns the dispatched task.
+    expect(body.referenceImage).toMatch(
+      /^http:\/\/localhost\/api\/flow\/artifact\/T-ref\/\d+_\d+$/
+    );
+    // Sanity: no leaked path/videoId in the URL — the artifact route
+    // resolves them from the task lookup.
+    expect(body.referenceImage).not.toContain("path=");
+    expect(body.referenceImage).not.toContain("videoId=");
+    // The legacy imagePrompt mirror still fires.
+    expect(body.imagePrompt).toBe("scene with character");
+  });
+
+  it("omits referenceImage on createImage when reference_image is null (no per-video reference uploaded)", async () => {
+    // Default state: operator hasn't uploaded a character_reference.png
+    // for this video. The artifact URL has nothing to point at, so we
+    // simply don't emit the field. The extension treats absence as
+    // "text-only generation" (its existing branch).
+    await seedAccount({ token: "T-noref" });
+    await seedVideo("vid_noref");
+    await enqueue({
+      video_id: "vid_noref",
+      chunk_id: "img_noref",
+      kind: "image",
+      mode: "createImage",
+      prompt: "scene without character",
+      output_path: "images/img_noref.png",
+      // reference_image omitted → null in DB
+    });
+
+    const res = await callNextTask("T-noref", {
+      type: "TaskRequest",
+      accountToken: "T-noref",
+      mode: "createImage",
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.referenceImage).toBeUndefined();
+    expect(body.imagePrompt).toBe("scene without character");
+  });
+
   it("routes the claim to the requested bucket when wantBucket='image' is set", async () => {
     // wantBucket scopes the dispatch to a single concurrency bucket so a
     // free image slot can't claim a higher-priority video row (which would

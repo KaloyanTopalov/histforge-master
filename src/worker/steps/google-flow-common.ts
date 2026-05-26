@@ -14,6 +14,7 @@ import * as videosRepo from "@/lib/repos/videos";
 import * as flowLifecycle from "@/lib/lifecycle/flow";
 import { getSetting } from "@/lib/settings";
 import { extractContentPolicyTag } from "@/lib/flow-error-classify";
+import { findCharacterReference } from "@/lib/character-reference";
 import type { ModerationItem, PromptModerator } from "@/lib/moderator";
 
 export interface GoogleFlowStepDeps {
@@ -137,6 +138,15 @@ function enqueueChunks(
 ): { existingOutputs: number; enqueueableChunks: number } {
   const { db, log } = deps;
   const outDir = join(projectDir, spec.outputDir);
+  // Per-video character reference: looked up once per call so the
+  // filesystem probe (`findCharacterReference`) doesn't run on every
+  // chunk. Set as `reference_image` on every image-kind queue row so
+  // the Flow dispatch route can project it into a `referenceImage` URL
+  // and the youforge-flow extension uploads it as `imageInputs` for
+  // character-lock generations. Clip rows ignore it (Veo image-to-video
+  // uses `startFrame`/`endFrame` from the chunker, not character refs).
+  const characterReferencePath =
+    spec.queueKind === "image" ? findCharacterReference(projectDir) : null;
   let existingOutputs = 0;
   let enqueueableChunks = 0;
   for (const c of targetChunks) {
@@ -171,6 +181,7 @@ function enqueueChunks(
       kind: spec.queueKind,
       mode: spec.mode,
       prompt: c.prompt,
+      reference_image: characterReferencePath,
       output_path: `${spec.outputDir}/${c.id}${spec.outputExt}`,
       created_at: nowSec(),
     });

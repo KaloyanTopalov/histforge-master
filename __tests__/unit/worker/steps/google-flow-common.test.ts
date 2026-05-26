@@ -13,7 +13,7 @@ import { createDb, seedDefaultSettings } from "@/lib/db";
 import { setSetting } from "@/lib/settings";
 import * as gfRepo from "@/lib/repos/google-flow";
 import { createPromptModerator } from "@/lib/moderator";
-import { runGoogleFlowStep } from "@/worker/steps/google-flow-common";
+import { runGoogleFlowStep, type GoogleFlowStepSpec } from "@/worker/steps/google-flow-common";
 import { noOpModerator } from "../../../helpers/no-op-moderator";
 import type { Chunk, ModerationEvent } from "@/types";
 import type { ChatMessage } from "@/lib/llm/types";
@@ -623,5 +623,153 @@ describe("runGoogleFlowStep — moderation loop", () => {
       .prepare("SELECT COUNT(*) AS n FROM google_flow_queue WHERE video_id = 'v1'")
       .get() as { n: number };
     expect(rowCount.n).toBe(2);
+  });
+});
+
+/**
+ * Drive runGoogleFlowStep on the happy path: enqueue, then mark every
+ * row done so the wait-drain returns clean and aggregateFailures finds
+ * nothing missing. Caller is responsible for pre-creating output files
+ * if they want the aggregator to not throw. Returns the promise.
+ */
+function startHappyPath(
+  db: DatabaseType,
+  projectsDir: string,
+  promptsDir: string,
+  videoId = "v1",
+  spec: GoogleFlowStepSpec = SPEC
+): Promise<void | { deferred: true; retryAfter: number }> {
+  const moderator = noOpModerator;
+  const promise = runGoogleFlowStep(
+    videoId,
+    {
+      db,
+      projectsDir,
+      moderator,
+      log: () => {},
+      pollIntervalMs: 1,
+    },
+    spec
+  );
+  // Let the synchronous enqueue commit, then mark all rows done AND
+  // create the corresponding output files (aggregateFailures checks
+  // for missing-on-disk rather than just failed rows).
+  setTimeout(() => {
+    const rows = db
+      .prepare(
+        "SELECT id, output_path FROM google_flow_queue WHERE video_id = ?"
+      )
+      .all(videoId) as Array<{ id: number; output_path: string }>;
+    for (const row of rows) {
+      const outPath = join(projectsDir, videoId, row.output_path);
+      mkdirSync(join(outPath, ".."), { recursive: true });
+      writeFileSync(outPath, Buffer.from([0]));
+    }
+    db.prepare(
+      `UPDATE google_flow_queue SET status = 'done' WHERE video_id = ?`
+    ).run(videoId);
+  }, 2);
+  return promise;
+}
+
+describe("runGoogleFlowStep — character reference plumbing (phase A step 3)", () => {
+  it("sets reference_image to the per-video character reference basename when the file exists", async () => {
+    const db = freshDb();
+    const projectsDir = tempDir("gflow-ref-set");
+    const promptsDir = tempDir("gflow-ref-set-prompts");
+    seedPrompts(promptsDir);
+    insertVideo(db, "v1");
+    insertAccount(db, "acc_01");
+    writeChunks(projectsDir, "v1", makeImageChunks(2));
+    // Seed the per-video character reference so enqueueChunks picks it up.
+    mkdirSync(join(projectsDir, "v1"), { recursive: true });
+    writeFileSync(
+      join(projectsDir, "v1", "character_reference.png"),
+      Buffer.from([0x89, 0x50, 0x4e, 0x47])
+    );
+
+    await expect(
+      startHappyPath(db, projectsDir, promptsDir)
+    ).resolves.toBeUndefined();
+
+    const rows = db
+      .prepare(
+        "SELECT chunk_id, reference_image FROM google_flow_queue WHERE video_id = 'v1' ORDER BY id"
+      )
+      .all() as Array<{ chunk_id: string; reference_image: string | null }>;
+    expect(rows).toEqual([
+      { chunk_id: "image_001", reference_image: "character_reference.png" },
+      { chunk_id: "image_002", reference_image: "character_reference.png" },
+    ]);
+  });
+
+  it("leaves reference_image null when no character reference file is present", async () => {
+    const db = freshDb();
+    const projectsDir = tempDir("gflow-ref-absent");
+    const promptsDir = tempDir("gflow-ref-absent-prompts");
+    seedPrompts(promptsDir);
+    insertVideo(db, "v1");
+    insertAccount(db, "acc_01");
+    writeChunks(projectsDir, "v1", makeImageChunks(2));
+
+    await expect(
+      startHappyPath(db, projectsDir, promptsDir)
+    ).resolves.toBeUndefined();
+
+    const rows = db
+      .prepare(
+        "SELECT reference_image FROM google_flow_queue WHERE video_id = 'v1'"
+      )
+      .all() as Array<{ reference_image: string | null }>;
+    expect(rows.every((r) => r.reference_image === null)).toBe(true);
+  });
+
+  it("does NOT look up the character reference for clip-kind steps", async () => {
+    // Veo's clip generation uses startFrame/endFrame, not character
+    // references, so the per-image lookup must be skipped to avoid
+    // attaching irrelevant state to clip rows.
+    const db = freshDb();
+    const projectsDir = tempDir("gflow-ref-clip");
+    const promptsDir = tempDir("gflow-ref-clip-prompts");
+    seedPrompts(promptsDir);
+    insertVideo(db, "v1");
+    insertAccount(db, "acc_01");
+    // Write a character_reference.png but use a clip-kind spec.
+    mkdirSync(join(projectsDir, "v1"), { recursive: true });
+    writeFileSync(
+      join(projectsDir, "v1", "character_reference.png"),
+      Buffer.from([0x89])
+    );
+    const clipChunks: Chunk[] = [
+      {
+        id: "clip_01",
+        kind: "clip",
+        start: 0,
+        end: 8,
+        text: "t",
+        prompt: "p",
+      },
+    ];
+    writeChunks(projectsDir, "v1", clipChunks);
+
+    const clipSpec = {
+      stepName: "generate_clips",
+      chunkKind: "clip" as const,
+      queueKind: "clip" as const,
+      mode: "text" as const,
+      outputDir: "clips",
+      outputExt: ".mp4",
+    };
+
+    await expect(
+      startHappyPath(db, projectsDir, promptsDir, "v1", clipSpec)
+    ).resolves.toBeUndefined();
+
+    const row = db
+      .prepare(
+        "SELECT reference_image FROM google_flow_queue WHERE video_id = 'v1' AND chunk_id = 'clip_01'"
+      )
+      .get() as { reference_image: string | null };
+    expect(row.reference_image).toBeNull();
   });
 });

@@ -45,6 +45,39 @@ interface TokenContext {
   params: { token: string };
 }
 
+/**
+ * Token-only Flow auth, mirroring `resolveMagnificToken` — for routes
+ * that have no body to validate (e.g. GET artifact passthrough). Looks
+ * up the account by its URL [token] segment and bumps `last_seen_at`
+ * on success. Returns 404 on unknown token.
+ *
+ * Does NOT enforce `enabled` — artifact serving is a passive read and
+ * shouldn't block on the operator-toggled disable flag the way new-task
+ * claiming does.
+ */
+export function resolveFlowAccountByToken(token: string): FlowAuthResult<{ accountToken: string }> {
+  const db = getDb();
+  const account = gfRepo.findAccountByToken(db, token);
+  if (!account) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: "unknown_token" },
+        { status: 404 }
+      ),
+    };
+  }
+  const now = Math.floor(Date.now() / 1000);
+  gfRepo.updateAccountLastSeen(db, account.id, now);
+  return {
+    ok: true,
+    account,
+    parsed: { accountToken: token },
+    db,
+    now,
+  };
+}
+
 export async function resolveFlowAccount<T extends { accountToken: string }>(
   req: Request,
   ctx: TokenContext,
