@@ -22,6 +22,25 @@
 // crypto.randomUUID, AISANDBOX_BASE, upscaleImages (src/executors/shared.js),
 // makeBadCharacterLockError (src/flow-error.js).
 
+// Map operator-friendly aspect strings ("16:9", "9:16", etc.) onto Google
+// Flow's IMAGE_ASPECT_RATIO_* enum values. Source-of-truth for the 5-value
+// matrix is the new VEO API Extension upstream (background.js:787-806);
+// HistForge mirrors the same 5 values in `google_flow_image_aspect_ratio`.
+// The `legacyAspect` fallback covers the case where neither HistForge nor
+// the popup set `imageAspectRatio` yet, so the existing 2-value `aspectRatio`
+// setting (shared with the video path) drives behavior unchanged.
+function imageAspectToEnum(imageAspect, legacyAspect) {
+  switch ((imageAspect || '').toLowerCase()) {
+    case '16:9': return 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+    case '4:3':  return 'IMAGE_ASPECT_RATIO_LANDSCAPE_FOUR_THREE';
+    case '1:1':  return 'IMAGE_ASPECT_RATIO_SQUARE';
+    case '3:4':  return 'IMAGE_ASPECT_RATIO_PORTRAIT_THREE_FOUR';
+    case '9:16': return 'IMAGE_ASPECT_RATIO_PORTRAIT';
+  }
+  return legacyAspect === 'portrait' ? 'IMAGE_ASPECT_RATIO_PORTRAIT'
+                                     : 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+}
+
 const CHARACTER_LOCK_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 async function runImageGen(task, ctx) {
@@ -29,9 +48,10 @@ async function runImageGen(task, ctx) {
   const log = ctx.log || { safeLog };
   const taskId = task.id;
   const prompt = task.imagePrompt || task.prompt;
-  const imageAspect = settings.aspectRatioSetting === 'portrait'
-    ? 'IMAGE_ASPECT_RATIO_PORTRAIT'
-    : 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+  const imageAspect = imageAspectToEnum(
+    task.imageAspect || settings.imageAspectRatioSetting,
+    settings.aspectRatioSetting,
+  );
   const modelName = task.imageModel || settings.imageModelSetting;
   const modelSource = task.imageModel ? 'task' : 'settings';
   const outputCount = settings.outputCount || 1;
