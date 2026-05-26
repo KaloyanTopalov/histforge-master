@@ -1014,10 +1014,8 @@ describe("POST /api/flow/next-task/:token", () => {
 
   it("emits the operator-set imageAspect value when changed from default", async () => {
     // Override the seeded default before enqueueing
-    const { getDb } = await import("@/lib/db");
-    getDb()
-      .prepare("UPDATE settings SET value = ? WHERE key = ?")
-      .run("9:16", "google_flow_image_aspect_ratio");
+    const { setSetting } = await import("@/lib/settings");
+    setSetting("google_flow_image_aspect_ratio", "9:16");
 
     await seedAccount({ token: "T-img-portrait" });
     await seedVideo("vid_ip");
