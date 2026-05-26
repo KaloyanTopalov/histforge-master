@@ -2,12 +2,56 @@ import type { Database as DatabaseType } from "better-sqlite3";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Step } from "@/worker/pipeline";
-import type { Chunk } from "@/types";
+import type {
+  Shot,
+  ShotCamera,
+  ShotReference,
+  ShotSubjectKind,
+} from "@/types";
 import { getSetting } from "@/lib/settings";
 import { render } from "@/lib/prompts";
 import * as videosRepo from "@/lib/repos/videos";
 import { parseVisualStyleSnapshot } from "@/lib/visual-styles";
 import type { ChatMessage } from "@/lib/llm/types";
+
+/**
+ * Allowed `camera` values, kept in sync with `ShotCamera` in `src/types.ts`.
+ * Used by `parseEnvelopeReply` to validate LLM-supplied framing.
+ */
+const VALID_CAMERAS: ReadonlySet<ShotCamera> = new Set<ShotCamera>([
+  "wide",
+  "medium",
+  "close-up",
+  "over-shoulder",
+  "pov",
+  "static",
+]);
+
+/**
+ * Allowed `subject_kind` values, kept in sync with `ShotSubjectKind` in
+ * `src/types.ts`.
+ */
+const VALID_SUBJECT_KINDS: ReadonlySet<ShotSubjectKind> = new Set<ShotSubjectKind>([
+  "character",
+  "environment",
+  "object",
+  "title-card",
+]);
+
+/**
+ * Per-entry payload returned by `parseEnvelopeReply`. `prompt` is the
+ * only required field (preserves the legacy contract); the rest are
+ * structured-IR additions the LLM can opt into.
+ */
+interface ShotExtras {
+  prompt: string;
+  scene?: string;
+  camera?: ShotCamera;
+  subject_kind?: ShotSubjectKind;
+  trigger_text?: string;
+  references?: ShotReference[];
+  negative_prompt?: string;
+}
 
 interface BatchItem {
   id: string;
@@ -91,7 +135,11 @@ export const step: Step = {
     const projectDir = resolve(ctx.projectsDir, videoId);
     const chunksPath = join(projectDir, "chunks", "chunks.json");
 
-    const chunks: Chunk[] = JSON.parse(readFileSync(chunksPath, "utf-8"));
+    // Read the chunks file as Shot[]: legacy files written before this
+    // step landed contain only Chunk fields, which the optional Shot
+    // extension fields tolerate (all undefined). New writes from this
+    // step persist the structured-IR fields the LLM supplies.
+    const chunks: Shot[] = JSON.parse(readFileSync(chunksPath, "utf-8"));
 
     // Skip-already-enriched: only null-prompt chunks need work. If the
     // working set is empty the file already reflects the final state —
@@ -114,11 +162,20 @@ export const step: Step = {
     const styleLock = getSetting("style_lock_description", ctx.db);
     const negativeLock = getSetting("character_lock_negative", ctx.db);
 
-    // Eager prompt_history sweep: clear lineage on the to-regenerate
-    // subset *before* any LLM call so a mid-step crash leaves consistent
-    // state. Persist once.
+    // Eager prompt_history + structured-IR sweep: clear lineage AND any
+    // prior optional Shot fields on the to-regenerate subset *before* any
+    // LLM call so a mid-step crash leaves consistent state. Without this
+    // the persist step would only overwrite extras the new LLM reply
+    // includes — a sparser reply would leave stale `scene`/`camera`/etc.
+    // describing a prompt that has since been replaced. Persist once.
     for (const i of workingIndexes) {
       chunks[i].prompt_history = [];
+      delete chunks[i].scene;
+      delete chunks[i].camera;
+      delete chunks[i].subject_kind;
+      delete chunks[i].trigger_text;
+      delete chunks[i].references;
+      delete chunks[i].negative_prompt;
     }
     writeFileSync(chunksPath, JSON.stringify(chunks, null, 2), "utf-8");
 
@@ -141,25 +198,38 @@ export const step: Step = {
     // In-process write mutex. A Promise chain held in `writeLock`
     // serializes all file writes so concurrent batches can't tear JSON.
     let writeLock: Promise<void> = Promise.resolve();
-    const persistBatch = (results: Map<string, string>): Promise<void> => {
+    const persistBatch = (results: Map<string, ShotExtras>): Promise<void> => {
       writeLock = writeLock.then(() => {
         for (const c of chunks) {
-          const p = results.get(c.id);
-          if (p !== undefined) c.prompt = p;
+          const extras = results.get(c.id);
+          if (extras === undefined) continue;
+          c.prompt = extras.prompt;
+          // Persist the optional structured-IR fields the LLM supplied.
+          // Phase 2a stores them but doesn't change downstream behaviour;
+          // a later phase will assemble provider prompts from them.
+          if (extras.scene !== undefined) c.scene = extras.scene;
+          if (extras.camera !== undefined) c.camera = extras.camera;
+          if (extras.subject_kind !== undefined) c.subject_kind = extras.subject_kind;
+          if (extras.trigger_text !== undefined) c.trigger_text = extras.trigger_text;
+          if (extras.references !== undefined) c.references = extras.references;
+          if (extras.negative_prompt !== undefined) c.negative_prompt = extras.negative_prompt;
         }
         writeFileSync(chunksPath, JSON.stringify(chunks, null, 2), "utf-8");
       });
       return writeLock;
     };
 
-    // Wrap a Map<id, raw-llm-prompt> with the lock-segment post-process
+    // Wrap each ShotExtras's `prompt` with the lock-segment post-process
     // before handing it to persistBatch. Applied uniformly on the main
     // batch and per-chunk fallback paths so all persisted prompts carry
-    // the locks.
-    const enrich = (raw: Map<string, string>): Map<string, string> => {
-      const out = new Map<string, string>();
-      for (const [id, prompt] of raw) {
-        out.set(id, applyLocks(prompt, styleLock, negativeLock));
+    // the locks. Other fields pass through unchanged.
+    const enrich = (raw: Map<string, ShotExtras>): Map<string, ShotExtras> => {
+      const out = new Map<string, ShotExtras>();
+      for (const [id, extras] of raw) {
+        out.set(id, {
+          ...extras,
+          prompt: applyLocks(extras.prompt, styleLock, negativeLock),
+        });
       }
       return out;
     };
@@ -247,7 +317,7 @@ async function callBatchWithRetry(
     promptsDir: string;
     stylePrompt: string;
   }
-): Promise<Map<string, string>> {
+): Promise<Map<string, ShotExtras>> {
   const expectedIds = new Set(batch.map((b) => b.id));
   const userPrompt = render(
     "09_generate_visual_prompts.md",
@@ -286,17 +356,24 @@ async function callBatchWithRetry(
 }
 
 /**
- * Strict envelope validation. Returns an `id → prompt` map iff:
+ * Strict envelope validation. Returns an `id → ShotExtras` map iff:
  *   - the reply parses as JSON,
  *   - it has a top-level `prompts` array,
  *   - every entry has string `id` + non-empty string `prompt`,
  *   - the entry id set equals `expectedIds` exactly (no missing, no
  *     extra, no duplicates).
+ *
+ * Structured-IR extension fields (`scene`, `camera`, `subject_kind`,
+ * `trigger_text`, `references`, `negative_prompt`) are OPTIONAL and
+ * forgivingly parsed via `extractShotExtras` — a malformed extension
+ * field is silently dropped rather than failing the whole entry. This
+ * keeps backward compatibility with legacy `{id, prompt}` responses
+ * while letting the new prompt template opt into richer output.
  */
 function parseEnvelopeReply(
   reply: string,
   expectedIds: Set<string>
-): Map<string, string> {
+): Map<string, ShotExtras> {
   const cleaned = stripCodeFence(reply);
   let parsed: unknown;
   try {
@@ -315,7 +392,7 @@ function parseEnvelopeReply(
       `generate_visual_prompts: response missing prompts[]: ${reply.slice(0, 200)}`
     );
   }
-  const out = new Map<string, string>();
+  const out = new Map<string, ShotExtras>();
   const entries = (parsed as { prompts: unknown[] }).prompts;
   for (const e of entries) {
     if (
@@ -344,7 +421,10 @@ function parseEnvelopeReply(
         `generate_visual_prompts: duplicate id ${item.id}`
       );
     }
-    out.set(item.id, item.prompt);
+    out.set(item.id, {
+      prompt: item.prompt,
+      ...extractShotExtras(e as Record<string, unknown>),
+    });
   }
   if (out.size !== expectedIds.size) {
     const missing = [...expectedIds].filter((id) => !out.has(id));
@@ -353,6 +433,79 @@ function parseEnvelopeReply(
     );
   }
   return out;
+}
+
+/**
+ * Pluck the optional structured-IR fields off an envelope entry,
+ * dropping anything malformed. Returns a partial `ShotExtras` (without
+ * `prompt`) — the caller is responsible for merging in the strictly-
+ * validated `prompt` before storing.
+ *
+ * Lenient on purpose: an LLM that emits `camera: "closeup"` (no hyphen)
+ * or omits half the new fields should not fail the whole batch. The
+ * worst case is "structured fields aren't populated for this shot",
+ * which is the same as today's behaviour.
+ */
+function extractShotExtras(
+  entry: Record<string, unknown>
+): Omit<ShotExtras, "prompt"> {
+  const out: Omit<ShotExtras, "prompt"> = {};
+
+  if (typeof entry.scene === "string" && entry.scene.length > 0) {
+    out.scene = entry.scene;
+  }
+  if (
+    typeof entry.camera === "string" &&
+    VALID_CAMERAS.has(entry.camera as ShotCamera)
+  ) {
+    out.camera = entry.camera as ShotCamera;
+  }
+  if (
+    typeof entry.subject_kind === "string" &&
+    VALID_SUBJECT_KINDS.has(entry.subject_kind as ShotSubjectKind)
+  ) {
+    out.subject_kind = entry.subject_kind as ShotSubjectKind;
+  }
+  if (typeof entry.trigger_text === "string" && entry.trigger_text.length > 0) {
+    out.trigger_text = entry.trigger_text;
+  }
+  if (
+    typeof entry.negative_prompt === "string" &&
+    entry.negative_prompt.length > 0
+  ) {
+    out.negative_prompt = entry.negative_prompt;
+  }
+  if (Array.isArray(entry.references)) {
+    const refs: ShotReference[] = [];
+    for (const r of entry.references) {
+      const parsed = parseShotReference(r);
+      if (parsed !== null) refs.push(parsed);
+    }
+    if (refs.length > 0) out.references = refs;
+  }
+
+  return out;
+}
+
+/**
+ * Validate one `references[]` element. Returns null when the shape is
+ * malformed so the caller can skip it without failing the batch. The
+ * envelope's `references` array is itself optional, so dropping all
+ * entries simply leaves the shot with no references attached.
+ */
+function parseShotReference(raw: unknown): ShotReference | null {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  if (obj.role !== "character" && obj.role !== "style") return null;
+  if (!obj.source || typeof obj.source !== "object") return null;
+  const source = obj.source as Record<string, unknown>;
+  if (source.kind === "entity" && typeof source.entity_id === "string") {
+    return { role: obj.role, source: { kind: "entity", entity_id: source.entity_id } };
+  }
+  if (source.kind === "image" && typeof source.url === "string") {
+    return { role: obj.role, source: { kind: "image", url: source.url } };
+  }
+  return null;
 }
 
 // The prompt forbids markdown fences but LLMs sometimes wrap JSON in

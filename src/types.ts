@@ -324,3 +324,84 @@ export interface Chunk {
    */
   prompt_history?: string[];
 }
+
+/**
+ * Framing for a Shot. Mirrors the seven cuts the biz-life-pov-pipeline
+ * blueprint enumerates; consumers should treat unknown values as the
+ * fallback "medium" to stay forward-compatible with new LLM outputs.
+ */
+export type ShotCamera =
+  | "wide"
+  | "medium"
+  | "close-up"
+  | "over-shoulder"
+  | "pov"
+  | "static";
+
+/**
+ * Subject of a Shot. Drives downstream reference-attachment policy
+ * (e.g. only `character` shots require a character reference). `title-card`
+ * is a text-only frame; `environment` / `object` shots are character-less.
+ */
+export type ShotSubjectKind =
+  | "character"
+  | "environment"
+  | "object"
+  | "title-card";
+
+/**
+ * Provider-neutral reference attachment for a Shot. The `source` is
+ * tagged so downstream provider projections (e.g. Google Flow's
+ * `referenceEntities` vs `imageInputs`) can dispatch on `kind` rather
+ * than baking provider terminology into the IR.
+ */
+export interface ShotReference {
+  role: "character" | "style";
+  source:
+    | { kind: "entity"; entity_id: string }
+    | { kind: "image"; url: string };
+}
+
+/**
+ * Richer per-shot intermediate representation, written by step 9
+ * (generate_visual_prompts) into `chunks/chunks.json`. `Shot` extends
+ * `Chunk` so the file shape stays backward-compatible: legacy consumers
+ * that read `Chunk[]` still see the timing + `prompt` they expect, while
+ * forward-looking consumers can opt into the structured fields.
+ *
+ * All extension fields are optional. The LLM is encouraged but not
+ * required to emit them; older prompt templates that return only
+ * `{id, prompt}` continue to parse and persist as plain Chunks.
+ */
+export interface Shot extends Chunk {
+  /**
+   * ONE-sentence description of what's in the frame. Set by the LLM to
+   * carry the visual intent independently of the assembled `prompt`
+   * string — a later phase will assemble the final prompt from this plus
+   * `camera`, `references`, and the style/character locks.
+   */
+  scene?: string;
+  /** Camera framing for this shot. */
+  camera?: ShotCamera;
+  /**
+   * What the shot is *about*, used to decide whether a character
+   * reference must be attached at generation time. Pre-enqueue
+   * validation (Codex Q4) reads this.
+   */
+  subject_kind?: ShotSubjectKind;
+  /**
+   * The exact word or short phrase in the narration that anchors this
+   * shot to a moment on the audio timeline. Used by future per-word
+   * placement features; today purely informational.
+   */
+  trigger_text?: string;
+  /**
+   * Provider-neutral references attached to this shot. Empty / undefined
+   * means no references — downstream provider projections decide what
+   * that means per provider (e.g. Flow falls back to the saved Character
+   * entity if configured).
+   */
+  references?: ShotReference[];
+  /** Negative prompt fragment specific to this shot, if any. */
+  negative_prompt?: string;
+}

@@ -50,6 +50,41 @@ Allowed: weapons being held, soldiers in formation, tense confrontations, expres
 
 OUTPUT (JSON only, no preamble, no commentary, no markdown fences):
 
-Return a single JSON object of the exact shape `{"prompts": [{"id": "<chunk_id>", "prompt": "<visual prompt string>"}, ...]}`. Do not wrap the response in backticks. Do not prefix it with the word `json`. Begin your response with `{` and end it with `}`.
+Return a single JSON object: `{"prompts": [<entry>, ...]}`. Do not wrap the response in backticks. Do not prefix it with the word `json`. Begin your response with `{` and end it with `}`. Return one entry per input chunk, using the input `id` exactly.
 
-Return one entry per input chunk, using the input `id` exactly. The `prompt` is a single visual prompt string — no commentary, no labels, no formatting, just the prompt.
+Each entry MUST include `id` and `prompt`; the other fields are OPTIONAL but recommended — populate them when you can, omit them otherwise.
+
+Per-entry fields:
+- `id` — string, REQUIRED, must match the input chunk id exactly.
+- `prompt` — string, REQUIRED, non-empty. The full visual prompt the image generator receives. No commentary, no labels, no formatting, just the prompt. This is the only field currently consumed downstream.
+- `scene` — string, optional. One sentence describing what's in the frame (≤ 25 words, subject + setting, not style).
+- `camera` — string, optional. One of exactly: `wide`, `medium`, `close-up`, `over-shoulder`, `pov`, `static`. If none fits, OMIT the field rather than inventing a value.
+- `subject_kind` — string, optional. One of exactly: `character`, `environment`, `object`, `title-card`. `character` = a person is the focus; `environment` = a place/landscape; `object` = an artifact, document, or close-up of a thing; `title-card` = text on a flat background.
+- `trigger_text` — string, optional. The most concrete noun or short phrase in the chunk's narration this image anchors to. Used for editor sync; if nothing concrete stands out, omit.
+- `negative_prompt` — string, optional. A short fragment describing what must NOT appear in this specific shot.
+- `references` — array, optional. Each entry has shape `{"role": "<role>", "source": <source>}`. `role` is exactly `"character"` or `"style"`. `source` is one of `{"kind": "entity", "entity_id": "<string>"}` for a saved provider entity, or `{"kind": "image", "url": "<string>"}` for an uploaded reference image URL. The LLM should normally LEAVE THIS EMPTY — references are attached upstream by the operator's per-video settings; emit one here only if the chunk text itself names a specific saved entity to use.
+
+Example output for a two-chunk batch (this is literal, valid JSON — emit your output in exactly this shape):
+
+```json
+{
+  "prompts": [
+    {
+      "id": "image_001",
+      "prompt": "a gaunt Dutch post-impressionist painter in his late thirties, red hair and beard, paint-stained smock, working at an easel in a sunlit Provence studio, 1880s",
+      "scene": "a painter at an easel in a sunlit studio",
+      "camera": "medium",
+      "subject_kind": "character",
+      "trigger_text": "Provence"
+    },
+    {
+      "id": "image_002",
+      "prompt": "wide shot of golden wheat fields under heavy summer sun, distant cypress trees, late afternoon light",
+      "scene": "golden wheat fields under summer sun",
+      "camera": "wide",
+      "subject_kind": "environment",
+      "trigger_text": "wheat fields"
+    }
+  ]
+}
+```
