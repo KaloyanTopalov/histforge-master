@@ -61,9 +61,14 @@ async function runImageGen(task, ctx) {
     throw makeBadCharacterLockError(characterLockReference);
   }
 
+  const isImagen4 = modelName === 'IMAGEN_3_5';
+  if (isImagen4 && (task.imagegenReference || task.referenceImage)) {
+    log.safeLog(`[api] Skipping reference upload: Imagen 4 (${modelName}) does not support reference images. Generating from prompt only.`);
+  }
+
   const referenceImageIds = [];
   const refUrl = task.imagegenReference || task.referenceImage;
-  if (refUrl && refUrl.trim()) {
+  if (!isImagen4 && refUrl && refUrl.trim()) {
     const refUrls = refUrl.split(',').map((u) => u.trim()).filter((u) => u);
     log.safeLog('Uploading', refUrls.length, 'reference image(s)...');
     for (let i = 0; i < refUrls.length; i++) {
