@@ -39,13 +39,15 @@ const VALID_SUBJECT_KINDS: ReadonlySet<ShotSubjectKind> = new Set<ShotSubjectKin
 ]);
 
 /**
- * Per-entry payload returned by `parseEnvelopeReply`. `prompt` is the
- * only required field (preserves the legacy contract); the rest are
- * structured-IR additions the LLM can opt into.
+ * Per-entry payload returned by `parseEnvelopeReply`. `scene` is the
+ * authoritative description and is REQUIRED under the phase 2b
+ * contract. `prompt` is the LLM-emitted prompt string (if any) —
+ * stored for round-trip visibility but NOT used as the assembler's
+ * base. The other fields are optional structured-IR additions.
  */
 interface ShotExtras {
+  scene: string;
   prompt: string;
-  scene?: string;
   camera?: ShotCamera;
   subject_kind?: ShotSubjectKind;
   trigger_text?: string;
@@ -86,6 +88,10 @@ const SYSTEM_INSTRUCTION =
  *
  * The exact form (separators, trailing period on each segment) is the
  * plan's spec; see __tests__/image/prompt-assembly.test.ts.
+ *
+ * Kept exported-via-call from `assembleShotPrompt` (which adds per-shot
+ * negative_prompt composition); `applyLocks` itself remains the simple
+ * two-lock composer used when there is no per-shot negative.
  */
 function applyLocks(
   prompt: string,
@@ -97,6 +103,53 @@ function applyLocks(
   if (negativeLock.length > 0) segments.push(`Negative: ${negativeLock}`);
   if (segments.length === 0) return prompt;
   return `${prompt}. ${segments.join(". ")}.`;
+}
+
+/**
+ * Phase 2b assembler: code (not the LLM) is the authority that produces
+ * a shot's final `prompt` string. The parser guarantees `extras.scene`
+ * is a non-empty string under the 2b contract, so this assembler has
+ * exactly one base.
+ *
+ * Appended segments, in order, each optional:
+ *   - `stylePrompt`: the per-video `visual_style_snapshot.prompt`
+ *     (e.g. "watercolor pastoral"). Empty when the operator picked
+ *     "Default (no style)". Always appended so style is byte-identical
+ *     across every shot of the video.
+ *   - `styleLock`: the global `style_lock_description` setting
+ *     (operator-editable catch-all style, applied to every video).
+ *   - `Negative:` clause folding per-shot `negative_prompt` (first)
+ *     with `negativeLock` (second), comma-separated, so providers see
+ *     exactly one `Negative:` clause regardless of where the cues
+ *     originated.
+ *
+ * Output shape (identical to the legacy `applyLocks` shape when
+ * stylePrompt is empty AND no per-shot negative is supplied — see
+ * prompt-assembly.test.ts):
+ *   `<scene>. <stylePrompt>. <styleLock>. Negative: <perShotNeg, globalNeg>.`
+ */
+function assembleShotPrompt(
+  extras: ShotExtras,
+  deps: { stylePrompt: string; styleLock: string; negativeLock: string }
+): string {
+  const base = extras.scene;
+
+  const negativeParts: string[] = [];
+  if (extras.negative_prompt && extras.negative_prompt.length > 0) {
+    negativeParts.push(extras.negative_prompt);
+  }
+  if (deps.negativeLock.length > 0) {
+    negativeParts.push(deps.negativeLock);
+  }
+
+  const segments: string[] = [];
+  if (deps.stylePrompt.length > 0) segments.push(deps.stylePrompt);
+  if (deps.styleLock.length > 0) segments.push(deps.styleLock);
+  if (negativeParts.length > 0)
+    segments.push(`Negative: ${negativeParts.join(", ")}`);
+
+  if (segments.length === 0) return base;
+  return `${base}. ${segments.join(". ")}.`;
 }
 
 /**
@@ -219,16 +272,25 @@ export const step: Step = {
       return writeLock;
     };
 
-    // Wrap each ShotExtras's `prompt` with the lock-segment post-process
-    // before handing it to persistBatch. Applied uniformly on the main
-    // batch and per-chunk fallback paths so all persisted prompts carry
-    // the locks. Other fields pass through unchanged.
+    // Phase 2b: code assembles each shot's final `prompt` from its
+    // structured fields (`scene` is authoritative; `extras.prompt` is a
+    // legacy fallback). The assembler appends the per-video style
+    // snapshot (formerly baked into the LLM's prompt) and the global
+    // style/negative locks, and folds per-shot `negative_prompt` into
+    // the negative lock so providers see one `Negative:` clause.
+    // Applied uniformly on the main batch and per-chunk fallback paths
+    // so all persisted prompts go through the assembler. Other
+    // structured fields pass through unchanged.
     const enrich = (raw: Map<string, ShotExtras>): Map<string, ShotExtras> => {
       const out = new Map<string, ShotExtras>();
       for (const [id, extras] of raw) {
         out.set(id, {
           ...extras,
-          prompt: applyLocks(extras.prompt, styleLock, negativeLock),
+          prompt: assembleShotPrompt(extras, {
+            stylePrompt,
+            styleLock,
+            negativeLock,
+          }),
         });
       }
       return out;
@@ -329,9 +391,11 @@ async function callBatchWithRetry(
   );
   const retryReminder =
     "\n\nREMINDER: Respond with a single JSON object of the exact shape " +
-    '`{"prompts": [{"id": "<chunk_id>", "prompt": "<string>"}, ...]}`. ' +
-    "One entry per input id, using the input ids exactly. No preamble, " +
-    "no commentary, no markdown fences. Begin your response with `{` and end with `}`.";
+    '`{"prompts": [{"id": "<chunk_id>", "scene": "<non-empty string>"}, ...]}`. ' +
+    "Each entry MUST include `id` and a non-empty `scene` — `scene` is the " +
+    "required authoritative description. One entry per input id, using the " +
+    "input ids exactly. No preamble, no commentary, no markdown fences. " +
+    "Begin your response with `{` and end with `}`.";
 
   let lastError: unknown;
   for (let attempt = 0; attempt < MAX_PARSE_ATTEMPTS; attempt++) {
@@ -359,16 +423,25 @@ async function callBatchWithRetry(
  * Strict envelope validation. Returns an `id → ShotExtras` map iff:
  *   - the reply parses as JSON,
  *   - it has a top-level `prompts` array,
- *   - every entry has string `id` + non-empty string `prompt`,
+ *   - every entry has string `id` and non-empty string `scene`. Phase
+ *     2b makes `scene` the sole authoritative description; the legacy
+ *     prompt-only contract is no longer accepted (it was ambiguous —
+ *     code could not tell whether the LLM's template baked style into
+ *     `prompt` or not, leading to either duplicated or missing per-
+ *     video style). Operators on an older template must migrate; the
+ *     ParseError message points at the missing field.
  *   - the entry id set equals `expectedIds` exactly (no missing, no
  *     extra, no duplicates).
  *
- * Structured-IR extension fields (`scene`, `camera`, `subject_kind`,
+ * Structured-IR extension fields (`camera`, `subject_kind`,
  * `trigger_text`, `references`, `negative_prompt`) are OPTIONAL and
  * forgivingly parsed via `extractShotExtras` — a malformed extension
- * field is silently dropped rather than failing the whole entry. This
- * keeps backward compatibility with legacy `{id, prompt}` responses
- * while letting the new prompt template opt into richer output.
+ * field is silently dropped rather than failing the whole entry.
+ *
+ * `ShotExtras.prompt` is the LLM-supplied prompt string when present
+ * (kept for round-trip persistence) but is NOT used as a base by the
+ * assembler — `scene` is. The assembler always overwrites `prompt`
+ * with the assembled output.
  */
 function parseEnvelopeReply(
   reply: string,
@@ -398,32 +471,39 @@ function parseEnvelopeReply(
     if (
       !e ||
       typeof e !== "object" ||
-      typeof (e as { id?: unknown }).id !== "string" ||
-      typeof (e as { prompt?: unknown }).prompt !== "string"
+      typeof (e as { id?: unknown }).id !== "string"
     ) {
       throw new ParseError(
         `generate_visual_prompts: bad entry: ${JSON.stringify(e).slice(0, 200)}`
       );
     }
-    const item = e as { id: string; prompt: string };
-    if (item.prompt.length === 0) {
+    const obj = e as Record<string, unknown>;
+    const id = obj.id as string;
+    if (typeof obj.scene !== "string" || obj.scene.length === 0) {
       throw new ParseError(
-        `generate_visual_prompts: empty prompt for id ${item.id}`
+        `generate_visual_prompts: entry ${id} missing non-empty 'scene' (phase 2b contract: scene is required; the legacy prompt-only shape is no longer accepted)`
       );
     }
-    if (!expectedIds.has(item.id)) {
+    const sceneStr: string = obj.scene;
+    if (!expectedIds.has(id)) {
       throw new ParseError(
-        `generate_visual_prompts: unexpected id ${item.id}`
+        `generate_visual_prompts: unexpected id ${id}`
       );
     }
-    if (out.has(item.id)) {
+    if (out.has(id)) {
       throw new ParseError(
-        `generate_visual_prompts: duplicate id ${item.id}`
+        `generate_visual_prompts: duplicate id ${id}`
       );
     }
-    out.set(item.id, {
-      prompt: item.prompt,
-      ...extractShotExtras(e as Record<string, unknown>),
+    // Pass through the LLM-emitted `prompt` if present (informational —
+    // assembler overwrites `prompt` with the assembled output, so this
+    // is just for round-trip visibility in chunks.json).
+    const promptStr =
+      typeof obj.prompt === "string" ? obj.prompt : "";
+    out.set(id, {
+      scene: sceneStr,
+      prompt: promptStr,
+      ...extractShotExtras(obj),
     });
   }
   if (out.size !== expectedIds.size) {
@@ -438,8 +518,8 @@ function parseEnvelopeReply(
 /**
  * Pluck the optional structured-IR fields off an envelope entry,
  * dropping anything malformed. Returns a partial `ShotExtras` (without
- * `prompt`) — the caller is responsible for merging in the strictly-
- * validated `prompt` before storing.
+ * the strict `scene` + `prompt` pair, which the caller sets explicitly
+ * from already-validated values).
  *
  * Lenient on purpose: an LLM that emits `camera: "closeup"` (no hyphen)
  * or omits half the new fields should not fail the whole batch. The
@@ -448,12 +528,9 @@ function parseEnvelopeReply(
  */
 function extractShotExtras(
   entry: Record<string, unknown>
-): Omit<ShotExtras, "prompt"> {
-  const out: Omit<ShotExtras, "prompt"> = {};
+): Omit<ShotExtras, "prompt" | "scene"> {
+  const out: Omit<ShotExtras, "prompt" | "scene"> = {};
 
-  if (typeof entry.scene === "string" && entry.scene.length > 0) {
-    out.scene = entry.scene;
-  }
   if (
     typeof entry.camera === "string" &&
     VALID_CAMERAS.has(entry.camera as ShotCamera)

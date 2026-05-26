@@ -125,14 +125,17 @@ function seedPrompts(promptsDir: string): void {
 }
 
 /**
- * Helper: build an envelope reply for a given batch of items.
+ * Helper: build an envelope reply for a given batch of items. Emits
+ * the phase-2b shape `{id, scene}` (scene is the authoritative field;
+ * the parser rejects prompt-only entries since step 2b). `sceneFor`
+ * supplies the per-id scene text.
  */
 function envelopeReply(
   items: Array<{ id: string }>,
-  promptFor: (id: string) => string
+  sceneFor: (id: string) => string
 ): string {
   return JSON.stringify({
-    prompts: items.map((i) => ({ id: i.id, prompt: promptFor(i.id) })),
+    prompts: items.map((i) => ({ id: i.id, scene: sceneFor(i.id) })),
   });
 }
 
@@ -210,9 +213,13 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
       ["image_005", "image_006", "image_007", "image_008"]
     );
 
+    // Phase 2b: the assembler always appends the per-video stylePrompt
+    // ("cinematic dark" here) to the LLM-emitted scene before persist.
+    // The two global lock segments are blanked by freshDb() for these
+    // tests, so the only post-scene addition is the per-video style.
     const result: Chunk[] = JSON.parse(readFileSync(chunksPath, "utf-8"));
     for (let i = 0; i < 8; i++) {
-      expect(result[i].prompt).toBe(`prompt-for-${result[i].id}`);
+      expect(result[i].prompt).toBe(`prompt-for-${result[i].id}. cinematic dark.`);
     }
   });
 
@@ -501,7 +508,7 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
     const chat = vi.fn()
       .mockResolvedValueOnce(
         // Missing image_002.
-        JSON.stringify({ prompts: [{ id: "image_001", prompt: "p1" }] })
+        JSON.stringify({ prompts: [{ id: "image_001", scene: "p1" }] })
       )
       .mockImplementationOnce(async (messages: { content: string }[]) => {
         const batch = extractBatch(messages[1].content);
@@ -870,7 +877,7 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
     // before batch 1's worker loops back to its while condition.
     gates[0].reject(new Error("LLM crashed"));
     gates[1].resolve(JSON.stringify({
-      prompts: gates[1].batch.map((b) => ({ id: b.id, prompt: `p-${b.id}` })),
+      prompts: gates[1].batch.map((b) => ({ id: b.id, scene: `p-${b.id}` })),
     }));
 
     await expect(run).rejects.toThrow("LLM crashed");
@@ -927,10 +934,10 @@ describe("generate_visual_prompts routing — chat vs visualPromptChat (Invarian
     seedChunksFile(projectsDir, videoId, makeChunks(1));
 
     const chat = vi.fn().mockResolvedValue(
-      JSON.stringify({ prompts: [{ id: "image_001", prompt: "p" }] })
+      JSON.stringify({ prompts: [{ id: "image_001", scene: "p" }] })
     );
     const visualPromptChat = vi.fn().mockResolvedValue(
-      JSON.stringify({ prompts: [{ id: "image_001", prompt: "p" }] })
+      JSON.stringify({ prompts: [{ id: "image_001", scene: "p" }] })
     );
 
     const { step } = await import("@/worker/steps/09-generate-visual-prompts");
@@ -1145,13 +1152,13 @@ describe("generate_visual_prompts — structured shot IR (phase 2a)", () => {
    */
   function envelopeReplyWithExtras(
     items: Array<{ id: string }>,
-    promptFor: (id: string) => string,
+    sceneFor: (id: string) => string,
     extrasFor: (id: string) => Record<string, unknown>
   ): string {
     return JSON.stringify({
       prompts: items.map((i) => ({
         id: i.id,
-        prompt: promptFor(i.id),
+        scene: sceneFor(i.id),
         ...extrasFor(i.id),
       })),
     });
@@ -1203,9 +1210,14 @@ describe("generate_visual_prompts — structured shot IR (phase 2a)", () => {
     );
 
     const result = JSON.parse(readFileSync(chunksPath, "utf-8"));
+    // Phase 2b: when scene is supplied, the assembler uses scene as the
+    // base for the persisted prompt. The LLM's `prompt` field is still
+    // accepted by the parser (back-compat) but ignored once scene wins.
+    // freshDb() blanks the global locks, so only the per-shot
+    // negative_prompt appears in the negative segment.
     expect(result[0]).toMatchObject({
       id: "image_001",
-      prompt: "prompt-for-image_001",
+      prompt: "a painter at an easel in a sunlit studio. Negative: no modern objects.",
       scene: "a painter at an easel in a sunlit studio",
       camera: "medium",
       subject_kind: "character",
@@ -1214,7 +1226,7 @@ describe("generate_visual_prompts — structured shot IR (phase 2a)", () => {
     });
     expect(result[1]).toMatchObject({
       id: "image_002",
-      prompt: "prompt-for-image_002",
+      prompt: "wheat fields under summer sun",
       scene: "wheat fields under summer sun",
       camera: "wide",
       subject_kind: "environment",
@@ -1266,7 +1278,7 @@ describe("generate_visual_prompts — structured shot IR (phase 2a)", () => {
     ]);
   });
 
-  it("drops malformed extras silently — invalid camera/subject_kind/empty scene leave the field unset, prompt still persists", async () => {
+  it("drops malformed extras silently — invalid camera/subject_kind/empty trigger_text leave the field unset; valid scene still persists", async () => {
     const db = freshDb();
     const videoId = seedVideo(db);
     const projectsDir = tempDir("projects");
@@ -1282,11 +1294,11 @@ describe("generate_visual_prompts — structured shot IR (phase 2a)", () => {
         batch,
         (id) => `p-${id}`,
         () => ({
-          scene: "",            // empty string → drop
-          camera: "closeup",   // not in enum (should be "close-up") → drop
-          subject_kind: "person", // not in enum → drop
-          trigger_text: "",     // empty → drop
-          negative_prompt: "",  // empty → drop
+          scene: "a valid scene",   // required, must be non-empty
+          camera: "closeup",        // not in enum (should be "close-up") → drop
+          subject_kind: "person",  // not in enum → drop
+          trigger_text: "",         // empty → drop
+          negative_prompt: "",      // empty → drop
         })
       );
     });
@@ -1303,8 +1315,9 @@ describe("generate_visual_prompts — structured shot IR (phase 2a)", () => {
     );
 
     const result = JSON.parse(readFileSync(chunksPath, "utf-8"));
-    expect(result[0].prompt).toBe("p-image_001");
-    expect(result[0].scene).toBeUndefined();
+    // Assembler runs over the valid scene; locks are blanked by freshDb.
+    expect(result[0].prompt).toBe("a valid scene");
+    expect(result[0].scene).toBe("a valid scene");
     expect(result[0].camera).toBeUndefined();
     expect(result[0].subject_kind).toBeUndefined();
     expect(result[0].trigger_text).toBeUndefined();
@@ -1401,8 +1414,12 @@ describe("generate_visual_prompts — structured shot IR (phase 2a)", () => {
     );
 
     const result = JSON.parse(readFileSync(chunksPath, "utf-8"));
+    // 2b: scene is required, so it gets the NEW value from the LLM
+    // reply (not the stale "stale scene from a prior run"). The other
+    // optional fields the new reply omitted are cleared by the eager
+    // sweep so they don't carry over from the prior run.
     expect(result[0].prompt).toBe("fresh-image_001");
-    expect(result[0].scene).toBeUndefined();
+    expect(result[0].scene).toBe("fresh-image_001");
     expect(result[0].camera).toBeUndefined();
     expect(result[0].subject_kind).toBeUndefined();
     expect(result[0].trigger_text).toBeUndefined();
@@ -1411,22 +1428,41 @@ describe("generate_visual_prompts — structured shot IR (phase 2a)", () => {
     expect(result[0].prompt_history).toEqual([]);
   });
 
-  it("legacy {id, prompt} envelope still parses and persists with no extras (back-compat)", async () => {
-    // This is the existing contract; the structured-IR fields must be
-    // truly optional. A reply that omits them entirely should produce a
-    // chunks.json identical in shape to the pre-phase-2a output.
+});
+
+describe("generate_visual_prompts — assembler (phase 2b)", () => {
+  function envelopeWithSceneOnly(
+    items: Array<{ id: string }>,
+    sceneFor: (id: string) => string
+  ): string {
+    return JSON.stringify({
+      prompts: items.map((i) => ({ id: i.id, scene: sceneFor(i.id) })),
+    });
+  }
+
+  it("uses scene as the base when present and appends the operator's style + negative locks", async () => {
+    // Seeded DB carries the default style_lock_description and
+    // character_lock_negative (the long stickman-style locks). The
+    // assembler must append both onto `scene`, matching the legacy
+    // applyLocks shape: "<base>. <styleLock>. Negative: <negLock>."
     const db = freshDb();
+    // Re-enable the seeded defaults (freshDb() blanks them for the
+    // other tests in this file). Use short distinctive strings so the
+    // assertion is easy to read.
+    setSetting("style_lock_description", "STYLE_BLOCK", db);
+    setSetting("character_lock_negative", "GLOBAL_NEG", db);
+
     const videoId = seedVideo(db);
     const projectsDir = tempDir("projects");
     const promptsDir = tempDir("prompts");
     seedPrompts(promptsDir);
 
-    const chunks = makeChunks(2);
+    const chunks = makeChunks(1);
     const chunksPath = seedChunksFile(projectsDir, videoId, chunks);
 
     const chat = vi.fn(async (messages: { content: string }[]) => {
       const batch = extractBatch(messages[1].content);
-      return envelopeReply(batch, (id) => `legacy-${id}`);
+      return envelopeWithSceneOnly(batch, () => "a painter at an easel");
     });
 
     await generateVisualPromptsStep.run(
@@ -1441,14 +1477,166 @@ describe("generate_visual_prompts — structured shot IR (phase 2a)", () => {
     );
 
     const result = JSON.parse(readFileSync(chunksPath, "utf-8"));
-    for (const r of result) {
-      expect(r.prompt).toBe(`legacy-${r.id}`);
-      expect(r.scene).toBeUndefined();
-      expect(r.camera).toBeUndefined();
-      expect(r.subject_kind).toBeUndefined();
-      expect(r.trigger_text).toBeUndefined();
-      expect(r.references).toBeUndefined();
-      expect(r.negative_prompt).toBeUndefined();
-    }
+    expect(result[0].prompt).toBe(
+      "a painter at an easel. STYLE_BLOCK. Negative: GLOBAL_NEG."
+    );
+    expect(result[0].scene).toBe("a painter at an easel");
+  });
+
+  it("folds per-shot negative_prompt into a single Negative: clause with the global lock (per-shot first, comma-separated)", async () => {
+    const db = freshDb();
+    setSetting("style_lock_description", "STYLE_BLOCK", db);
+    setSetting("character_lock_negative", "GLOBAL_NEG", db);
+
+    const videoId = seedVideo(db);
+    const projectsDir = tempDir("projects");
+    const promptsDir = tempDir("prompts");
+    seedPrompts(promptsDir);
+
+    const chunks = makeChunks(1);
+    const chunksPath = seedChunksFile(projectsDir, videoId, chunks);
+
+    const chat = vi.fn(async (messages: { content: string }[]) => {
+      const batch = extractBatch(messages[1].content);
+      return JSON.stringify({
+        prompts: batch.map((b) => ({
+          id: b.id,
+          scene: "the scene",
+          negative_prompt: "shot-specific-negative",
+        })),
+      });
+    });
+
+    await generateVisualPromptsStep.run(
+      videoId,
+      makeStepContext({
+        db,
+        projectsDir,
+        promptsDir,
+        visualPromptsConcurrency: 1,
+        visualPromptChat: chat,
+      })
+    );
+
+    const result = JSON.parse(readFileSync(chunksPath, "utf-8"));
+    expect(result[0].prompt).toBe(
+      "the scene. STYLE_BLOCK. Negative: shot-specific-negative, GLOBAL_NEG."
+    );
+  });
+
+  it("scene wins over prompt when both are supplied (back-compat does not regress new behaviour)", async () => {
+    // An LLM in mid-migration might emit both. The assembler prefers
+    // the new structured field. The LLM's `prompt` is still accepted by
+    // the parser (so the request doesn't fail) but ignored downstream.
+    const db = freshDb();
+    setSetting("style_lock_description", "", db);
+    setSetting("character_lock_negative", "", db);
+
+    const videoId = seedVideo(db);
+    const projectsDir = tempDir("projects");
+    const promptsDir = tempDir("prompts");
+    seedPrompts(promptsDir);
+
+    const chunks = makeChunks(1);
+    const chunksPath = seedChunksFile(projectsDir, videoId, chunks);
+
+    const chat = vi.fn(async (messages: { content: string }[]) => {
+      const batch = extractBatch(messages[1].content);
+      return JSON.stringify({
+        prompts: batch.map((b) => ({
+          id: b.id,
+          scene: "from-scene",
+          prompt: "from-prompt",
+        })),
+      });
+    });
+
+    await generateVisualPromptsStep.run(
+      videoId,
+      makeStepContext({
+        db,
+        projectsDir,
+        promptsDir,
+        visualPromptsConcurrency: 1,
+        visualPromptChat: chat,
+      })
+    );
+
+    const result = JSON.parse(readFileSync(chunksPath, "utf-8"));
+    expect(result[0].prompt).toBe("from-scene");
+  });
+
+  it("appends the per-video stylePrompt (visual_style_snapshot) between scene and the global locks", async () => {
+    // Regression pin for the Codex-flagged issue: when 2b moved style
+    // out of the LLM's scene, the assembler had to start emitting the
+    // per-video visual_style_snapshot itself or styled videos would
+    // silently lose their chosen style.
+    const db = freshDb();
+    setSetting("style_lock_description", "STYLE_BLOCK", db);
+    setSetting("character_lock_negative", "GLOBAL_NEG", db);
+
+    const videoId = seedVideo(db, { stylePrompt: "watercolor pastoral" });
+    const projectsDir = tempDir("projects");
+    const promptsDir = tempDir("prompts");
+    seedPrompts(promptsDir);
+
+    const chunks = makeChunks(1);
+    const chunksPath = seedChunksFile(projectsDir, videoId, chunks);
+
+    const chat = vi.fn(async (messages: { content: string }[]) => {
+      const batch = extractBatch(messages[1].content);
+      return envelopeWithSceneOnly(batch, () => "a meadow at dawn");
+    });
+
+    await generateVisualPromptsStep.run(
+      videoId,
+      makeStepContext({
+        db,
+        projectsDir,
+        promptsDir,
+        visualPromptsConcurrency: 1,
+        visualPromptChat: chat,
+      })
+    );
+
+    const result = JSON.parse(readFileSync(chunksPath, "utf-8"));
+    // Order: scene, per-video stylePrompt, global styleLock, Negative.
+    expect(result[0].prompt).toBe(
+      "a meadow at dawn. watercolor pastoral. STYLE_BLOCK. Negative: GLOBAL_NEG."
+    );
+  });
+
+  it("rejects an entry without 'scene' (phase 2b strict contract: legacy prompt-only is no longer accepted)", async () => {
+    const db = freshDb();
+    const videoId = seedVideo(db);
+    const projectsDir = tempDir("projects");
+    const promptsDir = tempDir("prompts");
+    seedPrompts(promptsDir);
+
+    const chunks = makeChunks(1);
+    seedChunksFile(projectsDir, videoId, chunks);
+
+    // Both attempts return a prompt-only envelope (the pre-2b shape).
+    // Parser rejects → retry → also rejects → per-chunk fallback
+    // → also rejects → step throws.
+    const chat = vi.fn(async (messages: { content: string }[]) => {
+      const batch = extractBatch(messages[1].content);
+      return JSON.stringify({
+        prompts: batch.map((b) => ({ id: b.id, prompt: "legacy-prompt-only" })),
+      });
+    });
+
+    await expect(
+      generateVisualPromptsStep.run(
+        videoId,
+        makeStepContext({
+          db,
+          projectsDir,
+          promptsDir,
+          visualPromptsConcurrency: 1,
+          visualPromptChat: chat,
+        })
+      )
+    ).rejects.toThrow(/missing non-empty 'scene'/);
   });
 });

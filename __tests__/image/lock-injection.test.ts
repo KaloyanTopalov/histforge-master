@@ -114,7 +114,7 @@ describe("step 09 — system instruction injection", () => {
 
     const chat = vi.fn(async () => {
       return JSON.stringify({
-        prompts: [{ id: "image_001", prompt: "a scene" }],
+        prompts: [{ id: "image_001", scene: "a scene" }],
       });
     });
 
@@ -173,7 +173,7 @@ describe("step 09 — system instruction injection", () => {
         userContent.slice(start + "BATCH=".length, end)
       ) as Array<{ id: string }>;
       return JSON.stringify({
-        prompts: batch.map((b) => ({ id: b.id, prompt: `p-${b.id}` })),
+        prompts: batch.map((b) => ({ id: b.id, scene: `p-${b.id}` })),
       });
     });
 

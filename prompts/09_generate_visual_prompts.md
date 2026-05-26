@@ -1,6 +1,6 @@
 You are a visual prompt writer. For each chunk in the batch below, write a single visual prompt that an AI image / video generator will use to create an image for that chunk.
 
-STYLE (apply to every prompt in this batch):
+STYLE (for context only — DO NOT include this text in your output; the assembler appends it to every prompt automatically so it stays byte-identical across the whole video):
 {{style_prompt}}
 
 INPUT:
@@ -52,16 +52,15 @@ OUTPUT (JSON only, no preamble, no commentary, no markdown fences):
 
 Return a single JSON object: `{"prompts": [<entry>, ...]}`. Do not wrap the response in backticks. Do not prefix it with the word `json`. Begin your response with `{` and end it with `}`. Return one entry per input chunk, using the input `id` exactly.
 
-Each entry MUST include `id` and `prompt`; the other fields are OPTIONAL but recommended — populate them when you can, omit them otherwise.
+Each entry MUST include `id` and `scene`. The other fields are OPTIONAL but recommended — populate them when you can, omit them otherwise.
 
 Per-entry fields:
 - `id` — string, REQUIRED, must match the input chunk id exactly.
-- `prompt` — string, REQUIRED, non-empty. The full visual prompt the image generator receives. No commentary, no labels, no formatting, just the prompt. This is the only field currently consumed downstream.
-- `scene` — string, optional. One sentence describing what's in the frame (≤ 25 words, subject + setting, not style).
+- `scene` — string, REQUIRED, non-empty. **The authoritative description of the frame.** The downstream image generator receives this text after the assembler appends the operator's style and negative locks. Write the full descriptive sentence (typically 20-60 words) covering subject, setting, lighting, and era as needed. Do NOT include style language (e.g. "watercolor", "cinematic", "2D illustration") — style is appended by code. ALL the safety rules above (no real names, no graphic violence, etc.) apply HERE — strip names and reframe to neutral language inside `scene`.
 - `camera` — string, optional. One of exactly: `wide`, `medium`, `close-up`, `over-shoulder`, `pov`, `static`. If none fits, OMIT the field rather than inventing a value.
 - `subject_kind` — string, optional. One of exactly: `character`, `environment`, `object`, `title-card`. `character` = a person is the focus; `environment` = a place/landscape; `object` = an artifact, document, or close-up of a thing; `title-card` = text on a flat background.
 - `trigger_text` — string, optional. The most concrete noun or short phrase in the chunk's narration this image anchors to. Used for editor sync; if nothing concrete stands out, omit.
-- `negative_prompt` — string, optional. A short fragment describing what must NOT appear in this specific shot.
+- `negative_prompt` — string, optional. A short fragment describing what must NOT appear in this specific shot. The assembler folds it into the global negative lock with a comma separator, so providers see exactly one `Negative:` clause.
 - `references` — array, optional. Each entry has shape `{"role": "<role>", "source": <source>}`. `role` is exactly `"character"` or `"style"`. `source` is one of `{"kind": "entity", "entity_id": "<string>"}` for a saved provider entity, or `{"kind": "image", "url": "<string>"}` for an uploaded reference image URL. The LLM should normally LEAVE THIS EMPTY — references are attached upstream by the operator's per-video settings; emit one here only if the chunk text itself names a specific saved entity to use.
 
 Example output for a two-chunk batch (this is literal, valid JSON — emit your output in exactly this shape):
@@ -71,16 +70,14 @@ Example output for a two-chunk batch (this is literal, valid JSON — emit your 
   "prompts": [
     {
       "id": "image_001",
-      "prompt": "a gaunt Dutch post-impressionist painter in his late thirties, red hair and beard, paint-stained smock, working at an easel in a sunlit Provence studio, 1880s",
-      "scene": "a painter at an easel in a sunlit studio",
+      "scene": "a gaunt Dutch post-impressionist painter in his late thirties, red hair and beard, paint-stained smock, working at an easel in a sunlit Provence studio, 1880s",
       "camera": "medium",
       "subject_kind": "character",
       "trigger_text": "Provence"
     },
     {
       "id": "image_002",
-      "prompt": "wide shot of golden wheat fields under heavy summer sun, distant cypress trees, late afternoon light",
-      "scene": "golden wheat fields under summer sun",
+      "scene": "wide shot of golden wheat fields under heavy summer sun, distant cypress trees, late afternoon light",
       "camera": "wide",
       "subject_kind": "environment",
       "trigger_text": "wheat fields"
