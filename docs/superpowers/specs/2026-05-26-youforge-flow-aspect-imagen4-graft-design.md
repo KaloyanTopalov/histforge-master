@@ -70,9 +70,10 @@ flowMedia:batchGenerateImages   (Google Flow API — unchanged)
 
 - `extensions/youforge-flow/src/settings-schema.js` — add 1 entry.
 - `extensions/youforge-flow/src/settings.js` — add 1 accessor + 1 cache key.
-- `extensions/youforge-flow/src/executors/image.js` — ~10 line edit.
-- `extensions/youforge-flow/popup.html` — add 1 `<select>` control.
-- `extensions/youforge-flow/popup.js` — add 1 persist binding.
+- `extensions/youforge-flow/src/executors/index.js` — add `imageAspectRatioSetting` to executor context.
+- `extensions/youforge-flow/src/executors/image.js` — ~15 line edit (helper + branch replacement + Imagen 4 guard).
+- ~~`extensions/youforge-flow/popup.html`~~ — *intentionally not modified* (see Popup UI note above).
+- ~~`extensions/youforge-flow/popup.js`~~ — *intentionally not modified* (see Popup UI note above).
 
 ### Graft 1: Five image aspect ratios
 
@@ -113,7 +114,7 @@ Resolution order: per-task field from HistForge wins, then extension popup setti
 
 **Settings context:** in `src/executors/index.js:62-63`, add `imageAspectRatioSetting: getImageAspectRatio()` alongside `aspectRatioSetting: getAspectRatio()`. The executor reads from `ctx.settings`.
 
-**Popup UI:** in `popup.html`, add a `<select id="imageAspectRatio">` with 5 options, placed next to the existing aspect-ratio control. In `popup.js`, bind it the same way the other selects bind — load from storage on open, save on change.
+**Popup UI:** *(reconsidered during plan writing — see implementation note below)*. The original design called for adding a `<select id="imageAspectRatio">` to `popup.html` next to an existing aspect-ratio control. Inspection during plan writing revealed that youforge-flow's popup is deliberately stripped of aspect/model controls — it only exposes Connection, concurrency, character lock, and an "Advanced" numeric-only block. HistForge drives `imageAspect` per-task via the next-task DTO; the extension's storage default (`'16:9'` from `settings-schema.js`) is purely a fallback. **No popup changes will be made.** This preserves the existing dumb-runner design intent and avoids a divergence between popup UI and HistForge-side settings.
 
 ### Graft 2: Imagen 4 reference-skip guard
 
