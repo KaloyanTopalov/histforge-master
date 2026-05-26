@@ -32,6 +32,7 @@ export const TAB_FIELDS: Record<TabId, readonly SettingKey[]> = {
     "google_flow_image_model",
     "google_flow_video_model",
     "google_flow_aspect_ratio",
+    "google_flow_image_aspect_ratio",
     "google_flow_hook_clip_seconds",
     "google_flow_account_cooldown_hours",
     "google_flow_max_retries",

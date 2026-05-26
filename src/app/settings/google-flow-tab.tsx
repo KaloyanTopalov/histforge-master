@@ -72,6 +72,18 @@ export function GoogleFlowTab({
           }
         />
         <SelectField
+          id="google_flow_image_aspect_ratio"
+          label="Image Aspect Ratio"
+          value={values.google_flow_image_aspect_ratio}
+          options={enumOptions("google_flow_image_aspect_ratio")}
+          onChange={(v) =>
+            update(
+              "google_flow_image_aspect_ratio",
+              v as AllSettings["google_flow_image_aspect_ratio"]
+            )
+          }
+        />
+        <SelectField
           id="google_flow_hook_clip_seconds"
           label="Hook Clip Seconds"
           value={values.google_flow_hook_clip_seconds}
