@@ -2160,6 +2160,7 @@ describe("seedDefaultSettings", () => {
         google_flow_image_model: "NARWHAL",
         google_flow_video_model: "veo_3_1_t2v_lite_low_priority",
         google_flow_aspect_ratio: "landscape",
+        google_flow_image_aspect_ratio: "16:9",
         google_flow_hook_clip_seconds: "8",
         google_flow_dispatch_timeout_minutes: "30",
         aspect_ratio: "16:9",
