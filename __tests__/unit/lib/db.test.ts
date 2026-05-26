@@ -2194,6 +2194,7 @@ describe("seedDefaultSettings", () => {
         visual_prompts_batch_size: "8",
         claude_cli_visual_prompts_concurrency: "2",
         openrouter_visual_prompts_concurrency: "8",
+        image_chunk_target_seconds: "8",
         magnific_token: "",
         magnific_dispatch_timeout_minutes: "30",
         magnific_image_model: "flux-realism",

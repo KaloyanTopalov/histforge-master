@@ -91,6 +91,7 @@ export const TAB_FIELDS: Record<TabId, readonly SettingKey[]> = {
     "script_length_minutes",
     "hook_length_seconds",
     "hook_video_clip_seconds",
+    "image_chunk_target_seconds",
     "openrouter_script_model",
     "openrouter_visual_model",
     "claude_cli_script_model",

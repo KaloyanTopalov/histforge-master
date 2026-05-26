@@ -83,6 +83,7 @@ const defaultSettings: AllSettings = {
   visual_prompts_batch_size: 4,
   claude_cli_visual_prompts_concurrency: 3,
   openrouter_visual_prompts_concurrency: 16,
+  image_chunk_target_seconds: 12,
   magnific_token: "tok-mag-1",
   magnific_image_model: "flux-realism",
   magnific_video_model: "seedance",

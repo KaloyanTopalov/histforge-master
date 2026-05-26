@@ -75,6 +75,15 @@ export function ScriptTab({ values, update }: ScriptTabProps): JSX.Element {
           step={0.5}
           hint="ComfyUI hook clip length. Set to match your ComfyUI workflow's output. For Google Flow, use the Google Flow tab's Hook Clip Seconds setting."
         />
+        <NumberField
+          id="image_chunk_target_seconds"
+          label="Image Chunk Seconds"
+          value={values.image_chunk_target_seconds}
+          onChange={(v) => update("image_chunk_target_seconds", v)}
+          step={1}
+          min={2}
+          hint="Per-chunk target duration for the images-only chunker. Lower = faster cuts (more images per minute); higher = each image dwells longer. Range 2-60s. Default 8s ≈ 7-8 images per minute."
+        />
       </Panel>
 
       <div className="space-y-4">

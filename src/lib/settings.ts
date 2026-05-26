@@ -158,6 +158,10 @@ const SETTING_SCHEMAS = {
   visual_prompts_batch_size: z.coerce.number().int().min(1).max(16),
   claude_cli_visual_prompts_concurrency: z.coerce.number().int().min(1).max(8),
   openrouter_visual_prompts_concurrency: z.coerce.number().int().min(1).max(32),
+  // Per-chunk target duration for chunk_images_only. Min 2s keeps the
+  // chunker from emitting sub-sentence chunks; max 60s caps it at one
+  // image per minute (the slowest pacing that still makes visual sense).
+  image_chunk_target_seconds: z.coerce.number().int().min(2).max(60),
   // Plan 2 Phase 2.1 Task 2: Magnific (music-video kind) settings. The
   // token is a per-instance secret (the magnific-ext extension's only
   // auth credential, used to validate the URL [token] segment on every

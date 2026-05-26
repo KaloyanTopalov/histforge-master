@@ -6,6 +6,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import type { AlignmentEntry, Chunk } from "@/types";
+import { setSetting } from "@/lib/settings";
 import { step as chunkStep } from "@/worker/steps/08-chunk-images-only";
 import {
   cleanup,
@@ -52,8 +53,9 @@ function readChunks(projectsDir: string, videoId: string): Chunk[] {
 
 describe("chunk_images_only (step 8 — images-only variant)", () => {
   it("emits only kind='image' chunks with image_NNN ids covering the entire narration", async () => {
-    // 60 sentences × 5s = 300s narration. Target 30s per chunk → ~10
-    // chunks of ~6 sentences each.
+    // 60 sentences × 5s = 300s narration. With the default 8s target,
+    // the chunker emits many short image chunks; this test only asserts
+    // structural invariants (ordering, coverage, IDs), not chunk count.
     const alignment = buildAlignment(60, 5);
     const projectsDir = tempDir("projects");
     const videoId = "v_images_only";
@@ -96,9 +98,10 @@ describe("chunk_images_only (step 8 — images-only variant)", () => {
     }
   });
 
-  it("each chunk is ~30s within sentence-boundary tolerance (last chunk may be shorter)", async () => {
-    // 100 sentences × 5s = 500s. 30s target → 6 sentences per chunk = 30s exact.
-    const alignment = buildAlignment(100, 5);
+  it("honors the default image_chunk_target_seconds (8s) within sentence-boundary tolerance", async () => {
+    // 200 sentences × 2s = 400s. Default 8s target with 2s sentences →
+    // 4 sentences per chunk = 8s exact.
+    const alignment = buildAlignment(200, 2);
     const projectsDir = tempDir("projects");
     const videoId = "v_images_only_dur";
     writeAlignment(projectsDir, videoId, alignment);
@@ -112,9 +115,9 @@ describe("chunk_images_only (step 8 — images-only variant)", () => {
 
     for (let i = 0; i < chunks.length - 1; i++) {
       const dur = chunks[i].end - chunks[i].start;
-      // 5s sentences → tolerance ±5s around the 30s target.
-      expect(dur).toBeGreaterThanOrEqual(25);
-      expect(dur).toBeLessThanOrEqual(35);
+      // 2s sentences → tolerance ±2s around the 8s target.
+      expect(dur).toBeGreaterThanOrEqual(6);
+      expect(dur).toBeLessThanOrEqual(10);
     }
 
     const lastDur =
@@ -122,8 +125,33 @@ describe("chunk_images_only (step 8 — images-only variant)", () => {
     expect(lastDur).toBeGreaterThan(0);
   });
 
+  it("honors a non-default image_chunk_target_seconds value", async () => {
+    // 60 sentences × 2s = 120s. Override target to 20s → 10 sentences
+    // per chunk = 20s exact. Verifies the chunker actually reads the
+    // setting (not the legacy constant) on each run.
+    const alignment = buildAlignment(60, 2);
+    const projectsDir = tempDir("projects");
+    const videoId = "v_images_only_custom";
+    writeAlignment(projectsDir, videoId, alignment);
+    const db = freshDb();
+    setSetting("image_chunk_target_seconds", 20, db);
+
+    await chunkStep.run(
+      videoId,
+      makeStepContext({ projectsDir, db })
+    );
+    const chunks = readChunks(projectsDir, videoId);
+
+    for (let i = 0; i < chunks.length - 1; i++) {
+      const dur = chunks[i].end - chunks[i].start;
+      // 2s sentences → tolerance ±2s around the 20s target.
+      expect(dur).toBeGreaterThanOrEqual(18);
+      expect(dur).toBeLessThanOrEqual(22);
+    }
+  });
+
   it("handles very short narrations as a single chunk", async () => {
-    // 3 sentences × 2s = 6s. Less than one 30s chunk → one chunk emitted.
+    // 3 sentences × 2s = 6s. Less than one 8s chunk → one chunk emitted.
     const alignment = buildAlignment(3, 2);
     const projectsDir = tempDir("projects");
     const videoId = "v_images_only_short";

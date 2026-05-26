@@ -63,6 +63,13 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   visual_prompts_batch_size: "8",
   claude_cli_visual_prompts_concurrency: "2",
   openrouter_visual_prompts_concurrency: "8",
+  // Target chunk duration (seconds) for the chunk_images_only chunker.
+  // Default 8s gives ~7-8 chunks per minute of narration — close to typical
+  // YouTube-narrative pacing. Lower for faster cuts, higher to dwell on
+  // each image. The chunk-clips-then-images chunker keeps the legacy
+  // MAIN_TARGET_SECONDS=30 in chunk-utils.ts because its image segments
+  // are paired with hook clips and don't drive visual pacing alone.
+  image_chunk_target_seconds: "8",
   // Plan 2 Phase 2.1 Task 2: Magnific (music-video kind) keys. Empty
   // token seeds because the Settings > Magnific tab mints one on first
   // open via a server-side randomBytes helper; the four routes 404 until
@@ -851,6 +858,10 @@ export function createDb(path: string): DatabaseType {
   ).run();
   db.prepare(
     "INSERT OR IGNORE INTO settings (key, value) VALUES ('openrouter_visual_prompts_concurrency', '8')"
+  ).run();
+  // Image chunk pacing — seed default for upgraded DBs.
+  db.prepare(
+    "INSERT OR IGNORE INTO settings (key, value) VALUES ('image_chunk_target_seconds', '8')"
   ).run();
 
   // Character-lock + style-lock plan. Two free-text settings consumed
