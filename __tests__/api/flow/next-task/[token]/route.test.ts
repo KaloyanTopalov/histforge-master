@@ -968,6 +968,78 @@ describe("POST /api/flow/next-task/:token", () => {
     expect(body.videoModel).toBe("veo_3_1_t2v_lite_low_priority");
   });
 
+  it("emits imageAspect with default 16:9 on createImage dispatch", async () => {
+    await seedAccount({ token: "T-img-aspect" });
+    await seedVideo("vid_ia");
+    await enqueue({
+      video_id: "vid_ia",
+      chunk_id: "c1",
+      kind: "image",
+      mode: "createImage",
+      prompt: "a Roman bridge",
+      output_path: "images/c1.png",
+    });
+
+    const res = await callNextTask("T-img-aspect", {
+      type: "TaskRequest",
+      accountToken: "T-img-aspect",
+      mode: "createImage",
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.imageAspect).toBe("16:9");
+  });
+
+  it("emits imageAspect on text-mode dispatch too (mode-independent)", async () => {
+    await seedAccount({ token: "T-ta-text" });
+    await seedVideo("vid_tat");
+    await enqueue({
+      video_id: "vid_tat",
+      chunk_id: "h1",
+      kind: "clip",
+      mode: "text",
+      prompt: "a galloping horse",
+      output_path: "videos/clip/h1.mp4",
+    });
+
+    const res = await callNextTask("T-ta-text", {
+      type: "TaskRequest",
+      accountToken: "T-ta-text",
+      mode: "text",
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.imageAspect).toBe("16:9");
+  });
+
+  it("emits the operator-set imageAspect value when changed from default", async () => {
+    // Override the seeded default before enqueueing
+    const { getDb } = await import("@/lib/db");
+    getDb()
+      .prepare("UPDATE settings SET value = ? WHERE key = ?")
+      .run("9:16", "google_flow_image_aspect_ratio");
+
+    await seedAccount({ token: "T-img-portrait" });
+    await seedVideo("vid_ip");
+    await enqueue({
+      video_id: "vid_ip",
+      chunk_id: "c1",
+      kind: "image",
+      mode: "createImage",
+      prompt: "a tall obelisk",
+      output_path: "images/c1.png",
+    });
+
+    const res = await callNextTask("T-img-portrait", {
+      type: "TaskRequest",
+      accountToken: "T-img-portrait",
+      mode: "createImage",
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.imageAspect).toBe("9:16");
+  });
+
   it("includes googleOperationId + googleOperationProjectId when the claimed row carries them (resume case)", async () => {
     // Reaper has requeued a row that previously kicked off a Google
     // operation; the SW needs both fields back so it can resume polling

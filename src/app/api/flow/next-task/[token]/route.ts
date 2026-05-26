@@ -26,6 +26,7 @@ const TaskRequestSchema = z.object({
 interface DispatchExtras {
   flowProjectId: string | null;
   imageModel: SettingValue<"google_flow_image_model">;
+  imageAspect: SettingValue<"google_flow_image_aspect_ratio">;
   // For clip rows this is the variant model key resolved from the
   // base model × `google_flow_hook_clip_seconds`; for non-clip rows this
   // is the raw base model string. Both forms are valid Veo videoModelKey
@@ -70,6 +71,7 @@ function shapeTaskForExtension(
     projectTitle: video.title,
     flowProjectId: extras.flowProjectId,
     imageModel: extras.imageModel,
+    imageAspect: extras.imageAspect,
     // For clip rows this carries the variant key (e.g.
     // `veo_3_1_t2v_quality_4s`); for non-clip rows it's the raw base model.
     videoModel: extras.videoModel,
@@ -186,6 +188,7 @@ export async function POST(
   const extras: DispatchExtras = {
     flowProjectId: project?.flow_project_id ?? null,
     imageModel: getSetting("google_flow_image_model", db),
+    imageAspect: getSetting("google_flow_image_aspect_ratio", db),
     videoModel,
     origin: new URL(req.url).origin,
     token: ctx.params.token,
