@@ -60,6 +60,7 @@ async function buildExecutorContext(task, tabId, recaptchaAction, correlationId)
   const settings = {
     outputCount: getOutputCount(),
     aspectRatioSetting: getAspectRatio(),
+    imageAspectRatioSetting: getImageAspectRatio(),
     imageModelSetting: getImageModel(),
     videoModelQuality: getVideoModel(),
     imgUpscale: getImgUpscale(),
