@@ -116,6 +116,15 @@ const DEFAULT_SETTINGS: Record<string, string> = {
     "2D hand-drawn animation style, plain white background, pure black line work only, no color, no shading, no gradients, no 3D rendering, no photorealism, slight hand-drawn imperfection in linework. The character must be drawn in the exact same minimalist style as the reference ingredient.",
   character_lock_negative:
     "color, shading, gradient, 3D, photorealistic, vector-clean lines, multiple characters, child, cartoon mascot, anime, manga, smiling, happy expression",
+  // Magnific runtime — defaults match the spec's "Settings" section.
+  // `enabled` is false so a fresh DB doesn't auto-boot the runtime;
+  // operators flip it after wiring up the magnific-ext install. The
+  // user_data_dir / extension_path are operator-relative — the runtime
+  // calls path.resolve() on them at start time.
+  magnific_runtime_enabled: "false",
+  magnific_runtime_user_data_dir: "data/magnific-userdata",
+  magnific_runtime_window_visible: "false",
+  magnific_runtime_extension_path: "extensions/magnific-ext",
 };
 
 export function seedDefaultSettings(db: DatabaseType): void {
@@ -921,6 +930,23 @@ export function createDb(path: string): DatabaseType {
   ).run();
   db.prepare(
     "INSERT OR IGNORE INTO settings (key, value) VALUES ('step_09_examples_json', '')"
+  ).run();
+
+  // Magnific runtime — seed defaults on upgraded DBs that never re-run
+  // db:init. The runtime itself is noop in S1; these values configure
+  // the future lifecycle (auto-boot toggle, persistent context dir,
+  // window visibility, extension path). Keep in sync with DEFAULT_SETTINGS.
+  db.prepare(
+    "INSERT OR IGNORE INTO settings (key, value) VALUES ('magnific_runtime_enabled', 'false')"
+  ).run();
+  db.prepare(
+    "INSERT OR IGNORE INTO settings (key, value) VALUES ('magnific_runtime_user_data_dir', 'data/magnific-userdata')"
+  ).run();
+  db.prepare(
+    "INSERT OR IGNORE INTO settings (key, value) VALUES ('magnific_runtime_window_visible', 'false')"
+  ).run();
+  db.prepare(
+    "INSERT OR IGNORE INTO settings (key, value) VALUES ('magnific_runtime_extension_path', 'extensions/magnific-ext')"
   ).run();
 
   // Character-lock + style-lock plan. Two free-text settings consumed

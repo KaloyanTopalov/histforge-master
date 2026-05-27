@@ -37,3 +37,8 @@ Thumbs.db
 # Test coverage
 coverage/
 
+# Magnific extension key material — only the public half belongs in the
+# manifest. Defense-in-depth: any *.private.pem under extensions/ is a
+# generation artifact and must not be committed.
+extensions/**/*.private.pem
+

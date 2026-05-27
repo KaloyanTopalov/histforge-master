@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { getDb } from "@/lib/db";
 import { startReaper } from "@/lib/flow-watcher";
+import { magnificRuntime } from "@/lib/magnific-runtime";
 import * as gfRepo from "@/lib/repos/google-flow";
 import * as magnificRepo from "@/lib/repos/magnific";
 import { getSetting } from "@/lib/settings";
@@ -44,6 +45,19 @@ async function main(): Promise<void> {
   resetStaleRunningSteps(db);
   gfRepo.resetAllDispatchedOnStartup(db);
   magnificRepo.resetAllDispatchedOnStartup(db);
+  // Magnific runtime auto-boot (Decision 3 in the runtime spec): skipped
+  // in development so tsx watch reloads don't fight over the userDataDir
+  // lock — developers click "Connect Magnific" in the dashboard when they
+  // need the browser during a dev session. The runtime's start() is a noop
+  // in S1 (throws "not implemented"); the guard is what's being verified.
+  if (
+    process.env.NODE_ENV !== "development" &&
+    getSetting("magnific_runtime_enabled", db)
+  ) {
+    void magnificRuntime.start().catch((err) => {
+      console.error("[magnific-runtime] start failed:", err);
+    });
+  }
   const stopReaper = startReaper(db, {
     dispatchTimeoutMinutes: getSetting(
       "google_flow_dispatch_timeout_minutes",

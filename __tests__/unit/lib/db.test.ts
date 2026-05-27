@@ -2210,6 +2210,10 @@ describe("seedDefaultSettings", () => {
           "2D hand-drawn animation style, plain white background, pure black line work only, no color, no shading, no gradients, no 3D rendering, no photorealism, slight hand-drawn imperfection in linework. The character must be drawn in the exact same minimalist style as the reference ingredient.",
         character_lock_negative:
           "color, shading, gradient, 3D, photorealistic, vector-clean lines, multiple characters, child, cartoon mascot, anime, manga, smiling, happy expression",
+        magnific_runtime_enabled: "false",
+        magnific_runtime_user_data_dir: "data/magnific-userdata",
+        magnific_runtime_window_visible: "false",
+        magnific_runtime_extension_path: "extensions/magnific-ext",
       });
     } finally {
       db.close();
@@ -3538,6 +3542,111 @@ describe("createDb — image chunk pacing migration", () => {
       expect(byKey.image_chunk_max_seconds).toBe("20");
     } finally {
       db2.close();
+    }
+  });
+});
+
+describe("createDb — magnific runtime settings migration", () => {
+  // Same INSERT OR IGNORE pattern as the google_flow / pacing migrations
+  // above. The four runtime keys land on every upgraded DB so the
+  // settings page + worker boot guard can read them without first
+  // running db:init. The keys themselves are inert in S1 — the runtime
+  // module's methods all throw "not implemented" — but the values must
+  // be present for getSetting() to return them at boot time.
+
+  const RUNTIME_KEYS = [
+    "magnific_runtime_enabled",
+    "magnific_runtime_user_data_dir",
+    "magnific_runtime_window_visible",
+    "magnific_runtime_extension_path",
+  ] as const;
+
+  it("seeds the four magnific runtime keys on an upgraded DB that wiped them", () => {
+    const path = tempDbPath();
+    {
+      const db = createDb(path);
+      // Simulate a pre-runtime DB: delete every runtime row so the
+      // next open's migration must re-seed them.
+      db.prepare(
+        "DELETE FROM settings WHERE key LIKE 'magnific_runtime_%'"
+      ).run();
+      db.close();
+    }
+    const db2 = createDb(path);
+    try {
+      const rows = db2
+        .prepare(
+          "SELECT key, value FROM settings WHERE key LIKE 'magnific_runtime_%' ORDER BY key"
+        )
+        .all() as Array<{ key: string; value: string }>;
+      const byKey = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+      expect(byKey).toEqual({
+        magnific_runtime_enabled: "false",
+        magnific_runtime_user_data_dir: "data/magnific-userdata",
+        magnific_runtime_window_visible: "false",
+        magnific_runtime_extension_path: "extensions/magnific-ext",
+      });
+    } finally {
+      db2.close();
+    }
+  });
+
+  it("does not overwrite user-customized runtime settings on reopen", () => {
+    // Operator flips enabled + sets a custom user_data_dir. A subsequent
+    // createDb() pass must preserve both — INSERT OR IGNORE is the
+    // mechanism, this test pins it.
+    const path = tempDbPath();
+    {
+      const db = createDb(path);
+      db.prepare(
+        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+      ).run("magnific_runtime_enabled", "true");
+      db.prepare(
+        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+      ).run("magnific_runtime_user_data_dir", "D:/HistForge/magnific");
+      db.prepare(
+        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+      ).run("magnific_runtime_window_visible", "true");
+      db.prepare(
+        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+      ).run("magnific_runtime_extension_path", "custom/magnific-ext-dev");
+      db.close();
+    }
+    const db2 = createDb(path);
+    try {
+      const rows = db2
+        .prepare(
+          "SELECT key, value FROM settings WHERE key LIKE 'magnific_runtime_%' ORDER BY key"
+        )
+        .all() as Array<{ key: string; value: string }>;
+      const byKey = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+      expect(byKey).toEqual({
+        magnific_runtime_enabled: "true",
+        magnific_runtime_user_data_dir: "D:/HistForge/magnific",
+        magnific_runtime_window_visible: "true",
+        magnific_runtime_extension_path: "custom/magnific-ext-dev",
+      });
+    } finally {
+      db2.close();
+    }
+  });
+
+  it("is idempotent across multiple opens of the same DB", () => {
+    const path = tempDbPath();
+    for (let i = 0; i < 3; i++) {
+      const db = createDb(path);
+      db.close();
+    }
+    const db = createDb(path);
+    try {
+      for (const key of RUNTIME_KEYS) {
+        const row = db
+          .prepare("SELECT value FROM settings WHERE key = ?")
+          .get(key) as { value: string } | undefined;
+        expect(row).toBeDefined();
+      }
+    } finally {
+      db.close();
     }
   });
 });
