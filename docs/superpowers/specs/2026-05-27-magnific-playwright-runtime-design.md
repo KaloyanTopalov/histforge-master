@@ -709,3 +709,43 @@ sections describe:
 
 These ripples are absorbed into the existing sections during the
 implementation plan; they do not change the architecture.
+
+## Appendix A: Manual probe — extension-ID derivation
+
+The runtime's bridge-page strategy (Decision 1) requires that the ID
+computed by `resolveExtensionId(context)` (from the manifest `"key"`)
+matches the ID Chromium assigns to the loaded extension at runtime
+(`chrome.runtime.id`). The algorithm is mechanical (SHA-256 of the
+DER-decoded base64 key → first 16 bytes → nibble-remapped to a..p),
+but a divergence between the documented algorithm and Chromium's actual
+behavior would silently break token injection in every later session.
+
+This appendix documents the one-shot manual probe that proves the two
+match. **Running it once and observing a green MATCH is the gate on
+completing SESSION 2.** Without that probe the implementation could be
+green in tests yet wrong at runtime — every test mocks Playwright at
+the type boundary and never touches a real Chromium.
+
+### Procedure
+
+1. From the repo root: `npx tsx scripts/probe-extension-id.ts`
+2. The script launches a headed Playwright Chromium with magnific-ext
+   loaded via `--load-extension`, off-screen at `(4000, 4000)`.
+3. It computes three IDs independently and compares all pairs:
+   - `chrome.runtime.id` from the extension's service worker context.
+   - `deriveIdFromKey(manifest.key)` — primary derivation, called
+     directly from the manifest. Bypasses `resolveExtensionId`'s
+     SW-scan fallback so a missing manifest key fails loud rather than
+     silently producing a false MATCH via the fallback.
+   - `resolveExtensionId(context)` — the production helper.
+4. Expected output: all three IDs equal
+   `blkhajpjohgopchihlaeeagamopdpfmd`, final line reads
+   `MATCH = true`, exit code 0. Any pair mismatch prints the
+   disagreement and exits 1.
+
+### When to re-run
+
+- After rotating the manifest `"key"` per
+  `docs/magnific-ext-key-rotation.md`.
+- After upgrading Playwright across a major Chromium version.
+- If `resolveExtensionId` or `deriveIdFromKey` is refactored.

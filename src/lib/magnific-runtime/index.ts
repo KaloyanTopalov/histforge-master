@@ -5,4 +5,10 @@ export {
   type ConnectResult,
 } from "./runtime";
 export { resolveUserDataDir, ensureUserDataDir } from "./userdata";
-export { resolveExtensionId, injectToken } from "./extension-token";
+export {
+  resolveExtensionId,
+  injectToken,
+  deriveIdFromKey,
+  ExtensionIdResolutionError,
+  TokenInjectionError,
+} from "./extension-token";
