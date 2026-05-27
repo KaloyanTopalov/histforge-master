@@ -45,6 +45,8 @@ import { FlowProgressPanel } from "./flow-progress-panel";
 import { ArtifactsPanel } from "./artifacts-panel";
 import { VoiceoverUpload } from "./voiceover-upload";
 import { AlignmentUpload } from "./alignment-upload";
+import { CharacterReferenceUpload } from "./character-reference-upload";
+import { PacingPanel } from "./pacing-panel";
 
 export type { FlowSummary } from "@/lib/flow-summary";
 
@@ -74,6 +76,16 @@ interface VideoDetailClientProps {
   // state so SSR and client hydration agree on timer text — see
   // `lib/use-now-tick.ts`.
   serverNow: number;
+  // Resolved global pacing triple used by the per-video pacing panel as
+  // placeholder + fall-through text. Optional so unit fixtures can mount
+  // the detail view without restating settings the panel needs; the
+  // panel only renders when this prop is present.
+  globalPacing?: { target: number; min: number; max: number };
+  // Word count of the script the pacing panel uses for the "≈ N images"
+  // hint. `null` when neither `provided_script` nor an assembled
+  // `script/full_script.md` exists yet; the panel renders `—` in that
+  // case.
+  scriptWordCount?: number | null;
 }
 
 const STEP_ICONS: Record<VideoStepStatus, LucideIcon> = {
@@ -118,6 +130,8 @@ export function VideoDetailClient({
   initialFlowRecoveryAccounts,
   initialFlowServiceOverloadUntil,
   serverNow,
+  globalPacing,
+  scriptWordCount = null,
 }: VideoDetailClientProps): JSX.Element {
   const router = useRouter();
   const [video, setVideo] = useState(initialVideo);
@@ -577,6 +591,24 @@ export function VideoDetailClient({
           videoId={videoId}
           hasExistingAlignment={artifacts.includes("alignment/alignment.json")}
         />
+
+        <CharacterReferenceUpload
+          videoId={videoId}
+          hasExistingReference={artifacts.includes("character_reference.png")}
+        />
+
+        {globalPacing && (
+          <PacingPanel
+            videoId={videoId}
+            initialPacing={{
+              image_chunk_target_seconds: video.image_chunk_target_seconds,
+              image_chunk_min_seconds: video.image_chunk_min_seconds,
+              image_chunk_max_seconds: video.image_chunk_max_seconds,
+            }}
+            globalPacing={globalPacing}
+            scriptWordCount={scriptWordCount}
+          />
+        )}
 
         <ArtifactsPanel videoId={videoId} artifacts={artifacts} steps={steps} />
       </div>

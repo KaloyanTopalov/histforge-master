@@ -13,6 +13,7 @@ out/
 # Runtime data (histforge-specific)
 data/
 projects/
+vendor/
 
 # Environment
 .env

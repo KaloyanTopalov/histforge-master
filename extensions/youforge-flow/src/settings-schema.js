@@ -64,6 +64,7 @@ const SETTINGS_SCHEMA = [
   // Per-task executor settings
   { key: 'outputCount', default: 1, kind: 'number' },
   { key: 'aspectRatio', default: 'landscape', kind: 'string' },
+  { key: 'imageAspectRatio', default: '16:9', kind: 'string' },
   { key: 'imageModel', default: 'NARWHAL', kind: 'string' },
   { key: 'videoModel', default: 'fast', kind: 'string' },
   { key: 'imgUpscale', default: 'none', kind: 'string' },

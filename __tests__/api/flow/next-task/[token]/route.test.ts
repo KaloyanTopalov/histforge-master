@@ -268,6 +268,73 @@ describe("POST /api/flow/next-task/:token", () => {
     expect(getSetting("google_flow_relogin_needed")).toBe(false);
   });
 
+  it("emits a referenceImage URL for createImage when reference_image is set on the row (phase A step 3)", async () => {
+    // When the worker found a per-video character_reference.png at
+    // enqueue time, it sets reference_image to the relative path. The
+    // dispatch route must project this into an absolute artifact URL
+    // the youforge-flow extension can GET. Mirrors Magnific's pattern.
+    await seedAccount({ token: "T-ref" });
+    await seedVideo("vid_ref");
+    await enqueue({
+      video_id: "vid_ref",
+      chunk_id: "img_ref",
+      kind: "image",
+      mode: "createImage",
+      prompt: "scene with character",
+      reference_image: "character_reference.png",
+      output_path: "images/img_ref.png",
+    });
+
+    const res = await callNextTask("T-ref", {
+      type: "TaskRequest",
+      accountToken: "T-ref",
+      mode: "createImage",
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // URL is bound to (token, external_task_id) so the artifact route
+    // can verify the calling account owns the dispatched task.
+    expect(body.referenceImage).toMatch(
+      /^http:\/\/localhost\/api\/flow\/artifact\/T-ref\/\d+_\d+$/
+    );
+    // Sanity: no leaked path/videoId in the URL — the artifact route
+    // resolves them from the task lookup.
+    expect(body.referenceImage).not.toContain("path=");
+    expect(body.referenceImage).not.toContain("videoId=");
+    // The legacy imagePrompt mirror still fires.
+    expect(body.imagePrompt).toBe("scene with character");
+  });
+
+  it("omits referenceImage on createImage when reference_image is null (no per-video reference uploaded)", async () => {
+    // Default state: operator hasn't uploaded a character_reference.png
+    // for this video. The artifact URL has nothing to point at, so we
+    // simply don't emit the field. The extension treats absence as
+    // "text-only generation" (its existing branch).
+    await seedAccount({ token: "T-noref" });
+    await seedVideo("vid_noref");
+    await enqueue({
+      video_id: "vid_noref",
+      chunk_id: "img_noref",
+      kind: "image",
+      mode: "createImage",
+      prompt: "scene without character",
+      output_path: "images/img_noref.png",
+      // reference_image omitted → null in DB
+    });
+
+    const res = await callNextTask("T-noref", {
+      type: "TaskRequest",
+      accountToken: "T-noref",
+      mode: "createImage",
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.referenceImage).toBeUndefined();
+    expect(body.imagePrompt).toBe("scene without character");
+  });
+
   it("routes the claim to the requested bucket when wantBucket='image' is set", async () => {
     // wantBucket scopes the dispatch to a single concurrency bucket so a
     // free image slot can't claim a higher-priority video row (which would
@@ -899,6 +966,76 @@ describe("POST /api/flow/next-task/:token", () => {
     expect(body.mode).toBe("text");
     expect(body.imageModel).toBe("NARWHAL");
     expect(body.videoModel).toBe("veo_3_1_t2v_lite_low_priority");
+  });
+
+  it("emits imageAspect with default 16:9 on createImage dispatch", async () => {
+    await seedAccount({ token: "T-img-aspect" });
+    await seedVideo("vid_ia");
+    await enqueue({
+      video_id: "vid_ia",
+      chunk_id: "c1",
+      kind: "image",
+      mode: "createImage",
+      prompt: "a Roman bridge",
+      output_path: "images/c1.png",
+    });
+
+    const res = await callNextTask("T-img-aspect", {
+      type: "TaskRequest",
+      accountToken: "T-img-aspect",
+      mode: "createImage",
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.imageAspect).toBe("16:9");
+  });
+
+  it("emits imageAspect on text-mode dispatch too (mode-independent)", async () => {
+    await seedAccount({ token: "T-ta-text" });
+    await seedVideo("vid_tat");
+    await enqueue({
+      video_id: "vid_tat",
+      chunk_id: "h1",
+      kind: "clip",
+      mode: "text",
+      prompt: "a galloping horse",
+      output_path: "videos/clip/h1.mp4",
+    });
+
+    const res = await callNextTask("T-ta-text", {
+      type: "TaskRequest",
+      accountToken: "T-ta-text",
+      mode: "text",
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.imageAspect).toBe("16:9");
+  });
+
+  it("emits the operator-set imageAspect value when changed from default", async () => {
+    // Override the seeded default before enqueueing
+    const { setSetting } = await import("@/lib/settings");
+    setSetting("google_flow_image_aspect_ratio", "9:16");
+
+    await seedAccount({ token: "T-img-portrait" });
+    await seedVideo("vid_ip");
+    await enqueue({
+      video_id: "vid_ip",
+      chunk_id: "c1",
+      kind: "image",
+      mode: "createImage",
+      prompt: "a tall obelisk",
+      output_path: "images/c1.png",
+    });
+
+    const res = await callNextTask("T-img-portrait", {
+      type: "TaskRequest",
+      accountToken: "T-img-portrait",
+      mode: "createImage",
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.imageAspect).toBe("9:16");
   });
 
   it("includes googleOperationId + googleOperationProjectId when the claimed row carries them (resume case)", async () => {

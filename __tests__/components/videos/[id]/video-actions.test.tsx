@@ -50,9 +50,13 @@ function video(overrides: Partial<Video> = {}): Video {
     visual_style_snapshot: null,
     kind: "narrative",
     magnific_image_prompt: null,
+    magnific_motion_prompt: null,
     suno_style_prompt: null,
     song_count: null,
     repeat_factor: null,
+    image_chunk_target_seconds: null,
+    image_chunk_min_seconds: null,
+    image_chunk_max_seconds: null,
     created_at: 1000,
     ...overrides,
   };

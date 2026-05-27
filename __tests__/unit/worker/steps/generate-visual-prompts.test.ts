@@ -125,14 +125,17 @@ function seedPrompts(promptsDir: string): void {
 }
 
 /**
- * Helper: build an envelope reply for a given batch of items.
+ * Helper: build an envelope reply for a given batch of items. Emits
+ * the phase-2b shape `{id, scene}` (scene is the authoritative field;
+ * the parser rejects prompt-only entries since step 2b). `sceneFor`
+ * supplies the per-id scene text.
  */
 function envelopeReply(
   items: Array<{ id: string }>,
-  promptFor: (id: string) => string
+  sceneFor: (id: string) => string
 ): string {
   return JSON.stringify({
-    prompts: items.map((i) => ({ id: i.id, prompt: promptFor(i.id) })),
+    prompts: items.map((i) => ({ id: i.id, scene: sceneFor(i.id) })),
   });
 }
 
@@ -210,9 +213,13 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
       ["image_005", "image_006", "image_007", "image_008"]
     );
 
+    // Phase 2b: the assembler always appends the per-video stylePrompt
+    // ("cinematic dark" here) to the LLM-emitted scene before persist.
+    // The two global lock segments are blanked by freshDb() for these
+    // tests, so the only post-scene addition is the per-video style.
     const result: Chunk[] = JSON.parse(readFileSync(chunksPath, "utf-8"));
     for (let i = 0; i < 8; i++) {
-      expect(result[i].prompt).toBe(`prompt-for-${result[i].id}`);
+      expect(result[i].prompt).toBe(`prompt-for-${result[i].id}. cinematic dark.`);
     }
   });
 
@@ -501,7 +508,7 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
     const chat = vi.fn()
       .mockResolvedValueOnce(
         // Missing image_002.
-        JSON.stringify({ prompts: [{ id: "image_001", prompt: "p1" }] })
+        JSON.stringify({ prompts: [{ id: "image_001", scene: "p1" }] })
       )
       .mockImplementationOnce(async (messages: { content: string }[]) => {
         const batch = extractBatch(messages[1].content);
@@ -870,7 +877,7 @@ describe("generate_visual_prompts (step 9) — batched JSON envelope", () => {
     // before batch 1's worker loops back to its while condition.
     gates[0].reject(new Error("LLM crashed"));
     gates[1].resolve(JSON.stringify({
-      prompts: gates[1].batch.map((b) => ({ id: b.id, prompt: `p-${b.id}` })),
+      prompts: gates[1].batch.map((b) => ({ id: b.id, scene: `p-${b.id}` })),
     }));
 
     await expect(run).rejects.toThrow("LLM crashed");
@@ -927,10 +934,10 @@ describe("generate_visual_prompts routing — chat vs visualPromptChat (Invarian
     seedChunksFile(projectsDir, videoId, makeChunks(1));
 
     const chat = vi.fn().mockResolvedValue(
-      JSON.stringify({ prompts: [{ id: "image_001", prompt: "p" }] })
+      JSON.stringify({ prompts: [{ id: "image_001", scene: "p" }] })
     );
     const visualPromptChat = vi.fn().mockResolvedValue(
-      JSON.stringify({ prompts: [{ id: "image_001", prompt: "p" }] })
+      JSON.stringify({ prompts: [{ id: "image_001", scene: "p" }] })
     );
 
     const { step } = await import("@/worker/steps/09-generate-visual-prompts");
@@ -1133,5 +1140,623 @@ describe("visualPromptChat resolution is snapshot-pinned (uses the visual model)
     });
 
     expect(cap.getCtx().visualPromptsConcurrency).toBe(5);
+  });
+});
+
+describe("generate_visual_prompts — structured shot IR (phase 2a)", () => {
+  /**
+   * Build an envelope reply where each entry carries the legacy
+   * `{id, prompt}` plus an optional `extras` overlay merged in. Lets
+   * the structured-IR tests round-trip arbitrary new fields without
+   * each test rewriting the envelope shape.
+   */
+  function envelopeReplyWithExtras(
+    items: Array<{ id: string }>,
+    sceneFor: (id: string) => string,
+    extrasFor: (id: string) => Record<string, unknown>
+  ): string {
+    return JSON.stringify({
+      prompts: items.map((i) => ({
+        id: i.id,
+        scene: sceneFor(i.id),
+        ...extrasFor(i.id),
+      })),
+    });
+  }
+
+  it("persists optional Shot fields (scene, camera, subject_kind, trigger_text, negative_prompt) when the LLM supplies them", async () => {
+    const db = freshDb();
+    setSetting("visual_prompts_batch_size", 4, db);
+    const videoId = seedVideo(db);
+    const projectsDir = tempDir("projects");
+    const promptsDir = tempDir("prompts");
+    seedPrompts(promptsDir);
+
+    const chunks = makeChunks(2);
+    const chunksPath = seedChunksFile(projectsDir, videoId, chunks);
+
+    const chat = vi.fn(async (messages: { content: string }[]) => {
+      const batch = extractBatch(messages[1].content);
+      return envelopeReplyWithExtras(
+        batch,
+        (id) => `prompt-for-${id}`,
+        (id) =>
+          id === "image_001"
+            ? {
+                scene: "a painter at an easel in a sunlit studio",
+                camera: "medium",
+                subject_kind: "character",
+                trigger_text: "Provence",
+                negative_prompt: "no modern objects",
+              }
+            : {
+                scene: "wheat fields under summer sun",
+                camera: "wide",
+                subject_kind: "environment",
+                trigger_text: "wheat fields",
+              }
+      );
+    });
+
+    await generateVisualPromptsStep.run(
+      videoId,
+      makeStepContext({
+        db,
+        projectsDir,
+        promptsDir,
+        visualPromptsConcurrency: 1,
+        visualPromptChat: chat,
+      })
+    );
+
+    const result = JSON.parse(readFileSync(chunksPath, "utf-8"));
+    // Phase 2b: when scene is supplied, the assembler uses scene as the
+    // base for the persisted prompt. The LLM's `prompt` field is still
+    // accepted by the parser (back-compat) but ignored once scene wins.
+    // freshDb() blanks the global locks, so only the per-shot
+    // negative_prompt appears in the negative segment.
+    expect(result[0]).toMatchObject({
+      id: "image_001",
+      prompt: "a painter at an easel in a sunlit studio. Negative: no modern objects.",
+      scene: "a painter at an easel in a sunlit studio",
+      camera: "medium",
+      subject_kind: "character",
+      trigger_text: "Provence",
+      negative_prompt: "no modern objects",
+    });
+    expect(result[1]).toMatchObject({
+      id: "image_002",
+      prompt: "wheat fields under summer sun",
+      scene: "wheat fields under summer sun",
+      camera: "wide",
+      subject_kind: "environment",
+      trigger_text: "wheat fields",
+    });
+    // image_002 had no negative_prompt — must not be invented.
+    expect(result[1].negative_prompt).toBeUndefined();
+  });
+
+  it("persists references[] when the LLM supplies valid {role, source} entries", async () => {
+    const db = freshDb();
+    const videoId = seedVideo(db);
+    const projectsDir = tempDir("projects");
+    const promptsDir = tempDir("prompts");
+    seedPrompts(promptsDir);
+
+    const chunks = makeChunks(1);
+    const chunksPath = seedChunksFile(projectsDir, videoId, chunks);
+
+    const chat = vi.fn(async (messages: { content: string }[]) => {
+      const batch = extractBatch(messages[1].content);
+      return envelopeReplyWithExtras(
+        batch,
+        (id) => `p-${id}`,
+        () => ({
+          references: [
+            { role: "character", source: { kind: "entity", entity_id: "ent-123" } },
+            { role: "style", source: { kind: "image", url: "https://x/style.png" } },
+          ],
+        })
+      );
+    });
+
+    await generateVisualPromptsStep.run(
+      videoId,
+      makeStepContext({
+        db,
+        projectsDir,
+        promptsDir,
+        visualPromptsConcurrency: 1,
+        visualPromptChat: chat,
+      })
+    );
+
+    const result = JSON.parse(readFileSync(chunksPath, "utf-8"));
+    expect(result[0].references).toEqual([
+      { role: "character", source: { kind: "entity", entity_id: "ent-123" } },
+      { role: "style", source: { kind: "image", url: "https://x/style.png" } },
+    ]);
+  });
+
+  it("drops malformed extras silently — invalid camera/subject_kind/empty trigger_text leave the field unset; valid scene still persists", async () => {
+    const db = freshDb();
+    const videoId = seedVideo(db);
+    const projectsDir = tempDir("projects");
+    const promptsDir = tempDir("prompts");
+    seedPrompts(promptsDir);
+
+    const chunks = makeChunks(1);
+    const chunksPath = seedChunksFile(projectsDir, videoId, chunks);
+
+    const chat = vi.fn(async (messages: { content: string }[]) => {
+      const batch = extractBatch(messages[1].content);
+      return envelopeReplyWithExtras(
+        batch,
+        (id) => `p-${id}`,
+        () => ({
+          scene: "a valid scene",   // required, must be non-empty
+          camera: "closeup",        // not in enum (should be "close-up") → drop
+          subject_kind: "person",  // not in enum → drop
+          trigger_text: "",         // empty → drop
+          negative_prompt: "",      // empty → drop
+        })
+      );
+    });
+
+    await generateVisualPromptsStep.run(
+      videoId,
+      makeStepContext({
+        db,
+        projectsDir,
+        promptsDir,
+        visualPromptsConcurrency: 1,
+        visualPromptChat: chat,
+      })
+    );
+
+    const result = JSON.parse(readFileSync(chunksPath, "utf-8"));
+    // Assembler runs over the valid scene; locks are blanked by freshDb.
+    expect(result[0].prompt).toBe("a valid scene");
+    expect(result[0].scene).toBe("a valid scene");
+    expect(result[0].camera).toBeUndefined();
+    expect(result[0].subject_kind).toBeUndefined();
+    expect(result[0].trigger_text).toBeUndefined();
+    expect(result[0].negative_prompt).toBeUndefined();
+  });
+
+  it("drops malformed references entries individually and keeps valid ones", async () => {
+    const db = freshDb();
+    const videoId = seedVideo(db);
+    const projectsDir = tempDir("projects");
+    const promptsDir = tempDir("prompts");
+    seedPrompts(promptsDir);
+
+    const chunks = makeChunks(1);
+    const chunksPath = seedChunksFile(projectsDir, videoId, chunks);
+
+    const chat = vi.fn(async (messages: { content: string }[]) => {
+      const batch = extractBatch(messages[1].content);
+      return envelopeReplyWithExtras(
+        batch,
+        (id) => `p-${id}`,
+        () => ({
+          references: [
+            { role: "character", source: { kind: "entity", entity_id: "ok-1" } },
+            { role: "narrator", source: { kind: "entity", entity_id: "bad-role" } }, // invalid role
+            { role: "style", source: { kind: "audio", url: "wrong-kind" } },          // invalid source kind
+            { role: "style", source: { kind: "image", url: "https://x/2.png" } },     // ok
+            "not-an-object",                                                          // wrong type entirely
+          ],
+        })
+      );
+    });
+
+    await generateVisualPromptsStep.run(
+      videoId,
+      makeStepContext({
+        db,
+        projectsDir,
+        promptsDir,
+        visualPromptsConcurrency: 1,
+        visualPromptChat: chat,
+      })
+    );
+
+    const result = JSON.parse(readFileSync(chunksPath, "utf-8"));
+    expect(result[0].references).toEqual([
+      { role: "character", source: { kind: "entity", entity_id: "ok-1" } },
+      { role: "style", source: { kind: "image", url: "https://x/2.png" } },
+    ]);
+  });
+
+  it("clears stale structured fields when a chunk is regenerated (prompt → null) and the new reply omits them", async () => {
+    // Regression: if a chunk previously had scene/camera/etc. but the
+    // operator (or moderator) resets prompt to null, the eager sweep
+    // must wipe the old extras BEFORE the new LLM call so a sparser
+    // reply doesn't leave stale fields describing a replaced prompt.
+    const db = freshDb();
+    const videoId = seedVideo(db);
+    const projectsDir = tempDir("projects");
+    const promptsDir = tempDir("prompts");
+    seedPrompts(promptsDir);
+
+    const chunks = makeChunks(1);
+    // Seed prior structured fields on a chunk that's about to regenerate.
+    Object.assign(chunks[0], {
+      prompt: null,
+      scene: "stale scene from a prior run",
+      camera: "wide",
+      subject_kind: "character",
+      trigger_text: "stale trigger",
+      negative_prompt: "stale negative",
+      references: [
+        { role: "character", source: { kind: "entity", entity_id: "old-ent" } },
+      ],
+      prompt_history: ["should-be-cleared-too"],
+    });
+    const chunksPath = seedChunksFile(projectsDir, videoId, chunks);
+
+    // New reply: only id + prompt, no extras.
+    const chat = vi.fn(async (messages: { content: string }[]) => {
+      const batch = extractBatch(messages[1].content);
+      return envelopeReply(batch, (id) => `fresh-${id}`);
+    });
+
+    await generateVisualPromptsStep.run(
+      videoId,
+      makeStepContext({
+        db,
+        projectsDir,
+        promptsDir,
+        visualPromptsConcurrency: 1,
+        visualPromptChat: chat,
+      })
+    );
+
+    const result = JSON.parse(readFileSync(chunksPath, "utf-8"));
+    // 2b: scene is required, so it gets the NEW value from the LLM
+    // reply (not the stale "stale scene from a prior run"). The other
+    // optional fields the new reply omitted are cleared by the eager
+    // sweep so they don't carry over from the prior run.
+    expect(result[0].prompt).toBe("fresh-image_001");
+    expect(result[0].scene).toBe("fresh-image_001");
+    expect(result[0].camera).toBeUndefined();
+    expect(result[0].subject_kind).toBeUndefined();
+    expect(result[0].trigger_text).toBeUndefined();
+    expect(result[0].references).toBeUndefined();
+    expect(result[0].negative_prompt).toBeUndefined();
+    expect(result[0].prompt_history).toEqual([]);
+  });
+
+  it("persists beat_type when the LLM supplies a valid value", async () => {
+    // Phase 3 (pacing branch): beat_type is the editorial-intent
+    // classifier the LLM emits alongside scene/camera/subject_kind.
+    // It joins the lenient extractor pool — accepted only when string
+    // ∈ VALID_BEAT_TYPES. This test pins the happy path.
+    const db = freshDb();
+    const videoId = seedVideo(db);
+    const projectsDir = tempDir("projects");
+    const promptsDir = tempDir("prompts");
+    seedPrompts(promptsDir);
+
+    const chunks = makeChunks(1);
+    const chunksPath = seedChunksFile(projectsDir, videoId, chunks);
+
+    const chat = vi.fn(async (messages: { content: string }[]) => {
+      const batch = extractBatch(messages[1].content);
+      return envelopeReplyWithExtras(
+        batch,
+        () => "a courtroom scene",
+        () => ({ beat_type: "fact_card" })
+      );
+    });
+
+    await generateVisualPromptsStep.run(
+      videoId,
+      makeStepContext({
+        db,
+        projectsDir,
+        promptsDir,
+        visualPromptsConcurrency: 1,
+        visualPromptChat: chat,
+      })
+    );
+
+    const result = JSON.parse(readFileSync(chunksPath, "utf-8"));
+    expect(result[0].beat_type).toBe("fact_card");
+    expect(result[0].scene).toBe("a courtroom scene");
+  });
+
+  it("drops malformed beat_type silently — invalid value leaves field unset; valid scene still persists", async () => {
+    // Lenient parity with camera/subject_kind: an out-of-taxonomy value
+    // ("foo") never lands on the chunk, but the rest of the entry is
+    // accepted. Matches the existing "drops malformed extras silently"
+    // contract above.
+    const db = freshDb();
+    const videoId = seedVideo(db);
+    const projectsDir = tempDir("projects");
+    const promptsDir = tempDir("prompts");
+    seedPrompts(promptsDir);
+
+    const chunks = makeChunks(1);
+    const chunksPath = seedChunksFile(projectsDir, videoId, chunks);
+
+    const chat = vi.fn(async (messages: { content: string }[]) => {
+      const batch = extractBatch(messages[1].content);
+      return envelopeReplyWithExtras(
+        batch,
+        () => "a valid scene",
+        () => ({ beat_type: "foo" })
+      );
+    });
+
+    await generateVisualPromptsStep.run(
+      videoId,
+      makeStepContext({
+        db,
+        projectsDir,
+        promptsDir,
+        visualPromptsConcurrency: 1,
+        visualPromptChat: chat,
+      })
+    );
+
+    const result = JSON.parse(readFileSync(chunksPath, "utf-8"));
+    expect(result[0].scene).toBe("a valid scene");
+    expect(result[0].beat_type).toBeUndefined();
+  });
+
+  it("clears stale beat_type when a chunk is regenerated and the new reply omits it", async () => {
+    // Eager-sweep parity: a chunk regenerated with prompt=null must lose
+    // its prior beat_type before the new LLM call lands, so a sparser
+    // reply doesn't leave a stale editorial-intent tag describing the
+    // replaced prompt. Mirrors the existing "clears stale structured
+    // fields" test for camera/subject_kind/etc.
+    const db = freshDb();
+    const videoId = seedVideo(db);
+    const projectsDir = tempDir("projects");
+    const promptsDir = tempDir("prompts");
+    seedPrompts(promptsDir);
+
+    const chunks = makeChunks(1);
+    Object.assign(chunks[0], {
+      prompt: null,
+      scene: "stale",
+      beat_type: "establishing",
+    });
+    const chunksPath = seedChunksFile(projectsDir, videoId, chunks);
+
+    const chat = vi.fn(async (messages: { content: string }[]) => {
+      const batch = extractBatch(messages[1].content);
+      // Fresh reply omits beat_type.
+      return envelopeReply(batch, (id) => `fresh-${id}`);
+    });
+
+    await generateVisualPromptsStep.run(
+      videoId,
+      makeStepContext({
+        db,
+        projectsDir,
+        promptsDir,
+        visualPromptsConcurrency: 1,
+        visualPromptChat: chat,
+      })
+    );
+
+    const result = JSON.parse(readFileSync(chunksPath, "utf-8"));
+    expect(result[0].scene).toBe("fresh-image_001");
+    expect(result[0].beat_type).toBeUndefined();
+  });
+
+});
+
+describe("generate_visual_prompts — assembler (phase 2b)", () => {
+  function envelopeWithSceneOnly(
+    items: Array<{ id: string }>,
+    sceneFor: (id: string) => string
+  ): string {
+    return JSON.stringify({
+      prompts: items.map((i) => ({ id: i.id, scene: sceneFor(i.id) })),
+    });
+  }
+
+  it("uses scene as the base when present and appends the operator's style + negative locks", async () => {
+    // Seeded DB carries the default style_lock_description and
+    // character_lock_negative (the long stickman-style locks). The
+    // assembler must append both onto `scene`, matching the legacy
+    // applyLocks shape: "<base>. <styleLock>. Negative: <negLock>."
+    const db = freshDb();
+    // Re-enable the seeded defaults (freshDb() blanks them for the
+    // other tests in this file). Use short distinctive strings so the
+    // assertion is easy to read.
+    setSetting("style_lock_description", "STYLE_BLOCK", db);
+    setSetting("character_lock_negative", "GLOBAL_NEG", db);
+
+    const videoId = seedVideo(db);
+    const projectsDir = tempDir("projects");
+    const promptsDir = tempDir("prompts");
+    seedPrompts(promptsDir);
+
+    const chunks = makeChunks(1);
+    const chunksPath = seedChunksFile(projectsDir, videoId, chunks);
+
+    const chat = vi.fn(async (messages: { content: string }[]) => {
+      const batch = extractBatch(messages[1].content);
+      return envelopeWithSceneOnly(batch, () => "a painter at an easel");
+    });
+
+    await generateVisualPromptsStep.run(
+      videoId,
+      makeStepContext({
+        db,
+        projectsDir,
+        promptsDir,
+        visualPromptsConcurrency: 1,
+        visualPromptChat: chat,
+      })
+    );
+
+    const result = JSON.parse(readFileSync(chunksPath, "utf-8"));
+    expect(result[0].prompt).toBe(
+      "a painter at an easel. STYLE_BLOCK. Negative: GLOBAL_NEG."
+    );
+    expect(result[0].scene).toBe("a painter at an easel");
+  });
+
+  it("folds per-shot negative_prompt into a single Negative: clause with the global lock (per-shot first, comma-separated)", async () => {
+    const db = freshDb();
+    setSetting("style_lock_description", "STYLE_BLOCK", db);
+    setSetting("character_lock_negative", "GLOBAL_NEG", db);
+
+    const videoId = seedVideo(db);
+    const projectsDir = tempDir("projects");
+    const promptsDir = tempDir("prompts");
+    seedPrompts(promptsDir);
+
+    const chunks = makeChunks(1);
+    const chunksPath = seedChunksFile(projectsDir, videoId, chunks);
+
+    const chat = vi.fn(async (messages: { content: string }[]) => {
+      const batch = extractBatch(messages[1].content);
+      return JSON.stringify({
+        prompts: batch.map((b) => ({
+          id: b.id,
+          scene: "the scene",
+          negative_prompt: "shot-specific-negative",
+        })),
+      });
+    });
+
+    await generateVisualPromptsStep.run(
+      videoId,
+      makeStepContext({
+        db,
+        projectsDir,
+        promptsDir,
+        visualPromptsConcurrency: 1,
+        visualPromptChat: chat,
+      })
+    );
+
+    const result = JSON.parse(readFileSync(chunksPath, "utf-8"));
+    expect(result[0].prompt).toBe(
+      "the scene. STYLE_BLOCK. Negative: shot-specific-negative, GLOBAL_NEG."
+    );
+  });
+
+  it("scene wins over prompt when both are supplied (back-compat does not regress new behaviour)", async () => {
+    // An LLM in mid-migration might emit both. The assembler prefers
+    // the new structured field. The LLM's `prompt` is still accepted by
+    // the parser (so the request doesn't fail) but ignored downstream.
+    const db = freshDb();
+    setSetting("style_lock_description", "", db);
+    setSetting("character_lock_negative", "", db);
+
+    const videoId = seedVideo(db);
+    const projectsDir = tempDir("projects");
+    const promptsDir = tempDir("prompts");
+    seedPrompts(promptsDir);
+
+    const chunks = makeChunks(1);
+    const chunksPath = seedChunksFile(projectsDir, videoId, chunks);
+
+    const chat = vi.fn(async (messages: { content: string }[]) => {
+      const batch = extractBatch(messages[1].content);
+      return JSON.stringify({
+        prompts: batch.map((b) => ({
+          id: b.id,
+          scene: "from-scene",
+          prompt: "from-prompt",
+        })),
+      });
+    });
+
+    await generateVisualPromptsStep.run(
+      videoId,
+      makeStepContext({
+        db,
+        projectsDir,
+        promptsDir,
+        visualPromptsConcurrency: 1,
+        visualPromptChat: chat,
+      })
+    );
+
+    const result = JSON.parse(readFileSync(chunksPath, "utf-8"));
+    expect(result[0].prompt).toBe("from-scene");
+  });
+
+  it("appends the per-video stylePrompt (visual_style_snapshot) between scene and the global locks", async () => {
+    // Regression pin for the Codex-flagged issue: when 2b moved style
+    // out of the LLM's scene, the assembler had to start emitting the
+    // per-video visual_style_snapshot itself or styled videos would
+    // silently lose their chosen style.
+    const db = freshDb();
+    setSetting("style_lock_description", "STYLE_BLOCK", db);
+    setSetting("character_lock_negative", "GLOBAL_NEG", db);
+
+    const videoId = seedVideo(db, { stylePrompt: "watercolor pastoral" });
+    const projectsDir = tempDir("projects");
+    const promptsDir = tempDir("prompts");
+    seedPrompts(promptsDir);
+
+    const chunks = makeChunks(1);
+    const chunksPath = seedChunksFile(projectsDir, videoId, chunks);
+
+    const chat = vi.fn(async (messages: { content: string }[]) => {
+      const batch = extractBatch(messages[1].content);
+      return envelopeWithSceneOnly(batch, () => "a meadow at dawn");
+    });
+
+    await generateVisualPromptsStep.run(
+      videoId,
+      makeStepContext({
+        db,
+        projectsDir,
+        promptsDir,
+        visualPromptsConcurrency: 1,
+        visualPromptChat: chat,
+      })
+    );
+
+    const result = JSON.parse(readFileSync(chunksPath, "utf-8"));
+    // Order: scene, per-video stylePrompt, global styleLock, Negative.
+    expect(result[0].prompt).toBe(
+      "a meadow at dawn. watercolor pastoral. STYLE_BLOCK. Negative: GLOBAL_NEG."
+    );
+  });
+
+  it("rejects an entry without 'scene' (phase 2b strict contract: legacy prompt-only is no longer accepted)", async () => {
+    const db = freshDb();
+    const videoId = seedVideo(db);
+    const projectsDir = tempDir("projects");
+    const promptsDir = tempDir("prompts");
+    seedPrompts(promptsDir);
+
+    const chunks = makeChunks(1);
+    seedChunksFile(projectsDir, videoId, chunks);
+
+    // Both attempts return a prompt-only envelope (the pre-2b shape).
+    // Parser rejects → retry → also rejects → per-chunk fallback
+    // → also rejects → step throws.
+    const chat = vi.fn(async (messages: { content: string }[]) => {
+      const batch = extractBatch(messages[1].content);
+      return JSON.stringify({
+        prompts: batch.map((b) => ({ id: b.id, prompt: "legacy-prompt-only" })),
+      });
+    });
+
+    await expect(
+      generateVisualPromptsStep.run(
+        videoId,
+        makeStepContext({
+          db,
+          projectsDir,
+          promptsDir,
+          visualPromptsConcurrency: 1,
+          visualPromptChat: chat,
+        })
+      )
+    ).rejects.toThrow(/missing non-empty 'scene'/);
   });
 });

@@ -78,7 +78,12 @@ async function seedVideo(videoId: string): Promise<void> {
 }
 
 function makeFile(name: string, mime: string, bytes: Buffer | string): File {
-  const blob = new Blob([bytes], { type: mime });
+  // Cast through BlobPart: Node 20's Buffer is typed against
+  // ArrayBufferLike (which includes SharedArrayBuffer) but Blob's
+  // BlobPart accepts only the narrower ArrayBuffer-backed variants.
+  // Both string and Buffer are valid BlobPart at runtime — the cast is
+  // a type-only adapter.
+  const blob = new Blob([bytes as BlobPart], { type: mime });
   return new File([blob], name, { type: mime });
 }
 

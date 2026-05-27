@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { NumberField, Panel } from "./field-primitives";
+import { NumberField, Panel, TextArea } from "./field-primitives";
 import { OpenRouterView } from "./llm-providers/openrouter";
 import { ClaudeCliView } from "./llm-providers/claude-cli";
 import { VisualPromptsView } from "./llm-providers/visual-prompts";
@@ -42,9 +42,29 @@ const PROVIDER_VIEWS: Record<
   claude_cli: ClaudeCliView,
 };
 
+/**
+ * Validate the `step_09_examples_json` body. Empty string is valid
+ * (treated as "no examples"). Anything non-empty must parse as JSON;
+ * we don't constrain the shape further because operators iterate on
+ * the structure and step 09 already degrades gracefully on a parse
+ * failure.
+ */
+function validateExamplesJson(raw: string): string | null {
+  if (raw.trim().length === 0) return null;
+  try {
+    JSON.parse(raw);
+    return null;
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+}
+
 export function ScriptTab({ values, update }: ScriptTabProps): JSX.Element {
   const [view, setView] = useState<LlmProviderName>(LLM_PROVIDER_NAMES[0]);
   const View = PROVIDER_VIEWS[view];
+  const [examplesError, setExamplesError] = useState<string | null>(() =>
+    validateExamplesJson(values.step_09_examples_json)
+  );
 
   return (
     <div className="space-y-8">
@@ -75,6 +95,33 @@ export function ScriptTab({ values, update }: ScriptTabProps): JSX.Element {
           step={0.5}
           hint="ComfyUI hook clip length. Set to match your ComfyUI workflow's output. For Google Flow, use the Google Flow tab's Hook Clip Seconds setting."
         />
+        <NumberField
+          id="image_chunk_target_seconds"
+          label="Image Chunk Seconds"
+          value={values.image_chunk_target_seconds}
+          onChange={(v) => update("image_chunk_target_seconds", v)}
+          step={1}
+          min={2}
+          hint="Per-chunk target duration for the images-only chunker. Lower = faster cuts (more images per minute); higher = each image dwells longer. Range 2-60s. Default 8s ≈ 7-8 images per minute."
+        />
+        <div className="space-y-1.5">
+          <TextArea
+            id="step_09_examples_json"
+            label="Step 09 Few-Shot Examples (JSON)"
+            value={values.step_09_examples_json}
+            onChange={(v) => {
+              update("step_09_examples_json", v);
+              setExamplesError(validateExamplesJson(v));
+            }}
+            rows={6}
+            hint="JSON-encoded array of exemplar scene objects shown to the step 09 LLM as a `<good_examples>` block. Empty = no block. Validation is best-effort; save is not blocked while you iterate."
+          />
+          {examplesError && (
+            <p className="text-xs text-red-600 dark:text-red-400">
+              JSON parse error: {examplesError}
+            </p>
+          )}
+        </div>
       </Panel>
 
       <div className="space-y-4">

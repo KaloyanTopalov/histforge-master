@@ -134,7 +134,7 @@ describe("step 09 prompt assembly — lock concatenation", () => {
     const llmPrompt = "the stickman walks across a desolate plain";
     const chat = vi.fn(async () => {
       return JSON.stringify({
-        prompts: [{ id: "image_001", prompt: llmPrompt }],
+        prompts: [{ id: "image_001", scene: llmPrompt }],
       });
     });
 
@@ -177,7 +177,7 @@ describe("step 09 prompt assembly — lock concatenation", () => {
     const llmPrompt = "the stickman walks across a desolate plain";
     const chat = vi.fn(async () => {
       return JSON.stringify({
-        prompts: [{ id: "image_001", prompt: llmPrompt }],
+        prompts: [{ id: "image_001", scene: llmPrompt }],
       });
     });
 
@@ -213,7 +213,7 @@ describe("step 09 prompt assembly — lock concatenation", () => {
 
     const chat = vi.fn(async () => {
       return JSON.stringify({
-        prompts: [{ id: "image_001", prompt: "a scene" }],
+        prompts: [{ id: "image_001", scene: "a scene" }],
       });
     });
 
@@ -249,7 +249,7 @@ describe("step 09 prompt assembly — lock concatenation", () => {
 
     const chat = vi.fn(async () => {
       return JSON.stringify({
-        prompts: [{ id: "image_001", prompt: "a scene" }],
+        prompts: [{ id: "image_001", scene: "a scene" }],
       });
     });
 

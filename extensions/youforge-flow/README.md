@@ -86,6 +86,8 @@ The full end-to-end walkthrough lives at `docs/setup-guides/setup-google-flow.md
 
 ## Relationship to upstream
 
-`extensions/veo-upstream/` is kept in the repository untouched as a
-reference so future upstream patches can be diffed against it cleanly.
-Do **not** edit upstream; edit this fork only.
+`extensions/VEO API Extension/` is kept in the repository untouched as a
+reference mirror of a newer upstream so future graft diffs can be
+produced cleanly. Do **not** edit the mirror; edit this fork only.
+(An older `extensions/veo-upstream/` mirror used to play this role and
+is no longer present.)

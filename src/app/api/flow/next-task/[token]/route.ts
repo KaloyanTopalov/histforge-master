@@ -26,11 +26,19 @@ const TaskRequestSchema = z.object({
 interface DispatchExtras {
   flowProjectId: string | null;
   imageModel: SettingValue<"google_flow_image_model">;
+  imageAspect: SettingValue<"google_flow_image_aspect_ratio">;
   // For clip rows this is the variant model key resolved from the
   // base model × `google_flow_hook_clip_seconds`; for non-clip rows this
   // is the raw base model string. Both forms are valid Veo videoModelKey
   // values, so the field stays a string at the DTO boundary.
   videoModel: string;
+  // Per-request URL pieces used to project `row.reference_image` (a
+  // path under the per-video project root) into an absolute artifact
+  // URL the youforge-flow extension can GET. Origin comes from the
+  // incoming request; token is the URL [token] segment the route was
+  // already verifying for body-auth.
+  origin: string;
+  token: string;
 }
 
 /**
@@ -63,12 +71,27 @@ function shapeTaskForExtension(
     projectTitle: video.title,
     flowProjectId: extras.flowProjectId,
     imageModel: extras.imageModel,
+    imageAspect: extras.imageAspect,
     // For clip rows this carries the variant key (e.g.
     // `veo_3_1_t2v_quality_4s`); for non-clip rows it's the raw base model.
     videoModel: extras.videoModel,
   };
   if (row.mode === "createImage") {
     out.imagePrompt = row.prompt;
+    // Character-lock plumbing (Phase A step 3): when the worker found
+    // a per-video character reference image at enqueue time, emit it
+    // as an absolute artifact URL. The youforge-flow image executor
+    // reads `task.referenceImage`, `uploadImage`s it, and attaches the
+    // resulting media to `imageInputs` for the Flow request.
+    //
+    // The URL is bound to (account_token, external_task_id) — the
+    // artifact route verifies the calling account owns the dispatched
+    // task before serving its reference. No `videoId`/`path` query
+    // params are exposed, so a holder of one account token can't fetch
+    // another account's task artifacts.
+    if (row.reference_image !== null) {
+      out.referenceImage = `${extras.origin}/api/flow/artifact/${extras.token}/${row.external_task_id}`;
+    }
   }
   if (row.mode === "image") {
     out.referenceImage = row.reference_image;
@@ -165,7 +188,10 @@ export async function POST(
   const extras: DispatchExtras = {
     flowProjectId: project?.flow_project_id ?? null,
     imageModel: getSetting("google_flow_image_model", db),
+    imageAspect: getSetting("google_flow_image_aspect_ratio", db),
     videoModel,
+    origin: new URL(req.url).origin,
+    token: ctx.params.token,
   };
 
   return NextResponse.json(

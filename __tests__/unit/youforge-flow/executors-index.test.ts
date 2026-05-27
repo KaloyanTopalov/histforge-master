@@ -85,6 +85,7 @@ function loadDispatcher(overrides: {
     getImgUpscale: () => (storage.imgUpscale ?? "none"),
     getVidUpscale: () => (storage.vidUpscale ?? "none"),
     getCharacterLockReference: () => (storage.characterLockReference ?? ""),
+    getImageAspectRatio: () => (storage.imageAspectRatio ?? "16:9"),
     crypto: globalThis.crypto,
     runImageGen,
     runTextToVideo,

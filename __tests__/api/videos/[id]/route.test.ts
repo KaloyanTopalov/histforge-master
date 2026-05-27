@@ -504,6 +504,143 @@ describe("PATCH /api/videos/:id", () => {
     );
     expect(res.status).toBe(200);
   });
+
+  it("persists all three pacing columns when valid {target,min,max} are sent", async () => {
+    await seedVideo("v1", { status: "new" });
+    const { PATCH } = await import("@/app/api/videos/[id]/route");
+    const res = await PATCH(
+      new Request("http://localhost/api/videos/v1", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          image_chunk_target_seconds: 6,
+          image_chunk_min_seconds: 3,
+          image_chunk_max_seconds: 10,
+        }),
+      }),
+      { params: { id: "v1" } }
+    );
+    expect(res.status).toBe(200);
+    const { getDb } = await import("@/lib/db");
+    const row = getDb()
+      .prepare(
+        "SELECT image_chunk_target_seconds, image_chunk_min_seconds, image_chunk_max_seconds FROM videos WHERE id = ?"
+      )
+      .get("v1") as {
+      image_chunk_target_seconds: number | null;
+      image_chunk_min_seconds: number | null;
+      image_chunk_max_seconds: number | null;
+    };
+    expect(row).toEqual({
+      image_chunk_target_seconds: 6,
+      image_chunk_min_seconds: 3,
+      image_chunk_max_seconds: 10,
+    });
+  });
+
+  it("returns 400 image_chunk_pacing_invariant when request-body min > max", async () => {
+    await seedVideo("v1", { status: "new" });
+    const { PATCH } = await import("@/app/api/videos/[id]/route");
+    const res = await PATCH(
+      new Request("http://localhost/api/videos/v1", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          image_chunk_target_seconds: 5,
+          image_chunk_min_seconds: 8,
+          image_chunk_max_seconds: 10,
+        }),
+      }),
+      { params: { id: "v1" } }
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("image_chunk_pacing_invariant");
+    expect(body.sources.min).toEqual({ source: "request", value: 8 });
+    expect(body.sources.target).toEqual({ source: "request", value: 5 });
+    expect(body.sources.max).toEqual({ source: "request", value: 10 });
+    // Row must not have been modified.
+    const { getDb } = await import("@/lib/db");
+    const row = getDb()
+      .prepare(
+        "SELECT image_chunk_target_seconds, image_chunk_min_seconds, image_chunk_max_seconds FROM videos WHERE id = ?"
+      )
+      .get("v1") as {
+      image_chunk_target_seconds: number | null;
+      image_chunk_min_seconds: number | null;
+      image_chunk_max_seconds: number | null;
+    };
+    expect(row).toEqual({
+      image_chunk_target_seconds: null,
+      image_chunk_min_seconds: null,
+      image_chunk_max_seconds: null,
+    });
+  });
+
+  it("catches the partial-patch trap: PATCH {min:10} against NULL target column + global target=8 returns 400 with source labels", async () => {
+    // Defaults: global target=8, min=4, max=12. Row has all three columns NULL.
+    await seedVideo("v1", { status: "new" });
+    const { PATCH } = await import("@/app/api/videos/[id]/route");
+    const res = await PATCH(
+      new Request("http://localhost/api/videos/v1", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ image_chunk_min_seconds: 10 }),
+      }),
+      { params: { id: "v1" } }
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("image_chunk_pacing_invariant");
+    // Patched value comes from the request body.
+    expect(body.sources.min).toEqual({ source: "request", value: 10 });
+    // Target column is NULL → resolver falls through to global (8).
+    expect(body.sources.target).toEqual({ source: "global", value: 8 });
+    // Max column also NULL → global (12).
+    expect(body.sources.max).toEqual({ source: "global", value: 12 });
+  });
+
+  it("PATCH {image_chunk_target_seconds: null} clears the column", async () => {
+    await seedVideo("v1", { status: "new" });
+    const { PATCH } = await import("@/app/api/videos/[id]/route");
+    // First, set a non-NULL value so we can observe the clear.
+    const r1 = await PATCH(
+      new Request("http://localhost/api/videos/v1", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ image_chunk_target_seconds: 6 }),
+      }),
+      { params: { id: "v1" } }
+    );
+    expect(r1.status).toBe(200);
+
+    // Now clear it.
+    const r2 = await PATCH(
+      new Request("http://localhost/api/videos/v1", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ image_chunk_target_seconds: null }),
+      }),
+      { params: { id: "v1" } }
+    );
+    expect(r2.status).toBe(200);
+
+    const { getDb } = await import("@/lib/db");
+    const row = getDb()
+      .prepare(
+        "SELECT image_chunk_target_seconds FROM videos WHERE id = ?"
+      )
+      .get("v1") as { image_chunk_target_seconds: number | null };
+    expect(row.image_chunk_target_seconds).toBeNull();
+
+    // GET should also reflect the cleared column.
+    const { GET } = await import("@/app/api/videos/[id]/route");
+    const gres = await GET(new Request("http://localhost/api/videos/v1"), {
+      params: { id: "v1" },
+    });
+    const gbody = await gres.json();
+    expect(gbody.video.image_chunk_target_seconds).toBeNull();
+  });
 });
 
 describe("PATCH /api/videos/:id — music_video kind", () => {

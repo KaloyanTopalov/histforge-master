@@ -29,6 +29,7 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   google_flow_image_model: "NARWHAL",
   google_flow_video_model: "veo_3_1_t2v_lite_low_priority",
   google_flow_aspect_ratio: "landscape",
+  google_flow_image_aspect_ratio: "16:9",
   google_flow_hook_clip_seconds: "8",
   google_flow_dispatch_timeout_minutes: "30",
   aspect_ratio: "16:9",
@@ -63,6 +64,28 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   visual_prompts_batch_size: "8",
   claude_cli_visual_prompts_concurrency: "2",
   openrouter_visual_prompts_concurrency: "8",
+  // Target chunk duration (seconds) for the chunk_images_only chunker.
+  // Default 8s gives ~7-8 chunks per minute of narration — close to typical
+  // YouTube-narrative pacing. Lower for faster cuts, higher to dwell on
+  // each image. The chunk-clips-then-images chunker keeps the legacy
+  // MAIN_TARGET_SECONDS=30 in chunk-utils.ts because its image segments
+  // are paired with hook clips and don't drive visual pacing alone.
+  image_chunk_target_seconds: "8",
+  // Hard floor + soft ceiling for chunk_images_only durations. The chunker
+  // forward-merges short chunks until min is satisfied; oversized single
+  // sentences exceed max with a logged warning (can't subdivide a single
+  // sentence's VO). Together with the target above, they form a [min,
+  // target, max] envelope the per-video `videos.image_chunk_*_seconds`
+  // override columns can shadow on a per-field basis.
+  image_chunk_min_seconds: "4",
+  image_chunk_max_seconds: "12",
+  // Few-shot example block for step 09's prompt template. JSON-encoded
+  // array of exemplar scene objects; empty = no block. Operators paste
+  // 2-3 hand-picked entries from their best video to lock house style.
+  // JSON parseability is validated at the consumer (step 09), not at
+  // write-time, so an operator iterating on the JSON can save partial
+  // progress without hand-validating every keystroke.
+  step_09_examples_json: "",
   // Plan 2 Phase 2.1 Task 2: Magnific (music-video kind) keys. Empty
   // token seeds because the Settings > Magnific tab mints one on first
   // open via a server-side randomBytes helper; the four routes 404 until
@@ -718,6 +741,38 @@ export function createDb(path: string): DatabaseType {
     }
   }
 
+  // Per-video image chunk pacing override columns. Each is nullable
+  // INTEGER; NULL means "fall through to the matching
+  // image_chunk_*_seconds global setting" via getImageChunkPacing().
+  // Additive ALTER per the duplicate-column-swallow pattern above so
+  // upgraded DBs gain the columns and re-runs are no-ops.
+  try {
+    db.exec(
+      "ALTER TABLE videos ADD COLUMN image_chunk_target_seconds INTEGER"
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/duplicate column name/i.test(msg)) {
+      throw err;
+    }
+  }
+  try {
+    db.exec("ALTER TABLE videos ADD COLUMN image_chunk_min_seconds INTEGER");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/duplicate column name/i.test(msg)) {
+      throw err;
+    }
+  }
+  try {
+    db.exec("ALTER TABLE videos ADD COLUMN image_chunk_max_seconds INTEGER");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/duplicate column name/i.test(msg)) {
+      throw err;
+    }
+  }
+
   // moderation_round tracks how many times a queue row has been rewritten
   // by the in-step content-moderation loop. 0 means "original prompt".
   // Pre-existing failed-content-policy rows pick up the default and the
@@ -851,6 +906,21 @@ export function createDb(path: string): DatabaseType {
   ).run();
   db.prepare(
     "INSERT OR IGNORE INTO settings (key, value) VALUES ('openrouter_visual_prompts_concurrency', '8')"
+  ).run();
+  // Image chunk pacing — seed defaults for upgraded DBs. The target
+  // shipped earlier (above); min/max + the step 09 examples slot are the
+  // foundation half of the per-video pacing override feature.
+  db.prepare(
+    "INSERT OR IGNORE INTO settings (key, value) VALUES ('image_chunk_target_seconds', '8')"
+  ).run();
+  db.prepare(
+    "INSERT OR IGNORE INTO settings (key, value) VALUES ('image_chunk_min_seconds', '4')"
+  ).run();
+  db.prepare(
+    "INSERT OR IGNORE INTO settings (key, value) VALUES ('image_chunk_max_seconds', '12')"
+  ).run();
+  db.prepare(
+    "INSERT OR IGNORE INTO settings (key, value) VALUES ('step_09_examples_json', '')"
   ).run();
 
   // Character-lock + style-lock plan. Two free-text settings consumed

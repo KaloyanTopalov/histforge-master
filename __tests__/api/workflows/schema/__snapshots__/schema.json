@@ -80,7 +80,7 @@
       "name": "align",
       "module": "glue",
       "label": "Align",
-      "description": "Aligns the script against narration audio with aeneas.",
+      "description": "Aligns the script against narration audio with whisper.cpp.",
       "inputs": [
         "script/full_script.md",
         "audio/narration.mp3"

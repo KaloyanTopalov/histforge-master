@@ -7,6 +7,8 @@ import {
   getDerivedChapterCount,
   getDerivedHookChunkCount,
   getHookClipSeconds,
+  getImageChunkPacing,
+  ImageChunkPacingInvariantError,
   getSetting,
   setSetting,
 } from "@/lib/settings";
@@ -216,6 +218,7 @@ describe("getAllSettings", () => {
       google_flow_image_model: "NARWHAL",
       google_flow_video_model: "veo_3_1_t2v_lite_low_priority",
       google_flow_aspect_ratio: "landscape",
+      google_flow_image_aspect_ratio: "16:9",
       google_flow_hook_clip_seconds: "8",
       google_flow_dispatch_timeout_minutes: 30,
       aspect_ratio: "16:9",
@@ -250,6 +253,10 @@ describe("getAllSettings", () => {
       visual_prompts_batch_size: 8,
       claude_cli_visual_prompts_concurrency: 2,
       openrouter_visual_prompts_concurrency: 8,
+      image_chunk_target_seconds: 8,
+      image_chunk_min_seconds: 4,
+      image_chunk_max_seconds: 12,
+      step_09_examples_json: "",
       magnific_token: "",
       magnific_dispatch_timeout_minutes: 30,
       magnific_image_model: "flux-realism",
@@ -975,5 +982,189 @@ describe("google flow content moderation settings", () => {
     );
     setSetting("google_flow_content_moderation_model", "", db);
     expect(getSetting("google_flow_content_moderation_model", db)).toBe("");
+  });
+});
+
+describe("image chunk pacing settings", () => {
+  // Per-video pacing override defaults — paired with image_chunk_target_seconds
+  // (already seeded). These three plus the existing target seed are the
+  // global fallback for chunk_images_only when a video row's per-column
+  // override is NULL.
+
+  it("seeds image_chunk_min_seconds=4 and image_chunk_max_seconds=12 as defaults", () => {
+    const db = freshDb();
+    expect(getSetting("image_chunk_min_seconds", db)).toBe(4);
+    expect(typeof getSetting("image_chunk_min_seconds", db)).toBe("number");
+    expect(Number.isInteger(getSetting("image_chunk_min_seconds", db))).toBe(
+      true
+    );
+    expect(getSetting("image_chunk_max_seconds", db)).toBe(12);
+    expect(typeof getSetting("image_chunk_max_seconds", db)).toBe("number");
+    expect(Number.isInteger(getSetting("image_chunk_max_seconds", db))).toBe(
+      true
+    );
+  });
+
+  it("image_chunk_min_seconds enforces integer 2..20 bounds", () => {
+    const db = freshDb();
+    expect(() => setSetting("image_chunk_min_seconds", 1, db)).toThrow();
+    expect(() => setSetting("image_chunk_min_seconds", 21, db)).toThrow();
+    expect(() => setSetting("image_chunk_min_seconds", 4.5, db)).toThrow();
+    setSetting("image_chunk_min_seconds", 2, db);
+    expect(getSetting("image_chunk_min_seconds", db)).toBe(2);
+    setSetting("image_chunk_min_seconds", 20, db);
+    expect(getSetting("image_chunk_min_seconds", db)).toBe(20);
+  });
+
+  it("image_chunk_max_seconds enforces integer 4..60 bounds", () => {
+    const db = freshDb();
+    expect(() => setSetting("image_chunk_max_seconds", 3, db)).toThrow();
+    expect(() => setSetting("image_chunk_max_seconds", 61, db)).toThrow();
+    expect(() => setSetting("image_chunk_max_seconds", 8.5, db)).toThrow();
+    setSetting("image_chunk_max_seconds", 4, db);
+    expect(getSetting("image_chunk_max_seconds", db)).toBe(4);
+    setSetting("image_chunk_max_seconds", 60, db);
+    expect(getSetting("image_chunk_max_seconds", db)).toBe(60);
+  });
+});
+
+describe("step_09_examples_json setting", () => {
+  // Few-shot example block injected into prompts/09_generate_visual_prompts.md
+  // when non-empty. The Zod schema is plain z.string() — JSON validity is
+  // checked at the consumer (step 09) rather than at write time so an
+  // operator iterating on the JSON can save partial progress without
+  // having to hand-validate every keystroke.
+
+  it("seeds step_09_examples_json='' as default", () => {
+    const db = freshDb();
+    expect(getSetting("step_09_examples_json", db)).toBe("");
+    expect(typeof getSetting("step_09_examples_json", db)).toBe("string");
+  });
+
+  it("round-trips a JSON-encoded array of exemplar objects", () => {
+    const db = freshDb();
+    const examples = JSON.stringify([
+      { scene: "test", camera: "wide", beat_type: "establishing" },
+    ]);
+    setSetting("step_09_examples_json", examples, db);
+    expect(getSetting("step_09_examples_json", db)).toBe(examples);
+  });
+});
+
+describe("getImageChunkPacing resolver", () => {
+  // Per-video pacing resolver: for each of (target, min, max), the video
+  // row's column overrides take precedence; NULL falls through to the
+  // global setting. The resolver validates the resolved triple against
+  // the invariant min ≤ target ≤ max and throws
+  // ImageChunkPacingInvariantError otherwise — chunker entry should fail
+  // loudly rather than emit garbage chunks.
+
+  it("falls through to globals when every video column is NULL", () => {
+    const db = freshDb();
+    expect(
+      getImageChunkPacing(
+        {
+          image_chunk_target_seconds: null,
+          image_chunk_min_seconds: null,
+          image_chunk_max_seconds: null,
+        },
+        db
+      )
+    ).toEqual({ target: 8, min: 4, max: 12 });
+  });
+
+  it("returns typed numbers, not strings, from getSetting", () => {
+    // Defends against forgetting z.coerce on the new SETTING_SCHEMAS
+    // entries — without coerce, getSetting returns the raw string form
+    // and the resolver would silently emit string targets.
+    const db = freshDb();
+    const pacing = getImageChunkPacing(
+      {
+        image_chunk_target_seconds: null,
+        image_chunk_min_seconds: null,
+        image_chunk_max_seconds: null,
+      },
+      db
+    );
+    expect(typeof pacing.target).toBe("number");
+    expect(typeof pacing.min).toBe("number");
+    expect(typeof pacing.max).toBe("number");
+  });
+
+  it("uses the video column override when non-NULL on every field", () => {
+    const db = freshDb();
+    expect(
+      getImageChunkPacing(
+        {
+          image_chunk_target_seconds: 5,
+          image_chunk_min_seconds: 3,
+          image_chunk_max_seconds: 10,
+        },
+        db
+      )
+    ).toEqual({ target: 5, min: 3, max: 10 });
+  });
+
+  it("mixes column override with global fallthrough per field", () => {
+    const db = freshDb();
+    expect(
+      getImageChunkPacing(
+        {
+          image_chunk_target_seconds: 5,
+          image_chunk_min_seconds: null,
+          image_chunk_max_seconds: null,
+        },
+        db
+      )
+    ).toEqual({ target: 5, min: 4, max: 12 });
+  });
+
+  it("throws ImageChunkPacingInvariantError when resolved min > target", () => {
+    const db = freshDb();
+    expect(() =>
+      getImageChunkPacing(
+        {
+          image_chunk_target_seconds: 5,
+          image_chunk_min_seconds: 10,
+          image_chunk_max_seconds: 12,
+        },
+        db
+      )
+    ).toThrow(ImageChunkPacingInvariantError);
+  });
+
+  it("throws ImageChunkPacingInvariantError when resolved target > max", () => {
+    const db = freshDb();
+    expect(() =>
+      getImageChunkPacing(
+        {
+          image_chunk_target_seconds: 20,
+          image_chunk_min_seconds: 4,
+          image_chunk_max_seconds: 12,
+        },
+        db
+      )
+    ).toThrow(ImageChunkPacingInvariantError);
+  });
+
+  it("error message names every component so the operator can see which knob to adjust", () => {
+    const db = freshDb();
+    try {
+      getImageChunkPacing(
+        {
+          image_chunk_target_seconds: 5,
+          image_chunk_min_seconds: 10,
+          image_chunk_max_seconds: 12,
+        },
+        db
+      );
+      throw new Error("expected ImageChunkPacingInvariantError");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ImageChunkPacingInvariantError);
+      const msg = (err as Error).message;
+      expect(msg).toContain("min=10");
+      expect(msg).toContain("target=5");
+      expect(msg).toContain("max=12");
+    }
   });
 });

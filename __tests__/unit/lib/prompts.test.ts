@@ -110,4 +110,36 @@ describe("render", () => {
       /missing_var/
     );
   });
+
+  it("substitutes {{good_examples}} as the empty string when supplied empty", () => {
+    // Spec contract for step 09's few-shot slot: when
+    // step_09_examples_json is empty or invalid, the step supplies
+    // good_examples="" so render() stays happy (strict-throw on
+    // unresolved vars). The template must collapse to no <good_examples>
+    // block — just the surrounding content, byte-for-byte.
+    const dir = tempPromptsDir();
+    writeFileSync(
+      join(dir, "tmpl.md"),
+      "{{good_examples}}STYLE=x"
+    );
+
+    const out = render("tmpl.md", { good_examples: "" }, dir);
+    expect(out).toBe("STYLE=x");
+  });
+
+  it("substitutes {{good_examples}} verbatim when supplied a non-empty block string", () => {
+    // The step builds the <good_examples>...</good_examples> block above
+    // step 09; render() must inline it verbatim so the LLM sees the same
+    // bytes the step composed.
+    const dir = tempPromptsDir();
+    writeFileSync(
+      join(dir, "tmpl.md"),
+      "{{good_examples}}STYLE=x"
+    );
+
+    const block =
+      "<good_examples>\nexample one\n</good_examples>\n\n";
+    const out = render("tmpl.md", { good_examples: block }, dir);
+    expect(out).toBe(`${block}STYLE=x`);
+  });
 });

@@ -142,12 +142,13 @@ function setMode(mode) {
 // refresh entry point.
 function updateExecutorSettings(message) {
   for (const key of [
-    'outputCount', 'aspectRatio', 'imageModel', 'videoModel', 'imgUpscale', 'vidUpscale',
+    'outputCount', 'aspectRatio', 'imageAspectRatio', 'imageModel', 'videoModel', 'imgUpscale', 'vidUpscale',
   ]) {
     setSetting(key, message[key]);
   }
   safeLog('Executor settings updated - outputCount:', settingsCache.get('outputCount'),
     'aspect:', settingsCache.get('aspectRatio'),
+    'imageAspect:', settingsCache.get('imageAspectRatio'),
     'image:', settingsCache.get('imageModel'),
     'video:', settingsCache.get('videoModel'),
     'imgUpscale:', settingsCache.get('imgUpscale'),
@@ -175,6 +176,7 @@ function getMaxConcurrent(bucket) {
 function getCurrentMode() { return getSetting('generationMode'); }
 function getOutputCount() { return getSetting('outputCount'); }
 function getAspectRatio() { return getSetting('aspectRatio'); }
+function getImageAspectRatio() { return getSetting('imageAspectRatio'); }
 function getImageModel() { return getSetting('imageModel'); }
 function getVideoModel() { return getSetting('videoModel'); }
 function getImgUpscale() { return getSetting('imgUpscale'); }

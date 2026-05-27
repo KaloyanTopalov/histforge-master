@@ -53,6 +53,7 @@ const SETTING_SCHEMAS = {
   google_flow_image_model: z.enum(ENUM_VALUES.google_flow_image_model),
   google_flow_video_model: z.enum(ENUM_VALUES.google_flow_video_model),
   google_flow_aspect_ratio: z.enum(ENUM_VALUES.google_flow_aspect_ratio),
+  google_flow_image_aspect_ratio: z.enum(ENUM_VALUES.google_flow_image_aspect_ratio),
   // Per-clip duration for the Google Flow hook video provider, encoded
   // into the dispatched Veo `videoModelKey` at claim time. Stored as the
   // string form so the Zod schema can be a flat `z.enum(...)`; consumers
@@ -158,6 +159,29 @@ const SETTING_SCHEMAS = {
   visual_prompts_batch_size: z.coerce.number().int().min(1).max(16),
   claude_cli_visual_prompts_concurrency: z.coerce.number().int().min(1).max(8),
   openrouter_visual_prompts_concurrency: z.coerce.number().int().min(1).max(32),
+  // Per-chunk target duration for chunk_images_only. Min 2s keeps the
+  // chunker from emitting sub-sentence chunks; max 60s caps it at one
+  // image per minute (the slowest pacing that still makes visual sense).
+  image_chunk_target_seconds: z.coerce.number().int().min(2).max(60),
+  // Hard floor for chunk_images_only. Lower bound 2s mirrors target's
+  // floor (sub-sentence chunks make no sense); upper bound 20s — beyond
+  // that the floor is fighting with target/max and the operator should
+  // be raising target instead. z.coerce on numerics is non-negotiable —
+  // the storage form is TEXT, so without coerce getSetting() returns the
+  // raw string and the resolver silently emits string targets.
+  image_chunk_min_seconds: z.coerce.number().int().min(2).max(20),
+  // Soft ceiling for chunk_images_only. Lower bound 4 = min's floor + 2;
+  // upper bound 60s matches target's. Single oversized sentences will
+  // still exceed max with a logged warning — VO has no smaller atom than
+  // a sentence.
+  image_chunk_max_seconds: z.coerce.number().int().min(4).max(60),
+  // Few-shot exemplar block for step 09's prompt template. Stored as a
+  // JSON-encoded string; the consumer (step 09) is responsible for
+  // parsing and gracefully degrading to an empty block on invalid JSON.
+  // Validating-at-write would block partial saves while an operator is
+  // iterating on the JSON, which is the common workflow for tuning the
+  // examples.
+  step_09_examples_json: z.string(),
   // Plan 2 Phase 2.1 Task 2: Magnific (music-video kind) settings. The
   // token is a per-instance secret (the magnific-ext extension's only
   // auth credential, used to validate the URL [token] segment on every
@@ -309,5 +333,66 @@ export function setSetting<K extends SettingKey>(
   db.prepare(
     "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
   ).run(key, stringValue);
+}
+
+/**
+ * Resolved per-video image chunk pacing triple. The chunker
+ * (`08-chunk-images-only.ts`) reads this exactly once at step entry.
+ */
+export interface ImageChunkPacing {
+  target: number;
+  min: number;
+  max: number;
+}
+
+/**
+ * Thrown by `getImageChunkPacing` when the resolved triple violates
+ * `min ≤ target ≤ max`. Constructor message includes every component so
+ * the operator can see which knob — per-video column override or global
+ * setting — needs adjustment.
+ */
+export class ImageChunkPacingInvariantError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ImageChunkPacingInvariantError";
+  }
+}
+
+/**
+ * Resolves per-video image chunk pacing. Each of (target, min, max)
+ * reads the matching video-row override column first; NULL falls through
+ * to the global setting of the same name. The resolved triple is
+ * validated against `min ≤ target ≤ max` — chunker entry must fail loudly
+ * rather than emit garbage chunks if the operator's column override
+ * conflicts with the surrounding globals.
+ *
+ * The video parameter is intentionally a `Pick` of the three columns so
+ * callers can pass any object shape that carries them (the full `Video`
+ * row, a partial DTO, or a hand-built fixture).
+ */
+export function getImageChunkPacing(
+  video: {
+    image_chunk_target_seconds: number | null;
+    image_chunk_min_seconds: number | null;
+    image_chunk_max_seconds: number | null;
+  },
+  db: DatabaseType = getDb()
+): ImageChunkPacing {
+  const target =
+    video.image_chunk_target_seconds ??
+    getSetting("image_chunk_target_seconds", db);
+  const min =
+    video.image_chunk_min_seconds ??
+    getSetting("image_chunk_min_seconds", db);
+  const max =
+    video.image_chunk_max_seconds ??
+    getSetting("image_chunk_max_seconds", db);
+  if (!(min <= target && target <= max)) {
+    throw new ImageChunkPacingInvariantError(
+      `Resolved image chunk pacing violates min ≤ target ≤ max: min=${min}, target=${target}, max=${max}. ` +
+        `Check the per-video override columns (image_chunk_target_seconds, image_chunk_min_seconds, image_chunk_max_seconds) and the matching global settings.`
+    );
+  }
+  return { target, min, max };
 }
 
