@@ -1,8 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import type { AllSettings } from "@/lib/settings";
-import { enumOptions } from "@/lib/settings-enums";
 import {
   LLM_PROVIDER_NAMES,
   LLM_PROVIDER_LABELS,
@@ -16,11 +14,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Settings2 } from "lucide-react";
-import { SelectField } from "./field-primitives";
 import { OpenRouterView } from "./llm-providers/openrouter";
 import { ClaudeCliView } from "./llm-providers/claude-cli";
-import { Section, type LlmTabProps } from "./llm-providers/section";
+import { type LlmTabProps } from "./llm-providers/section";
 
 // View dropdown options derive from the canonical name tuple; adding a
 // future provider in `lib/llm/names.ts` flows through here automatically.
@@ -47,13 +43,13 @@ const PROVIDER_VIEWS: Record<
 /**
  * LLM settings panel. The top-of-panel Provider dropdown is a view filter
  * (mirrors the TTS panel) — it only swaps which provider's settings are
- * shown. The actual provider used by the `enrich_chunks` step is set in
- * the General section below.
+ * shown. Defaults to the first provider in the canonical roster; the
+ * actual provider used by each pipeline step now lives on the workflow
+ * row's `script_llm_provider` column (snapshot-pinned per video), not in
+ * global settings.
  */
 export function LlmTab({ values, update }: LlmTabProps): JSX.Element {
-  const [view, setView] = useState<LlmProviderName>(
-    values.enrich_chunks_llm_provider
-  );
+  const [view, setView] = useState<LlmProviderName>(LLM_PROVIDER_NAMES[0]);
   const View = PROVIDER_VIEWS[view];
 
   return (
@@ -83,21 +79,6 @@ export function LlmTab({ values, update }: LlmTabProps): JSX.Element {
       </div>
 
       <View values={values} update={update} />
-
-      <Section title="General" accent={<Settings2 className="h-3.5 w-3.5" />}>
-        <SelectField
-          id="enrich_chunks_llm_provider"
-          label="Enrich Chunks LLM Provider"
-          value={values.enrich_chunks_llm_provider}
-          options={enumOptions("enrich_chunks_llm_provider")}
-          onChange={(v) =>
-            update(
-              "enrich_chunks_llm_provider",
-              v as AllSettings["enrich_chunks_llm_provider"]
-            )
-          }
-        />
-      </Section>
     </div>
   );
 }

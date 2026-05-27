@@ -2196,6 +2196,9 @@ describe("seedDefaultSettings", () => {
         claude_cli_visual_prompts_concurrency: "2",
         openrouter_visual_prompts_concurrency: "8",
         image_chunk_target_seconds: "8",
+        image_chunk_min_seconds: "4",
+        image_chunk_max_seconds: "12",
+        step_09_examples_json: "",
         magnific_token: "",
         magnific_dispatch_timeout_minutes: "30",
         magnific_image_model: "flux-realism",
@@ -3363,6 +3366,178 @@ describe("seedDefaultSettings — Magnific keys", () => {
       expect(byKey.magnific_video_model).toBeDefined();
     } finally {
       db.close();
+    }
+  });
+});
+
+describe("createDb — image chunk pacing migration", () => {
+  // Foundation layer for the per-video pacing override feature. The
+  // chunker (`08-chunk-images-only.ts`) resolves a [min, target, max]
+  // triple via `getImageChunkPacing(video, db)` — video-column override
+  // first, global setting fallback. All three columns are nullable
+  // INTEGER on `videos`; ALTER TABLE migrations follow the existing
+  // duplicate-column-name swallow pattern (see `paused`, `deferred_until`).
+
+  it("videos table carries image_chunk_target_seconds, image_chunk_min_seconds, image_chunk_max_seconds (nullable INTEGER) on greenfield", () => {
+    const db = createDb(":memory:");
+    try {
+      const cols = db
+        .prepare("PRAGMA table_info(videos)")
+        .all() as Array<{
+        name: string;
+        type: string;
+        notnull: number;
+        dflt_value: string | null;
+      }>;
+      const byName = Object.fromEntries(cols.map((c) => [c.name, c]));
+      expect(byName.image_chunk_target_seconds).toMatchObject({
+        type: "INTEGER",
+        notnull: 0,
+      });
+      expect(byName.image_chunk_min_seconds).toMatchObject({
+        type: "INTEGER",
+        notnull: 0,
+      });
+      expect(byName.image_chunk_max_seconds).toMatchObject({
+        type: "INTEGER",
+        notnull: 0,
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("adds the three pacing columns to a videos table that predates them, leaving existing rows at NULL", () => {
+    // Upgrade scenario: an on-disk DB was created before the per-video
+    // pacing override columns existed. createDb must ALTER the table
+    // additively (NULL default = fall through to global setting) and
+    // must not throw if reopened (duplicate-column swallowed).
+    const path = tempDbPath();
+
+    const raw = new (require("better-sqlite3"))(path);
+    try {
+      raw.exec(`
+        CREATE TABLE videos (
+          id               TEXT PRIMARY KEY,
+          title            TEXT NOT NULL,
+          topic_info       TEXT NOT NULL,
+          workflow_id      TEXT NOT NULL,
+          status           TEXT NOT NULL,
+          current_step     TEXT,
+          failed_step      TEXT,
+          failed_reason    TEXT,
+          started_at       INTEGER,
+          finished_at      INTEGER,
+          output_path      TEXT,
+          delete_requested INTEGER NOT NULL DEFAULT 0,
+          created_at       INTEGER NOT NULL
+        );
+      `);
+      raw
+        .prepare(
+          "INSERT INTO videos (id, title, topic_info, workflow_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+        )
+        .run("v_legacy", "Legacy", "info", "comfyui", "queued", 1);
+    } finally {
+      raw.close();
+    }
+
+    const db = createDb(path);
+    try {
+      const cols = db
+        .prepare("PRAGMA table_info(videos)")
+        .all() as Array<{ name: string; type: string; notnull: number }>;
+      const byName = Object.fromEntries(cols.map((c) => [c.name, c]));
+      expect(byName.image_chunk_target_seconds).toMatchObject({
+        type: "INTEGER",
+        notnull: 0,
+      });
+      expect(byName.image_chunk_min_seconds).toMatchObject({
+        type: "INTEGER",
+        notnull: 0,
+      });
+      expect(byName.image_chunk_max_seconds).toMatchObject({
+        type: "INTEGER",
+        notnull: 0,
+      });
+
+      // Pre-existing row gets NULL for each new column (= fall through
+      // to global setting at resolve time).
+      const row = db
+        .prepare(
+          "SELECT image_chunk_target_seconds, image_chunk_min_seconds, image_chunk_max_seconds FROM videos WHERE id = ?"
+        )
+        .get("v_legacy") as {
+        image_chunk_target_seconds: number | null;
+        image_chunk_min_seconds: number | null;
+        image_chunk_max_seconds: number | null;
+      };
+      expect(row.image_chunk_target_seconds).toBeNull();
+      expect(row.image_chunk_min_seconds).toBeNull();
+      expect(row.image_chunk_max_seconds).toBeNull();
+    } finally {
+      db.close();
+    }
+
+    // Second open must not throw — duplicate-column swallowed.
+    const db2 = createDb(path);
+    db2.close();
+  });
+
+  it("seeds image_chunk_min_seconds, image_chunk_max_seconds, step_09_examples_json on upgraded DBs that never ran db:init", () => {
+    // The runtime path on an existing install runs createDb only, not
+    // seedDefaultSettings. The new keys must be present so getSetting
+    // doesn't throw "Setting not seeded" at chunker entry.
+    const path = tempDbPath();
+    {
+      const db = createDb(path);
+      db.prepare(
+        "DELETE FROM settings WHERE key IN ('image_chunk_min_seconds', 'image_chunk_max_seconds', 'step_09_examples_json')"
+      ).run();
+      db.close();
+    }
+    const db2 = createDb(path);
+    try {
+      const rows = db2
+        .prepare(
+          "SELECT key, value FROM settings WHERE key IN ('image_chunk_min_seconds', 'image_chunk_max_seconds', 'step_09_examples_json')"
+        )
+        .all() as Array<{ key: string; value: string }>;
+      const byKey = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+      expect(byKey).toEqual({
+        image_chunk_min_seconds: "4",
+        image_chunk_max_seconds: "12",
+        step_09_examples_json: "",
+      });
+    } finally {
+      db2.close();
+    }
+  });
+
+  it("does not overwrite user-customized pacing settings on reopen", () => {
+    const path = tempDbPath();
+    {
+      const db = createDb(path);
+      db.prepare(
+        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+      ).run("image_chunk_min_seconds", "6");
+      db.prepare(
+        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+      ).run("image_chunk_max_seconds", "20");
+      db.close();
+    }
+    const db2 = createDb(path);
+    try {
+      const rows = db2
+        .prepare(
+          "SELECT key, value FROM settings WHERE key IN ('image_chunk_min_seconds', 'image_chunk_max_seconds')"
+        )
+        .all() as Array<{ key: string; value: string }>;
+      const byKey = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+      expect(byKey.image_chunk_min_seconds).toBe("6");
+      expect(byKey.image_chunk_max_seconds).toBe("20");
+    } finally {
+      db2.close();
     }
   });
 });

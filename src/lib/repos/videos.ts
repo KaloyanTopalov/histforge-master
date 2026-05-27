@@ -206,6 +206,9 @@ export function updateVideoDraft(
     suno_style_prompt?: string;
     song_count?: number;
     repeat_factor?: number;
+    image_chunk_target_seconds?: number | null;
+    image_chunk_min_seconds?: number | null;
+    image_chunk_max_seconds?: number | null;
   }
 ): void {
   if (
@@ -218,7 +221,10 @@ export function updateVideoDraft(
     fields.magnific_motion_prompt === undefined &&
     fields.suno_style_prompt === undefined &&
     fields.song_count === undefined &&
-    fields.repeat_factor === undefined
+    fields.repeat_factor === undefined &&
+    fields.image_chunk_target_seconds === undefined &&
+    fields.image_chunk_min_seconds === undefined &&
+    fields.image_chunk_max_seconds === undefined
   ) {
     return;
   }
@@ -268,6 +274,18 @@ export function updateVideoDraft(
     if (fields.repeat_factor !== undefined) {
       sets.push("repeat_factor = ?");
       args.push(fields.repeat_factor);
+    }
+    if (fields.image_chunk_target_seconds !== undefined) {
+      sets.push("image_chunk_target_seconds = ?");
+      args.push(fields.image_chunk_target_seconds);
+    }
+    if (fields.image_chunk_min_seconds !== undefined) {
+      sets.push("image_chunk_min_seconds = ?");
+      args.push(fields.image_chunk_min_seconds);
+    }
+    if (fields.image_chunk_max_seconds !== undefined) {
+      sets.push("image_chunk_max_seconds = ?");
+      args.push(fields.image_chunk_max_seconds);
     }
     args.push(id);
     db.prepare(

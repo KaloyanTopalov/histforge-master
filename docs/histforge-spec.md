@@ -216,6 +216,9 @@ CREATE TABLE videos (
   provided_script  TEXT,                    -- when non-null, queue-time prep skips script generation (see §7.7)
   visual_style_id  TEXT REFERENCES visual_styles(id) ON DELETE SET NULL,  -- nullable; NULL = "Default" (empty style prompt)
   visual_style_snapshot TEXT,                -- JSON {id,title,prompt} pinned at create / re-pinned at queue; authoritative source for step 09 (ADR-0010)
+  image_chunk_target_seconds INTEGER,        -- per-video override of the global pacing target; NULL falls through to `image_chunk_target_seconds` setting
+  image_chunk_min_seconds    INTEGER,        -- per-video floor override; NULL falls through to `image_chunk_min_seconds` setting
+  image_chunk_max_seconds    INTEGER,        -- per-video ceiling override; NULL falls through to `image_chunk_max_seconds` setting
   created_at       INTEGER NOT NULL
 );
 
@@ -290,6 +293,10 @@ The DB is the single source of truth. There is no `meta.json` mirror file.
 | `google_flow_hook_clip_seconds` | enum | `"8"` | `"4"` / `"6"` / `"8"`. Per-clip duration for the Google Flow video provider. Encoded into the dispatched Veo `videoModelKey`. Key retains the "hook" prefix as a historic artifact. |
 | `hook_length_seconds` | int | `120` | Workflow-1 hook section length in seconds (only consumed by the `chunk_clips_then_images` chunker — caps the count of clip chunks at the start of the video). 4..400. Internal clip chunk count is derived as `round(seconds / clip)` per provider. Ignored by `chunk_images_only` and `chunk_clips_only`. |
 | `script_length_minutes` | int | `90` | Total chapter narration length in minutes. 6..600. Internal chapter count is derived as `round(minutes / 6)` (so 90 → 15 chapters). |
+| `image_chunk_target_seconds` | int | `8` | Per-chunk target for the images-only chunker. 2..60. Overridden per-video by `videos.image_chunk_target_seconds`. |
+| `image_chunk_min_seconds` | int | `4` | Hard floor for the images-only chunker. 2..20. Overridden per-video by `videos.image_chunk_min_seconds`. |
+| `image_chunk_max_seconds` | int | `12` | Soft ceiling for the images-only chunker. 4..60. A single oversized sentence is emitted anyway with a logged warning. Overridden per-video by `videos.image_chunk_max_seconds`. |
+| `step_09_examples_json` | string | `""` | JSON array of exemplar scene objects rendered into the step 09 prompt as a `<good_examples>` block. Empty = no block. Validation is best-effort; invalid JSON degrades to an empty block. |
 | `voice_id` | string | (required) | ElevenLabs voice ID (shared by both providers) |
 | `voiceover_model_id` | enum | `eleven_multilingual_v2` | One of: `eleven_multilingual_v2`, `eleven_turbo_v2_5`, `eleven_flash_v2_5`, `eleven_v3` |
 | `voice_stability` | float | `0.75` | 0–1 |

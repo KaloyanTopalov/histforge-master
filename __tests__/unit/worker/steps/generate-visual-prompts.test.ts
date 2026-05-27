@@ -1428,6 +1428,126 @@ describe("generate_visual_prompts — structured shot IR (phase 2a)", () => {
     expect(result[0].prompt_history).toEqual([]);
   });
 
+  it("persists beat_type when the LLM supplies a valid value", async () => {
+    // Phase 3 (pacing branch): beat_type is the editorial-intent
+    // classifier the LLM emits alongside scene/camera/subject_kind.
+    // It joins the lenient extractor pool — accepted only when string
+    // ∈ VALID_BEAT_TYPES. This test pins the happy path.
+    const db = freshDb();
+    const videoId = seedVideo(db);
+    const projectsDir = tempDir("projects");
+    const promptsDir = tempDir("prompts");
+    seedPrompts(promptsDir);
+
+    const chunks = makeChunks(1);
+    const chunksPath = seedChunksFile(projectsDir, videoId, chunks);
+
+    const chat = vi.fn(async (messages: { content: string }[]) => {
+      const batch = extractBatch(messages[1].content);
+      return envelopeReplyWithExtras(
+        batch,
+        () => "a courtroom scene",
+        () => ({ beat_type: "fact_card" })
+      );
+    });
+
+    await generateVisualPromptsStep.run(
+      videoId,
+      makeStepContext({
+        db,
+        projectsDir,
+        promptsDir,
+        visualPromptsConcurrency: 1,
+        visualPromptChat: chat,
+      })
+    );
+
+    const result = JSON.parse(readFileSync(chunksPath, "utf-8"));
+    expect(result[0].beat_type).toBe("fact_card");
+    expect(result[0].scene).toBe("a courtroom scene");
+  });
+
+  it("drops malformed beat_type silently — invalid value leaves field unset; valid scene still persists", async () => {
+    // Lenient parity with camera/subject_kind: an out-of-taxonomy value
+    // ("foo") never lands on the chunk, but the rest of the entry is
+    // accepted. Matches the existing "drops malformed extras silently"
+    // contract above.
+    const db = freshDb();
+    const videoId = seedVideo(db);
+    const projectsDir = tempDir("projects");
+    const promptsDir = tempDir("prompts");
+    seedPrompts(promptsDir);
+
+    const chunks = makeChunks(1);
+    const chunksPath = seedChunksFile(projectsDir, videoId, chunks);
+
+    const chat = vi.fn(async (messages: { content: string }[]) => {
+      const batch = extractBatch(messages[1].content);
+      return envelopeReplyWithExtras(
+        batch,
+        () => "a valid scene",
+        () => ({ beat_type: "foo" })
+      );
+    });
+
+    await generateVisualPromptsStep.run(
+      videoId,
+      makeStepContext({
+        db,
+        projectsDir,
+        promptsDir,
+        visualPromptsConcurrency: 1,
+        visualPromptChat: chat,
+      })
+    );
+
+    const result = JSON.parse(readFileSync(chunksPath, "utf-8"));
+    expect(result[0].scene).toBe("a valid scene");
+    expect(result[0].beat_type).toBeUndefined();
+  });
+
+  it("clears stale beat_type when a chunk is regenerated and the new reply omits it", async () => {
+    // Eager-sweep parity: a chunk regenerated with prompt=null must lose
+    // its prior beat_type before the new LLM call lands, so a sparser
+    // reply doesn't leave a stale editorial-intent tag describing the
+    // replaced prompt. Mirrors the existing "clears stale structured
+    // fields" test for camera/subject_kind/etc.
+    const db = freshDb();
+    const videoId = seedVideo(db);
+    const projectsDir = tempDir("projects");
+    const promptsDir = tempDir("prompts");
+    seedPrompts(promptsDir);
+
+    const chunks = makeChunks(1);
+    Object.assign(chunks[0], {
+      prompt: null,
+      scene: "stale",
+      beat_type: "establishing",
+    });
+    const chunksPath = seedChunksFile(projectsDir, videoId, chunks);
+
+    const chat = vi.fn(async (messages: { content: string }[]) => {
+      const batch = extractBatch(messages[1].content);
+      // Fresh reply omits beat_type.
+      return envelopeReply(batch, (id) => `fresh-${id}`);
+    });
+
+    await generateVisualPromptsStep.run(
+      videoId,
+      makeStepContext({
+        db,
+        projectsDir,
+        promptsDir,
+        visualPromptsConcurrency: 1,
+        visualPromptChat: chat,
+      })
+    );
+
+    const result = JSON.parse(readFileSync(chunksPath, "utf-8"));
+    expect(result[0].scene).toBe("fresh-image_001");
+    expect(result[0].beat_type).toBeUndefined();
+  });
+
 });
 
 describe("generate_visual_prompts — assembler (phase 2b)", () => {

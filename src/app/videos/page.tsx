@@ -44,6 +44,13 @@ export function listVisualStylesForClient(
   }));
 }
 
+// VideosClient calls `useSearchParams()` to read the active tab from the URL.
+// Next.js requires either a Suspense boundary around such consumers or the
+// page itself to opt out of static prerendering. The page reads live DB
+// state (workflows, visual styles, queue snapshot) on every request anyway,
+// so static prerender provides no value — force dynamic rendering.
+export const dynamic = "force-dynamic";
+
 /**
  * Videos list page. Fetches every video server-side and hands it to the
  * client island, which owns the queue/finished split, polling, and toasts.

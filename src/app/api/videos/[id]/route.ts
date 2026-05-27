@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { join } from "node:path";
 import { getDb } from "@/lib/db";
-import { getSetting } from "@/lib/settings";
+import {
+  getImageChunkPacing,
+  getSetting,
+  ImageChunkPacingInvariantError,
+} from "@/lib/settings";
+import type { Database as DatabaseType } from "better-sqlite3";
 import { listProjectFiles } from "@/lib/project-files";
 import * as videosRepo from "@/lib/repos/videos";
 import * as stepsRepo from "@/lib/repos/steps";
@@ -61,6 +66,31 @@ const PatchVideoSchema = z
     suno_style_prompt: z.string().min(1).optional(),
     song_count: z.number().int().min(1).max(30).optional(),
     repeat_factor: z.number().int().min(1).max(10).optional(),
+    // Per-video pacing overrides for chunk_images_only (step 08). Ranges
+    // mirror the matching global settings in src/lib/settings.ts. `null`
+    // clears the column so the resolver falls through to the global on
+    // the next read; `undefined` (key absent) leaves the column alone.
+    image_chunk_target_seconds: z
+      .number()
+      .int()
+      .min(2)
+      .max(60)
+      .nullable()
+      .optional(),
+    image_chunk_min_seconds: z
+      .number()
+      .int()
+      .min(2)
+      .max(20)
+      .nullable()
+      .optional(),
+    image_chunk_max_seconds: z
+      .number()
+      .int()
+      .min(4)
+      .max(60)
+      .nullable()
+      .optional(),
   })
   .refine(
     (v) =>
@@ -72,7 +102,10 @@ const PatchVideoSchema = z
       v.magnific_image_prompt !== undefined ||
       v.suno_style_prompt !== undefined ||
       v.song_count !== undefined ||
-      v.repeat_factor !== undefined,
+      v.repeat_factor !== undefined ||
+      v.image_chunk_target_seconds !== undefined ||
+      v.image_chunk_min_seconds !== undefined ||
+      v.image_chunk_max_seconds !== undefined,
     { message: "at least one field required" }
   );
 
@@ -187,6 +220,70 @@ export async function PATCH(
     }
   }
 
+  // Resolved-pacing invariant. The Zod schema validates each field in
+  // isolation; the `min ≤ target ≤ max` check has to run against the
+  // merged (row ∪ patch) triple because per-video columns can be NULL
+  // and fall through to the globals. Catching the partial-patch trap:
+  // PATCH { min: 10 } on a row whose `target` column is NULL with a
+  // global target=8 would silently pass body-only validation but break
+  // the chunker at step entry. Reuses the same getImageChunkPacing
+  // resolver the chunker calls, so the route and the worker can never
+  // disagree about what counts as a valid triple.
+  if (
+    parsed.data.image_chunk_target_seconds !== undefined ||
+    parsed.data.image_chunk_min_seconds !== undefined ||
+    parsed.data.image_chunk_max_seconds !== undefined
+  ) {
+    const merged = {
+      image_chunk_target_seconds:
+        parsed.data.image_chunk_target_seconds !== undefined
+          ? parsed.data.image_chunk_target_seconds
+          : video.image_chunk_target_seconds,
+      image_chunk_min_seconds:
+        parsed.data.image_chunk_min_seconds !== undefined
+          ? parsed.data.image_chunk_min_seconds
+          : video.image_chunk_min_seconds,
+      image_chunk_max_seconds:
+        parsed.data.image_chunk_max_seconds !== undefined
+          ? parsed.data.image_chunk_max_seconds
+          : video.image_chunk_max_seconds,
+    };
+    try {
+      getImageChunkPacing(merged, db);
+    } catch (e) {
+      if (e instanceof ImageChunkPacingInvariantError) {
+        return NextResponse.json(
+          {
+            error: "image_chunk_pacing_invariant",
+            message: e.message,
+            sources: {
+              target: pacingSource(
+                "image_chunk_target_seconds",
+                parsed.data,
+                video,
+                db
+              ),
+              min: pacingSource(
+                "image_chunk_min_seconds",
+                parsed.data,
+                video,
+                db
+              ),
+              max: pacingSource(
+                "image_chunk_max_seconds",
+                parsed.data,
+                video,
+                db
+              ),
+            },
+          },
+          { status: 400 }
+        );
+      }
+      throw e;
+    }
+  }
+
   videosRepo.updateVideoDraft(db, ctx.params.id, parsed.data);
 
   // Resync rule: when a queued ready-script video has its provided_script
@@ -203,6 +300,40 @@ export async function PATCH(
 
   const updated = videosRepo.findById(db, ctx.params.id);
   return NextResponse.json({ video: updated });
+}
+
+type PacingColumn =
+  | "image_chunk_target_seconds"
+  | "image_chunk_min_seconds"
+  | "image_chunk_max_seconds";
+
+interface PacingSourceInfo {
+  source: "request" | "column" | "global";
+  value: number;
+}
+
+/**
+ * Reports where the resolver picked up each pacing component so a 400
+ * response can name the operator-visible knob (request body, per-video
+ * column, or global setting) that contributed the failing value.
+ */
+function pacingSource(
+  column: PacingColumn,
+  patch: { [K in PacingColumn]?: number | null },
+  video: { [K in PacingColumn]: number | null },
+  db: DatabaseType
+): PacingSourceInfo {
+  const patched = patch[column];
+  if (patched !== undefined && patched !== null) {
+    return { source: "request", value: patched };
+  }
+  // `null` in the patch explicitly clears the column → falls through
+  // to global, same as if the patch key were absent and the column was
+  // already NULL.
+  if (patched === undefined && video[column] !== null) {
+    return { source: "column", value: video[column] as number };
+  }
+  return { source: "global", value: getSetting(column, db) };
 }
 
 export async function DELETE(
