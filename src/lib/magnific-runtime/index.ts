@@ -1,6 +1,7 @@
 export {
   MagnificRuntime,
   magnificRuntime,
+  RuntimeLockedError,
   type RuntimeStatus,
   type ConnectResult,
 } from "./runtime";

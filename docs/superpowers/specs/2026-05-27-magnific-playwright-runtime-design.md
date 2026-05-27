@@ -342,10 +342,11 @@ fixture manifest, `injectToken` against a mocked Playwright context.
 `src/worker/index.ts` boot sequence:
 
 ```ts
-// Skip auto-start in dev so tsx watch reloads don't fight over the
-// userDataDir lock. Operator clicks "Connect Magnific" in the dashboard
-// when they need the runtime during a dev session.
-if (process.env.NODE_ENV !== "development"
+// Skip auto-start outside production so tsx watch reloads, vitest runs, and
+// CI containers never fight over the userDataDir lock or launch a real
+// browser. Operator clicks "Connect Magnific" in the dashboard when they
+// need the runtime during a dev session.
+if (process.env.NODE_ENV === "production"
     && getSetting("magnific_runtime_enabled")) {
   void magnificRuntime.start().catch(e => log("magnific-runtime start failed:", e));
 }
@@ -632,11 +633,16 @@ fallback — more code paths, more failure modes, no clear payoff.
 The worker boot code wraps the auto-start in a guard:
 
 ```ts
-if (process.env.NODE_ENV !== "development"
+if (process.env.NODE_ENV === "production"
     && getSetting("magnific_runtime_enabled")) {
   void magnificRuntime.start().catch(e => log("…", e));
 }
 ```
+
+**Refined during S3:** the guard narrowed from `NODE_ENV !== "development"`
+to `NODE_ENV === "production"`. Same intent (skip auto-start in dev),
+narrower surface — dev, test, CI, and any future env are opt-in via the
+dashboard. No code path enumerates env names beyond "production".
 
 In dev (`tsx watch`), the runtime never auto-boots — every file save
 restarts the worker cleanly without trying to grab a userDataDir

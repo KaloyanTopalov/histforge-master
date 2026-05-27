@@ -45,13 +45,13 @@ async function main(): Promise<void> {
   resetStaleRunningSteps(db);
   gfRepo.resetAllDispatchedOnStartup(db);
   magnificRepo.resetAllDispatchedOnStartup(db);
-  // Magnific runtime auto-boot (Decision 3 in the runtime spec): skipped
-  // in development so tsx watch reloads don't fight over the userDataDir
-  // lock — developers click "Connect Magnific" in the dashboard when they
-  // need the browser during a dev session. The runtime's start() is a noop
-  // in S1 (throws "not implemented"); the guard is what's being verified.
+  // Magnific runtime auto-boot (Decision 3, refined in S3): narrowed from
+  // `NODE_ENV !== "development"` to `NODE_ENV === "production"`. Dev, test,
+  // CI, and any future env stay opt-in via the dashboard's "Connect Magnific"
+  // button — no env enumeration, no accidental browser launches from a
+  // `npm test` invocation that happens to import the worker.
   if (
-    process.env.NODE_ENV !== "development" &&
+    process.env.NODE_ENV === "production" &&
     getSetting("magnific_runtime_enabled", db)
   ) {
     void magnificRuntime.start().catch((err) => {
