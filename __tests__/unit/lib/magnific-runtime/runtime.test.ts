@@ -45,11 +45,42 @@ import {
   RuntimeLockedError,
 } from "@/lib/magnific-runtime/runtime";
 
+type MockPage = {
+  goto: ReturnType<typeof vi.fn>;
+  waitForURL: ReturnType<typeof vi.fn>;
+  bringToFront: ReturnType<typeof vi.fn>;
+  close: ReturnType<typeof vi.fn>;
+};
+
+type MockCDPSession = {
+  send: ReturnType<typeof vi.fn>;
+};
+
 type MockContext = {
   on: ReturnType<typeof vi.fn>;
   close: ReturnType<typeof vi.fn>;
+  newPage: ReturnType<typeof vi.fn>;
+  newCDPSession: ReturnType<typeof vi.fn>;
   __fireClose: () => void;
 };
+
+function makeMockPage(): MockPage {
+  return {
+    goto: vi.fn(async () => {}),
+    waitForURL: vi.fn(async () => {}),
+    bringToFront: vi.fn(async () => {}),
+    close: vi.fn(async () => {}),
+  };
+}
+
+function makeMockCDPSession(): MockCDPSession {
+  return {
+    send: vi.fn(async (method: string) => {
+      if (method === "Browser.getWindowForTarget") return { windowId: 42 };
+      return {};
+    }),
+  };
+}
 
 function makeMockContext(): MockContext {
   const closeHandlers: Array<() => void> = [];
@@ -58,6 +89,8 @@ function makeMockContext(): MockContext {
       if (event === "close") closeHandlers.push(fn);
     }),
     close: vi.fn(async () => {}),
+    newPage: vi.fn(async () => makeMockPage()),
+    newCDPSession: vi.fn(async () => makeMockCDPSession()),
     __fireClose: () => closeHandlers.forEach((h) => h()),
   };
 }
@@ -347,5 +380,137 @@ describe("worker boot guard (Decision 3, refined in S3)", () => {
     expect(shouldAutoStart("test", true)).toBe(false);
     expect(shouldAutoStart("development", true)).toBe(false);
     expect(shouldAutoStart(undefined, true)).toBe(false);
+  });
+});
+
+describe("connect()", () => {
+  async function startedRuntime(): Promise<{
+    runtime: MagnificRuntime;
+    ctx: MockContext;
+  }> {
+    defaultSettings();
+    const ctx = makeMockContext();
+    mockLaunchPersistentContext.mockResolvedValueOnce(ctx);
+    mockInjectToken.mockResolvedValueOnce(undefined);
+    const runtime = new MagnificRuntime();
+    await runtime.start();
+    return { runtime, ctx };
+  }
+
+  it("happy path: CDP reposition visible → goto /log-in → waitForURL /app/ → reposition off-screen", async () => {
+    const { runtime, ctx } = await startedRuntime();
+    const page = makeMockPage();
+    const cdp = makeMockCDPSession();
+    ctx.newPage.mockResolvedValueOnce(page);
+    ctx.newCDPSession.mockResolvedValueOnce(cdp);
+
+    const result = await runtime.connect();
+
+    expect(result).toEqual({ success: true });
+    expect(ctx.newPage).toHaveBeenCalledTimes(1);
+    expect(ctx.newCDPSession).toHaveBeenCalledWith(page);
+
+    // Order matters: reposition-visible THEN reposition-hidden, with goto/waitForURL between.
+    const sendCalls = cdp.send.mock.calls;
+    expect(sendCalls[0]).toEqual(["Browser.getWindowForTarget"]);
+    expect(sendCalls[1]).toEqual([
+      "Browser.setWindowBounds",
+      {
+        windowId: 42,
+        bounds: { left: 100, top: 100, width: 1280, height: 800, windowState: "normal" },
+      },
+    ]);
+    expect(sendCalls[2]).toEqual([
+      "Browser.setWindowBounds",
+      { windowId: 42, bounds: { left: 4000, top: 4000 } },
+    ]);
+
+    expect(page.bringToFront).toHaveBeenCalled();
+    expect(page.goto).toHaveBeenCalledWith("https://www.magnific.com/log-in");
+    expect(page.waitForURL).toHaveBeenCalledWith(/\/app\//, { timeout: 5 * 60 * 1000 });
+    expect(page.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("timeout: returns {success:false, reason:'timeout'} and does NOT reposition window back", async () => {
+    const { runtime, ctx } = await startedRuntime();
+    const page = makeMockPage();
+    page.waitForURL.mockRejectedValueOnce(new Error("Timeout 5000ms exceeded"));
+    const cdp = makeMockCDPSession();
+    ctx.newPage.mockResolvedValueOnce(page);
+    ctx.newCDPSession.mockResolvedValueOnce(cdp);
+
+    const result = await runtime.connect(50);
+
+    expect(result).toEqual({ success: false, reason: "timeout" });
+    // Exactly two CDP calls: getWindowForTarget + setWindowBounds(visible).
+    // The return-to-hidden setWindowBounds must NOT have been sent.
+    expect(cdp.send).toHaveBeenCalledTimes(2);
+    expect(cdp.send.mock.calls.find(
+      ([m, args]) =>
+        m === "Browser.setWindowBounds" &&
+        (args as { bounds: { left: number } }).bounds.left === 4000,
+    )).toBeUndefined();
+    // Page still closed even on the timeout path.
+    expect(page.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("auto-starts the runtime when context is null", async () => {
+    defaultSettings();
+    const ctx = makeMockContext();
+    mockLaunchPersistentContext.mockResolvedValueOnce(ctx);
+    mockInjectToken.mockResolvedValueOnce(undefined);
+
+    const runtime = new MagnificRuntime();
+    // No prior .start() call.
+    const result = await runtime.connect();
+
+    expect(mockLaunchPersistentContext).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(true);
+  });
+
+  it("re-entrancy (option a): second concurrent call returns connect_in_progress synchronously, never touches context", async () => {
+    const { runtime, ctx } = await startedRuntime();
+
+    // Hang the first connect()'s newPage on a controllable promise so the
+    // re-entrancy flag is set while we fire the second call.
+    let releaseFirstPage!: (p: MockPage) => void;
+    const firstPagePromise = new Promise<MockPage>((res) => {
+      releaseFirstPage = res;
+    });
+    ctx.newPage.mockReturnValueOnce(firstPagePromise);
+
+    const firstConnect = runtime.connect();
+    // Yield one microtask so the first call advances past `this.connecting = true`
+    // and into the `await ctx.newPage()` await.
+    await Promise.resolve();
+
+    const second = await runtime.connect();
+    expect(second).toEqual({ success: false, reason: "connect_in_progress" });
+    // The second call must never touch the context.
+    expect(ctx.newPage).toHaveBeenCalledTimes(1);
+    expect(ctx.newCDPSession).not.toHaveBeenCalled();
+
+    // Cleanup: release the first call so it doesn't leak a pending promise.
+    releaseFirstPage(makeMockPage());
+    await firstConnect;
+  });
+
+  it("releases the in-progress flag after a successful connect, allowing subsequent connects", async () => {
+    const { runtime } = await startedRuntime();
+    const first = await runtime.connect();
+    expect(first).toEqual({ success: true });
+    const second = await runtime.connect();
+    expect(second).toEqual({ success: true });
+  });
+
+  it("releases the in-progress flag after a throw, allowing recovery", async () => {
+    const { runtime, ctx } = await startedRuntime();
+    ctx.newPage.mockRejectedValueOnce(new Error("page boom"));
+
+    await expect(runtime.connect()).rejects.toThrow("page boom");
+
+    // Flag must be cleared — a follow-up connect should proceed normally.
+    const result = await runtime.connect();
+    expect(result).toEqual({ success: true });
   });
 });

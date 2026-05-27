@@ -46,6 +46,11 @@ export class MagnificRuntime {
   private context: BrowserContext | null = null;
   private lastError: string | null = null;
   private backoffMs = 1000;
+  // Re-entrancy guard for connect(). Fast-fail (option a): a second concurrent
+  // connect() returns {success:false, reason:"connect_in_progress"} without
+  // touching the BrowserContext, matching the dashboard UX where the
+  // "Connect Magnific" button disables itself while a connect is in flight.
+  private connecting = false;
 
   async start(): Promise<void> {
     if (this.context) return;
@@ -106,9 +111,58 @@ export class MagnificRuntime {
     this.backoffMs = 1000;
   }
 
-  async connect(_timeoutMs?: number): Promise<ConnectResult> {
-    void _timeoutMs;
-    throw new Error("magnific-runtime: connect() lands in S4");
+  async connect(timeoutMs = 5 * 60 * 1000): Promise<ConnectResult> {
+    if (this.connecting) {
+      return { success: false, reason: "connect_in_progress" };
+    }
+    this.connecting = true;
+    try {
+      if (!this.context) await this.start();
+      const ctx = this.context!;
+      const page = await ctx.newPage();
+      try {
+        const cdp = await ctx.newCDPSession(page);
+        const { windowId } = (await cdp.send(
+          "Browser.getWindowForTarget",
+        )) as { windowId: number };
+        // Slide the off-screen window onto a visible monitor so the operator
+        // can see the login flow; spec Decision 4.
+        await cdp.send("Browser.setWindowBounds", {
+          windowId,
+          bounds: {
+            left: 100,
+            top: 100,
+            width: 1280,
+            height: 800,
+            windowState: "normal",
+          },
+        });
+        await page.bringToFront();
+        await page.goto("https://www.magnific.com/log-in");
+        try {
+          await page.waitForURL(/\/app\//, { timeout: timeoutMs });
+        } catch {
+          // Leave the window visible so the operator can see what stalled —
+          // skip the return-to-hidden reposition. The dashboard surfaces the
+          // timeout reason; once they finish or cancel, /stop tears down.
+          return { success: false, reason: "timeout" };
+        }
+        await cdp.send("Browser.setWindowBounds", {
+          windowId,
+          bounds: { left: 4000, top: 4000 },
+        });
+        return { success: true };
+      } finally {
+        try {
+          await page.close();
+        } catch {
+          // best-effort: a dangling tab on close failure isn't worth masking
+          // the real connect result.
+        }
+      }
+    } finally {
+      this.connecting = false;
+    }
   }
 
   async status(): Promise<RuntimeStatus> {
