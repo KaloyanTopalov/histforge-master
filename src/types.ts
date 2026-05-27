@@ -45,6 +45,21 @@ export interface Video {
   suno_style_prompt: string | null;
   song_count: number | null;
   repeat_factor: number | null;
+  /**
+   * Per-video override of `image_chunk_target_seconds`. NULL falls
+   * through to the global setting via `getImageChunkPacing`.
+   */
+  image_chunk_target_seconds: number | null;
+  /**
+   * Per-video override of `image_chunk_min_seconds`. NULL falls through
+   * to the global setting via `getImageChunkPacing`.
+   */
+  image_chunk_min_seconds: number | null;
+  /**
+   * Per-video override of `image_chunk_max_seconds`. NULL falls through
+   * to the global setting via `getImageChunkPacing`.
+   */
+  image_chunk_max_seconds: number | null;
   created_at: number;
 }
 
@@ -350,6 +365,21 @@ export type ShotSubjectKind =
   | "title-card";
 
 /**
+ * Editorial intent classifier for a Shot. Five canonical values mirroring
+ * the brainstorm taxonomy (establishing / narrative / fact_card / reveal /
+ * emphasis). Purely descriptive metadata in this version — does NOT
+ * influence chunk timing (which is owned by the chunker step 08). Future
+ * beat-aware render effects (e.g. emphasis = slow zoom, fact_card = no
+ * zoom) can dispatch on this field without re-running the LLM.
+ */
+export type BeatType =
+  | "establishing"
+  | "narrative"
+  | "fact_card"
+  | "reveal"
+  | "emphasis";
+
+/**
  * Provider-neutral reference attachment for a Shot. The `source` is
  * tagged so downstream provider projections (e.g. Google Flow's
  * `referenceEntities` vs `imageInputs`) can dispatch on `kind` rather
@@ -404,4 +434,10 @@ export interface Shot extends Chunk {
   references?: ShotReference[];
   /** Negative prompt fragment specific to this shot, if any. */
   negative_prompt?: string;
+  /**
+   * Editorial intent of this shot. Set by the LLM in step 09 alongside
+   * `scene` and friends. Pure metadata — chunk timing is owned by the
+   * chunker step 08.
+   */
+  beat_type?: BeatType;
 }

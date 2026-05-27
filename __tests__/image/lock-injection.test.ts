@@ -130,7 +130,7 @@ describe("step 09 — system instruction injection", () => {
     );
 
     expect(chat).toHaveBeenCalledTimes(1);
-    const messages = chat.mock.calls[0][0] as ChatMessage[];
+    const messages = (chat.mock.calls[0] as unknown as [ChatMessage[]])[0];
     expect(messages[0].role).toBe("system");
     expect(messages[0].content).toMatch(
       /^Do not describe the character's appearance/
