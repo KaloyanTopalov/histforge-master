@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Step } from "@/worker/pipeline";
 import type {
+  BeatType,
   Shot,
   ShotCamera,
   ShotReference,
@@ -39,6 +40,20 @@ const VALID_SUBJECT_KINDS: ReadonlySet<ShotSubjectKind> = new Set<ShotSubjectKin
 ]);
 
 /**
+ * Allowed `beat_type` values, kept in sync with `BeatType` in
+ * `src/types.ts`. Editorial-intent classifier the LLM emits alongside
+ * scene/camera/subject_kind; pure metadata (does not influence chunk
+ * timing — owned by the chunker step 08).
+ */
+const VALID_BEAT_TYPES: ReadonlySet<BeatType> = new Set<BeatType>([
+  "establishing",
+  "narrative",
+  "fact_card",
+  "reveal",
+  "emphasis",
+]);
+
+/**
  * Per-entry payload returned by `parseEnvelopeReply`. `scene` is the
  * authoritative description and is REQUIRED under the phase 2b
  * contract. `prompt` is the LLM-emitted prompt string (if any) —
@@ -53,6 +68,7 @@ interface ShotExtras {
   trigger_text?: string;
   references?: ShotReference[];
   negative_prompt?: string;
+  beat_type?: BeatType;
 }
 
 interface BatchItem {
@@ -214,6 +230,13 @@ export const step: Step = {
     // applyLocks() above for the exact format.
     const styleLock = getSetting("style_lock_description", ctx.db);
     const negativeLock = getSetting("character_lock_negative", ctx.db);
+    // Few-shot examples slot: resolve once at step entry so every batch
+    // sees the same block. Always supplied (defaults to "") because the
+    // render dialect strict-throws on unresolved {{good_examples}}.
+    const goodExamples = renderGoodExamples(
+      getSetting("step_09_examples_json", ctx.db),
+      (msg) => ctx.log(msg)
+    );
 
     // Eager prompt_history + structured-IR sweep: clear lineage AND any
     // prior optional Shot fields on the to-regenerate subset *before* any
@@ -229,6 +252,7 @@ export const step: Step = {
       delete chunks[i].trigger_text;
       delete chunks[i].references;
       delete chunks[i].negative_prompt;
+      delete chunks[i].beat_type;
     }
     writeFileSync(chunksPath, JSON.stringify(chunks, null, 2), "utf-8");
 
@@ -266,6 +290,7 @@ export const step: Step = {
           if (extras.trigger_text !== undefined) c.trigger_text = extras.trigger_text;
           if (extras.references !== undefined) c.references = extras.references;
           if (extras.negative_prompt !== undefined) c.negative_prompt = extras.negative_prompt;
+          if (extras.beat_type !== undefined) c.beat_type = extras.beat_type;
         }
         writeFileSync(chunksPath, JSON.stringify(chunks, null, 2), "utf-8");
       });
@@ -303,6 +328,7 @@ export const step: Step = {
           db: ctx.db,
           promptsDir: ctx.promptsDir,
           stylePrompt,
+          goodExamples,
         });
         await persistBatch(enrich(results));
       } catch (err) {
@@ -320,6 +346,7 @@ export const step: Step = {
             db: ctx.db,
             promptsDir: ctx.promptsDir,
             stylePrompt,
+            goodExamples,
           });
           await persistBatch(enrich(results));
         }
@@ -378,6 +405,7 @@ async function callBatchWithRetry(
     db: DatabaseType;
     promptsDir: string;
     stylePrompt: string;
+    goodExamples: string;
   }
 ): Promise<Map<string, ShotExtras>> {
   const expectedIds = new Set(batch.map((b) => b.id));
@@ -386,6 +414,7 @@ async function callBatchWithRetry(
     {
       batch_json: JSON.stringify(batch, null, 2),
       style_prompt: deps.stylePrompt,
+      good_examples: deps.goodExamples,
     },
     deps.promptsDir
   );
@@ -543,6 +572,12 @@ function extractShotExtras(
   ) {
     out.subject_kind = entry.subject_kind as ShotSubjectKind;
   }
+  if (
+    typeof entry.beat_type === "string" &&
+    VALID_BEAT_TYPES.has(entry.beat_type as BeatType)
+  ) {
+    out.beat_type = entry.beat_type as BeatType;
+  }
   if (typeof entry.trigger_text === "string" && entry.trigger_text.length > 0) {
     out.trigger_text = entry.trigger_text;
   }
@@ -593,4 +628,47 @@ function stripCodeFence(raw: string): string {
     .trim()
     .replace(/^```(?:json)?\s*\n?/i, "")
     .replace(/\n?```\s*$/, "");
+}
+
+/**
+ * Build the <good_examples> block injected at the top of the step 09
+ * prompt from the operator-set `step_09_examples_json` setting. The
+ * `{{good_examples}}` template slot is ALWAYS supplied (the render
+ * dialect strict-throws on unresolved vars), so on empty / invalid
+ * inputs we return "" and the prompt body simply has no example block.
+ *
+ * Failure modes (non-empty + unparseable, or non-empty + parseable but
+ * not an array) are logged via `warn` and treated as "no examples";
+ * the step proceeds without blocking.
+ */
+function renderGoodExamples(
+  raw: string,
+  warn: (msg: string) => void
+): string {
+  if (raw.length === 0) return "";
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    warn(
+      `WARN: step_09_examples_json is non-empty but failed to JSON.parse ` +
+        `(${(err as Error).message}); proceeding without <good_examples> block.`
+    );
+    return "";
+  }
+  if (!Array.isArray(parsed)) {
+    warn(
+      `WARN: step_09_examples_json must be a JSON array; got ${typeof parsed}; ` +
+        `proceeding without <good_examples> block.`
+    );
+    return "";
+  }
+  const lines = parsed.map((item) => JSON.stringify(item)).join("\n");
+  return (
+    `<good_examples>\n` +
+    `Here are example scenes from a video the operator considers high-quality. ` +
+    `Match this voice and density.\n\n` +
+    `${lines}\n` +
+    `</good_examples>\n\n`
+  );
 }

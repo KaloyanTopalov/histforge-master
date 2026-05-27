@@ -1,4 +1,4 @@
-You are a visual prompt writer. For each chunk in the batch below, write a single visual prompt that an AI image / video generator will use to create an image for that chunk.
+{{good_examples}}You are a visual prompt writer. For each chunk in the batch below, write a single visual prompt that an AI image / video generator will use to create an image for that chunk.
 
 STYLE (for context only — DO NOT include this text in your output; the assembler appends it to every prompt automatically so it stays byte-identical across the whole video):
 {{style_prompt}}
@@ -59,6 +59,14 @@ Per-entry fields:
 - `scene` — string, REQUIRED, non-empty. **The authoritative description of the frame.** The downstream image generator receives this text after the assembler appends the operator's style and negative locks. Write the full descriptive sentence (typically 20-60 words) covering subject, setting, lighting, and era as needed. Do NOT include style language (e.g. "watercolor", "cinematic", "2D illustration") — style is appended by code. ALL the safety rules above (no real names, no graphic violence, etc.) apply HERE — strip names and reframe to neutral language inside `scene`.
 - `camera` — string, optional. One of exactly: `wide`, `medium`, `close-up`, `over-shoulder`, `pov`, `static`. If none fits, OMIT the field rather than inventing a value.
 - `subject_kind` — string, optional. One of exactly: `character`, `environment`, `object`, `title-card`. `character` = a person is the focus; `environment` = a place/landscape; `object` = an artifact, document, or close-up of a thing; `title-card` = text on a flat background.
+- `beat_type` — string, optional. One of exactly: `establishing`, `narrative`, `fact_card`, `reveal`, `emphasis`. Describes the editorial intent of the frame:
+  - `establishing` — opening / transition / scene-setter; the *content* should read in roughly 4-5 seconds (an open landscape, an entering character, a place title).
+  - `narrative` — default storytelling beat; *content* should read in roughly 4-7 seconds.
+  - `fact_card` — a date, name, place, or number the viewer must read; *content* should be legible in roughly 5-8 seconds.
+  - `reveal` — a twist or answer moment; *content* should reward roughly 6-10 seconds of attention.
+  - `emphasis` — the single most important visual of the section; *content* dense enough to reward roughly 8-12 seconds of attention.
+
+  Duration is NOT controlled by `beat_type` in this version — chunk playback timing is fixed by the upstream chunker (step 08). The duration hints above describe the *content* you should put in each kind of frame, not the playback timing.
 - `trigger_text` — string, optional. The most concrete noun or short phrase in the chunk's narration this image anchors to. Used for editor sync; if nothing concrete stands out, omit.
 - `negative_prompt` — string, optional. A short fragment describing what must NOT appear in this specific shot. The assembler folds it into the global negative lock with a comma separator, so providers see exactly one `Negative:` clause.
 - `references` — array, optional. Each entry has shape `{"role": "<role>", "source": <source>}`. `role` is exactly `"character"` or `"style"`. `source` is one of `{"kind": "entity", "entity_id": "<string>"}` for a saved provider entity, or `{"kind": "image", "url": "<string>"}` for an uploaded reference image URL. The LLM should normally LEAVE THIS EMPTY — references are attached upstream by the operator's per-video settings; emit one here only if the chunk text itself names a specific saved entity to use.
@@ -73,6 +81,7 @@ Example output for a two-chunk batch (this is literal, valid JSON — emit your 
       "scene": "a gaunt Dutch post-impressionist painter in his late thirties, red hair and beard, paint-stained smock, working at an easel in a sunlit Provence studio, 1880s",
       "camera": "medium",
       "subject_kind": "character",
+      "beat_type": "narrative",
       "trigger_text": "Provence"
     },
     {
