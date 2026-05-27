@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { getDb } from "@/lib/db";
-import { getSetting } from "@/lib/settings";
+import { getImageChunkPacing, getSetting } from "@/lib/settings";
 import { listProjectFiles } from "@/lib/project-files";
 import { buildFlowSummary, type FlowSummary } from "@/lib/flow-summary";
 import * as gfRepo from "@/lib/repos/google-flow";
@@ -56,6 +57,29 @@ export default function VideoDetailPage({
     db
   );
 
+  // Resolved global pacing for the per-video pacing panel. Passing
+  // explicit NULLs forces the resolver to read every component from the
+  // global settings — those are the values the panel uses as placeholder
+  // text so the operator sees what NULL falls through to.
+  const globalPacing = getImageChunkPacing(
+    {
+      image_chunk_target_seconds: null,
+      image_chunk_min_seconds: null,
+      image_chunk_max_seconds: null,
+    },
+    db
+  );
+
+  // Source preference for the panel's word-count hint: ready-script
+  // `provided_script` first, then the on-disk assembled script (written
+  // by step 05). Both are split on whitespace runs and counted; neither
+  // is exact, but the hint already disclaims "≈" so a sentence-tokenizer
+  // here would be premature.
+  const scriptWordCount = computeScriptWordCount(
+    video.provided_script,
+    join(projectsDir, params.id, "script", "full_script.md")
+  );
+
   return (
     <VideoDetailClient
       videoId={params.id}
@@ -69,6 +93,8 @@ export default function VideoDetailPage({
       initialFlowSummary={initialFlowSummary}
       initialFlowRecoveryAccounts={initialFlowRecoveryAccounts}
       initialFlowServiceOverloadUntil={initialFlowServiceOverloadUntil}
+      globalPacing={globalPacing}
+      scriptWordCount={scriptWordCount}
       // Server-rendered timestamp used as the initial value of the step
       // timer clock. SSR and the first client render both read this
       // prop, so the hydrated HTML matches; `useNowTick` then snaps to
@@ -76,4 +102,21 @@ export default function VideoDetailPage({
       serverNow={Date.now()}
     />
   );
+}
+
+function computeScriptWordCount(
+  providedScript: string | null,
+  assembledPath: string
+): number | null {
+  if (providedScript && providedScript.trim().length > 0) {
+    return countWords(providedScript);
+  }
+  if (existsSync(assembledPath)) {
+    return countWords(readFileSync(assembledPath, "utf-8"));
+  }
+  return null;
+}
+
+function countWords(s: string): number {
+  return s.trim().split(/\s+/).filter(Boolean).length;
 }
