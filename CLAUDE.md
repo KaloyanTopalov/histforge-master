@@ -54,6 +54,7 @@ docs/                    # Spec: docs/histforge-spec.md (canonical reference)
 - **Worker steps are stateless:** Each step reads inputs from disk, writes outputs to disk. The orchestrator (`pipeline.ts`) owns step-row transitions, cleanup, and pause/resume.
 - **Workflows, not forks:** A video's `workflow_id` picks its ordered step list at runtime via the registry. Add a workflow rather than forking step code when a pipeline variant is needed.
 - **Per-video pacing overrides:** `videos.image_chunk_target_seconds` / `_min_` / `_max_` are nullable columns; NULL falls through to the global setting of the same name. The chunker resolves the triple at step entry via `getImageChunkPacing` in `src/lib/settings.ts` — never read the columns directly.
+- **Magnific dispatch runtime:** Magnific dispatch goes through the HistForge-managed Playwright runtime (`src/lib/magnific-runtime/`); the operator-installed Chrome extension path is deprecated.
 - **Path aliases:** `@/` maps to `src/` in both web and worker builds. Worker uses `tsc-alias` for post-compile resolution.
 - **Types:** Import shared types from `src/types.ts`. DB row types mirror the SQLite schema. File-format types (AlignmentEntry, Chunk, etc.) are the single source of truth.
 - **Settings:** All settings stored as strings in SQLite. `lib/settings.ts` handles type coercion. Defaults defined in `lib/db.ts`.

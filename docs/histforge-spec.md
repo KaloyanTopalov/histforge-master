@@ -1313,4 +1313,70 @@ Each external dependency is behind an interface so swaps don't touch step code:
 
 ---
 
+## 23. Magnific runtime
+
+HistForge launches its own Playwright-controlled Chromium with the `magnific-ext` extension preloaded and a persistent userDataDir. This eliminates the operator-managed Chrome touchpoint that the original Magnific HITL flow required (a real Chrome window with the extension installed and a logged-in Magnific tab). After a one-time login inside the Playwright window, cookies + IndexedDB persist across HistForge restarts and host reboots.
+
+### 23.1 Settings
+
+| Setting | Type | Default | Purpose |
+|---|---|---|---|
+| `magnific_runtime_enabled` | bool | `false` | Master toggle. When `true` in `NODE_ENV=production`, the worker boots the runtime on startup. |
+| `magnific_runtime_user_data_dir` | string | `data/magnific-userdata` | Persistent Chromium profile (cookies, IndexedDB, localStorage). Resolved against `process.cwd()`. |
+| `magnific_runtime_window_visible` | bool | `false` | When `false`, Chromium launches with `--window-position=4000,4000` (off-screen). Set `true` to debug. |
+| `magnific_runtime_extension_path` | string | `extensions/magnific-ext` | Path to the magnific-ext directory loaded via `--load-extension`. |
+
+All four are editable from Settings → Magnific tab → Runtime section. Defaults are seeded by `INSERT OR IGNORE` migrations in `src/lib/db.ts`.
+
+### 23.2 Lifecycle (`src/lib/magnific-runtime/`)
+
+The runtime exposes four async methods on a process-wide singleton (`magnificRuntime`):
+
+- **`start()`** — idempotent. Calls `chromium.launchPersistentContext(userDataDir, ...)` with the extension args, then injects `magnific_token` into the extension's `chrome.storage.local` via a bridge page at `chrome-extension://<id>/blank.html`. Throws `RuntimeLockedError` if the userDataDir is locked by another Chromium process *and* `NODE_ENV === "production"` — the lock-error class is suppressed under test/dev so the unit suite doesn't get false positives from a previous transient launch failure.
+- **`stop()`** — awaits `context.close()`, clears in-memory state, resets the backoff. Noop when not running.
+- **`connect(timeoutMs = 5min)`** — re-entrant (a concurrent call returns `{success:false, reason:"connect_in_progress"}` synchronously without touching the context). Opens a CDP session, repositions the window from off-screen `(4000, 4000)` to visible `(100, 100)`, calls `bringToFront()`, navigates to `https://www.magnific.com/log-in`, then waits for the URL to transition to `/app/*`. On success: repositions back to off-screen and returns `{success: true}`. On timeout: leaves the window visible (so the operator can see what stalled) and returns `{success: false, reason: "timeout"}`.
+- **`status()`** — returns `{running, connected, session_valid, last_error}`. `connected` reflects whether the userDataDir exists on disk; `session_valid` mirrors the negated `magnific_relogin_needed` setting (flipped by the existing `/api/magnific/status/[token]` extension webhook on 401).
+
+A `browser.on('disconnected')` handler triggers exponential-backoff relaunch (1s, 2s, 4s, 8s, 16s, 32s, capped at 60s). `RuntimeLockedError` retries are suppressed — looping on a lock that needs operator intervention would just pin a CPU.
+
+### 23.3 API routes
+
+Under `src/app/api/magnific/runtime/`:
+
+- `POST /start` — calls `magnificRuntime.start()`, returns `{success: true}`.
+- `POST /stop` — calls `magnificRuntime.stop()`, returns `{success: true}`.
+- `GET /status` — returns the `status()` payload verbatim (no `success` wrapper). The settings pill polls this every 5s.
+- `POST /connect` — returns the `connect()` result verbatim (`{success, reason?}`). All outcomes — success, timeout, `connect_in_progress` — return HTTP 200 so the dashboard can render the reason string without forking on status code.
+
+### 23.4 Operator one-time login flow
+
+1. Enable `magnific_runtime_enabled` in Settings → Magnific tab.
+2. Click **Connect Magnific**. The Playwright Chromium window slides onto a visible monitor.
+3. Complete the Magnific login inside that window. The flow handles reCAPTCHA / Cloudflare in the same window if presented — the runtime never tries to drive credentials.
+4. On URL transition to `/app/*`, the window slides back off-screen and the status pill turns 🟢 Connected.
+5. Cookies + IndexedDB persist via the userDataDir. Subsequent restarts go straight to Connected without re-login until Magnific invalidates the session (the existing webhook flips `magnific_relogin_needed=true`; pill turns 🟡 Session expired, and the operator clicks Reconnect to re-run the flow).
+
+### 23.5 Worker auto-boot
+
+The worker entry (`src/worker/index.ts`) boots the runtime only when **both** `NODE_ENV === "production"` AND `magnific_runtime_enabled === true`. Dev (`tsx watch`), test, CI, and any future env never auto-launch — the operator clicks **Connect Magnific** to bring the runtime up manually when working on it. This guard prevents `npm run dev`'s hot-reload from fighting over the userDataDir lock on every file save.
+
+Worker shutdown handles SIGTERM by awaiting `magnificRuntime.stop()` so the browser context closes cleanly and the userDataDir's cookies/IndexedDB flush.
+
+### 23.6 Failure modes (selected)
+
+| Failure | Surface | Behavior |
+|---|---|---|
+| Chromium binary missing | `start()` | Throws; banner: "Chromium not installed. Run `npx playwright install chromium`." |
+| Extension path invalid | `start()` | Throws; banner: "Extension not found at path X." |
+| userDataDir locked by another Chromium | `start()` (prod only) | Throws `RuntimeLockedError`; `last_error` includes the PID Playwright reported; auto-relaunch suppressed for this error class. |
+| Login flow timeout | `POST /connect` | Returns 200 `{success:false, reason:"timeout"}`; window left visible. |
+| Browser crash mid-task | `on('disconnected')` | Exponential backoff relaunch; `last_error` updated each retry. |
+| Magnific session expires | Existing webhook flips `magnific_relogin_needed=true` | Pill turns 🟡; queue processing pauses; operator clicks Reconnect. |
+
+### 23.7 Cross-references
+
+Full design rationale, the four resolved decisions (extension token injection, window hiding, worker hot-reload guard, connect-flow window focus), and the manual extension-ID probe procedure: `docs/superpowers/specs/2026-05-27-magnific-playwright-runtime-design.md`.
+
+---
+
 *End of spec v4.*
