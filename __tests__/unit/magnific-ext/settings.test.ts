@@ -50,6 +50,11 @@ function loadSettingsModule(
       storage: {
         local: {
           get: async () => storage,
+          // settings.js persists via chrome.storage.local.set/remove (async).
+          // Without these the setters' promises reject unhandled — the
+          // sync getters still pass, but the run logs unhandled rejections.
+          set: async () => {},
+          remove: async () => {},
         },
       },
     },

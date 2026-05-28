@@ -34,6 +34,15 @@ function loadContentScript(opts: LoadOpts = {}) {
     ),
     "utf8"
   );
+  // The manifest loads content-shared.js first in the same isolated world
+  // (content_scripts js: ["content-shared.js", ..., "content-magnific-i2v.js"]).
+  // It declares the DOM helpers (fillPrompt, editableFrom, setNativeValue,
+  // waitFor, dumpDataCyAttributes, ...) the orchestrator calls by bare name.
+  // Replicate that load order in the sandbox.
+  const sharedSrc = readFileSync(
+    path.resolve(process.cwd(), "extensions/magnific-ext/content-shared.js"),
+    "utf8"
+  );
   const listeners: Listener[] = [];
   const messages: Record<string, unknown>[] = [];
   const sendMessage = vi.fn(
@@ -114,7 +123,7 @@ function loadContentScript(opts: LoadOpts = {}) {
     },
   };
   vm.createContext(sandbox);
-  vm.runInContext(src, sandbox);
+  vm.runInContext(sharedSrc + "\n" + src, sandbox);
   return { listeners, sendMessage, messages, logs };
 }
 
