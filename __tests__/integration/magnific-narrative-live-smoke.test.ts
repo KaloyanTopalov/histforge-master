@@ -418,12 +418,13 @@ describe.skipIf(!RUN)(
         // claims tasks (dispatched) but never dispatches them (no tab, no
         // content-script logs) — exactly the observed pattern. (consts like
         // EXECUTORS aren't global props; the function declarations are.)
+        let wiring: Record<string, string> | null = null;
         try {
           let sw = browserCtx.serviceWorkers()[0];
           if (!sw) {
             sw = await browserCtx.waitForEvent("serviceworker", { timeout: 15000 });
           }
-          const wiring = await sw.evaluate(() => {
+          wiring = await sw.evaluate(() => {
             const g = globalThis as unknown as Record<string, unknown>;
             return {
               executeTaskViaExtension: typeof g["executeTaskViaExtension"],
@@ -436,6 +437,19 @@ describe.skipIf(!RUN)(
           console.error("[live-smoke] SW wiring:", JSON.stringify(wiring));
         } catch (e) {
           console.error("[live-smoke] SW introspection failed:", e);
+        }
+        // Fast-fail on a STALE service worker (the image-batch executor not
+        // loaded) instead of burning the full drain timeout. Chromium can serve
+        // a cached SW from the persistent profile when the manifest version is
+        // unchanged; the fix is a version bump (forces a reload) or a manual
+        // reload in chrome://extensions.
+        if (wiring && wiring.runImageBatch !== "function") {
+          throw new Error(
+            `live-smoke: STALE extension service worker — runImageBatch=${wiring.runImageBatch} ` +
+              "(image-batch.js not loaded in the running SW). Chromium reused a cached pre-S4 SW. " +
+              "Bump the magnific-ext manifest \"version\" (done in this branch) so the next launch " +
+              "reloads the extension, or reload it in chrome://extensions, then re-run.",
+          );
         }
 
         // ── Phase 3: enqueue 2-3 real image-batch tasks; the extension drains ─
