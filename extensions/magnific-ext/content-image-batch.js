@@ -28,10 +28,16 @@
   // matches below — the text-based "Create" button and the placeholder-matched
   // project-name input — are the most likely to drift, so the create-project
   // step logs each sub-step and dumps [data-cy] loudly on any miss.
-  const HEADER_PROJECT_LINK_DATA_CY = '[data-cy="header-current-project-link"]';
+  // v3 DOM (confirmed live 2026-05-28 via the live-smoke [data-cy] dump): the
+  // current-project indicator is the breadcrumb link (the formerly-assumed
+  // header-current-project-link does not exist), and projects show as
+  // v3-project-row entries — clicking "Create" lands back on the list rather
+  // than auto-navigating into the new project.
+  const HEADER_BREADCRUMB_DATA_CY = '[data-cy="header-work-breadcrumb-link"]';
   const PROJECT_TREE_DROPDOWN_DATA_CY = '[data-cy="project-tree-dropdown-trigger"]';
-  const NEW_PROJECT_CARD_DATA_CY = '[data-cy="new-project-card"]';
   const V3_CREATE_PROJECT_BTN_DATA_CY = '[data-cy="v3-create-project-button"]';
+  const NEW_PROJECT_CARD_DATA_CY = '[data-cy="new-project-card"]';
+  const V3_PROJECT_ROW_DATA_CY = '[data-cy="v3-project-row"]';
   const PROJECT_NAME_INPUT_SELECTOR = 'input[placeholder*="Enter a name" i]';
   const HEADER_CREATE_BUTTON_DATA_CY = 'projects-work-header-create-button';
   const TOPBAR_START_CREATING_DATA_CY = '[data-cy="topbar-start-creating-button"]';
@@ -132,10 +138,27 @@
     return !!v && v !== 'work';
   }
 
+  function locationPathname() {
+    try {
+      return (typeof location !== 'undefined' && location.pathname) || '';
+    } catch (_e) {
+      return '';
+    }
+  }
+
+  function locationProjectUuid() {
+    return extractProjectUuid(locationPathname());
+  }
+
+  // v3 current-project indicator: the breadcrumb link's href, falling back to
+  // the URL (the source of truth once inside a project).
   function currentProjectUuid() {
-    const link = document.querySelector(HEADER_PROJECT_LINK_DATA_CY);
-    if (!(link instanceof HTMLElement)) return null;
-    return extractProjectUuid(link.getAttribute('href') || '');
+    const link = document.querySelector(HEADER_BREADCRUMB_DATA_CY);
+    const fromLink =
+      link instanceof HTMLElement
+        ? extractProjectUuid(link.getAttribute('href') || '')
+        : null;
+    return fromLink || locationProjectUuid();
   }
 
   function dismissCookieBanner() {
@@ -169,11 +192,30 @@
     return null;
   }
 
-  async function waitForProjectUuid(timeoutMs) {
+  async function waitForLocationUuid(timeoutMs) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
-      const uuid = currentProjectUuid();
+      const uuid = locationProjectUuid();
       if (isRealProjectUuid(uuid)) return uuid;
+      await sleep(250);
+    }
+    return null;
+  }
+
+  // Find the just-created project's row by name. DOM order; v3 lists newest at
+  // the top, so the first textContent match wins.
+  function findMatchingProjectRow(name) {
+    for (const row of document.querySelectorAll(V3_PROJECT_ROW_DATA_CY)) {
+      if ((row.textContent || '').includes(name)) return row;
+    }
+    return null;
+  }
+
+  async function waitForMatchingProjectRow(name, timeoutMs) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const row = findMatchingProjectRow(name);
+      if (row instanceof HTMLElement) return row;
       await sleep(250);
     }
     return null;
@@ -183,13 +225,13 @@
   // null on a selector miss (each sub-step logged + [data-cy] dumped loudly).
   async function createProject(videoTitle) {
     dismissCookieBanner();
-    let entry = await waitFor(NEW_PROJECT_CARD_DATA_CY, CREATE_STEP_TIMEOUT_MS);
+    let entry = await waitFor(V3_CREATE_PROJECT_BTN_DATA_CY, CREATE_STEP_TIMEOUT_MS);
     if (!(entry instanceof HTMLElement)) {
-      entry = document.querySelector(V3_CREATE_PROJECT_BTN_DATA_CY);
+      entry = document.querySelector(NEW_PROJECT_CARD_DATA_CY);
     }
     if (!(entry instanceof HTMLElement)) {
       log(
-        `step=create-project sub=entry status=error reason=not-found tried=${NEW_PROJECT_CARD_DATA_CY}, ${V3_CREATE_PROJECT_BTN_DATA_CY}`,
+        `step=create-project sub=entry status=error reason=not-found tried=${V3_CREATE_PROJECT_BTN_DATA_CY}, ${NEW_PROJECT_CARD_DATA_CY}`,
       );
       dumpDataCyAttributes();
       return null;
@@ -222,9 +264,28 @@
     log('step=create-project sub=create-button status=ok');
     clickClickable(createBtn);
 
-    const uuid = await waitForProjectUuid(CREATE_UUID_TIMEOUT_MS);
+    // v3 does NOT auto-navigate into the new project; it lands back on the
+    // projects list. Find the new project's row by name and click into it.
+    const row = await waitForMatchingProjectRow(videoTitle, CREATE_STEP_TIMEOUT_MS);
+    if (!(row instanceof HTMLElement)) {
+      const rows = document.querySelectorAll(V3_PROJECT_ROW_DATA_CY);
+      const names = Array.from(rows).map((r) =>
+        (r.textContent || '').trim().slice(0, 60),
+      );
+      log(
+        `step=create-project sub=await-row status=error reason=no-matching-row ` +
+          `name="${videoTitle}" rows=${rows.length} names=${JSON.stringify(names)}`,
+      );
+      dumpDataCyAttributes();
+      return null;
+    }
+    log('step=create-project sub=await-row status=ok');
+    clickClickable(row);
+
+    // Clicking the row navigates into the project — harvest the UUID from the URL.
+    const uuid = await waitForLocationUuid(CREATE_UUID_TIMEOUT_MS);
     if (!uuid) {
-      log('step=create-project sub=await-uuid status=error reason=no-project-uuid-after-create');
+      log('step=create-project sub=await-uuid status=error reason=no-project-uuid-in-url');
       dumpDataCyAttributes();
       return null;
     }
