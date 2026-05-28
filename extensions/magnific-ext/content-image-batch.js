@@ -57,6 +57,18 @@
       ? MAGNIFIC_HARVEST_INTERVAL_MS
       : 2000;
 
+  // Per-step waitFor budgets for the create-Project flow. Overridable (like
+  // the harvest budgets above) so the create-diagnostics unit test can fail
+  // fast on an absent selector instead of burning the full production 8s.
+  const CREATE_STEP_TIMEOUT_MS =
+    typeof MAGNIFIC_CREATE_STEP_TIMEOUT_MS !== 'undefined'
+      ? MAGNIFIC_CREATE_STEP_TIMEOUT_MS
+      : 8000;
+  const CREATE_UUID_TIMEOUT_MS =
+    typeof MAGNIFIC_CREATE_UUID_TIMEOUT_MS !== 'undefined'
+      ? MAGNIFIC_CREATE_UUID_TIMEOUT_MS
+      : 10000;
+
   function log(...args) {
     try { console.log(LOG_PREFIX, ...args); } catch (_e) { /* ignore */ }
   }
@@ -171,7 +183,7 @@
   // null on a selector miss (each sub-step logged + [data-cy] dumped loudly).
   async function createProject(videoTitle) {
     dismissCookieBanner();
-    let entry = await waitFor(NEW_PROJECT_CARD_DATA_CY, 8000);
+    let entry = await waitFor(NEW_PROJECT_CARD_DATA_CY, CREATE_STEP_TIMEOUT_MS);
     if (!(entry instanceof HTMLElement)) {
       entry = document.querySelector(V3_CREATE_PROJECT_BTN_DATA_CY);
     }
@@ -185,7 +197,7 @@
     log('step=create-project sub=entry status=ok');
     clickClickable(entry);
 
-    const nameInput = await waitFor(PROJECT_NAME_INPUT_SELECTOR, 8000);
+    const nameInput = await waitFor(PROJECT_NAME_INPUT_SELECTOR, CREATE_STEP_TIMEOUT_MS);
     if (!(nameInput instanceof HTMLElement)) {
       log(
         `step=create-project sub=name-input status=error reason=not-found ` +
@@ -210,7 +222,7 @@
     log('step=create-project sub=create-button status=ok');
     clickClickable(createBtn);
 
-    const uuid = await waitForProjectUuid(10000);
+    const uuid = await waitForProjectUuid(CREATE_UUID_TIMEOUT_MS);
     if (!uuid) {
       log('step=create-project sub=await-uuid status=error reason=no-project-uuid-after-create');
       dumpDataCyAttributes();

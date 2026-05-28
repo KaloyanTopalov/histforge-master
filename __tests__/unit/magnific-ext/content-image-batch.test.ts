@@ -75,6 +75,10 @@ function loadContentScript() {
     // Keep the harvest poll fast in tests (prod default is 30min/2s).
     MAGNIFIC_HARVEST_TIMEOUT_MS: 1500,
     MAGNIFIC_HARVEST_INTERVAL_MS: 20,
+    // Fail the create-step selector waits fast (prod default is 8s/10s) so the
+    // create-diagnostics test doesn't burn the full production budget.
+    MAGNIFIC_CREATE_STEP_TIMEOUT_MS: 150,
+    MAGNIFIC_CREATE_UUID_TIMEOUT_MS: 150,
   };
   vm.createContext(sandbox);
   vm.runInContext(sharedSrc + "\n" + src, sandbox);
