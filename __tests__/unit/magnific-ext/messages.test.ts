@@ -63,8 +63,12 @@ describe("magnific-ext messages router", () => {
     expect(sendResponse).toHaveBeenCalledWith(status);
   });
 
-  it("routes updateWebhooks to updateWebhooks(message)", () => {
-    const updateWebhooks = vi.fn();
+  it("routes updateWebhooks to updateWebhooks(message)", async () => {
+    // The router chains `updateWebhooks(message).then(() => sendResponse(...))`,
+    // so the mock must return a promise (settings.updateWebhooks is async — it
+    // awaits chrome.storage.local.set) and sendResponse fires on a microtask
+    // after the listener returns — await a tick before asserting it.
+    const updateWebhooks = vi.fn(async () => {});
     const listener = loadMessages({ updateWebhooks });
     const sendResponse = vi.fn();
     const msg = {
@@ -77,11 +81,14 @@ describe("magnific-ext messages router", () => {
     };
     listener(msg, null, sendResponse);
     expect(updateWebhooks).toHaveBeenCalledWith(msg);
+    await new Promise((r) => setTimeout(r, 0));
     expect(sendResponse).toHaveBeenCalledWith({ success: true });
   });
 
   it("routes setVerboseLogging passing the boolean value", () => {
-    const setVerboseLogging = vi.fn();
+    // Router chains `setVerboseLogging(value).then(...).catch(...)`; the mock
+    // must return a promise (it's async — persists via chrome.storage.local.set).
+    const setVerboseLogging = vi.fn(async () => {});
     const listener = loadMessages({ setVerboseLogging });
     const sendResponse = vi.fn();
     listener({ action: "setVerboseLogging", value: true }, null, sendResponse);

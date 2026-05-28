@@ -44,6 +44,16 @@ function loadExecutor(opts: LoadOpts = {}) {
     ),
     "utf8"
   );
+  // background.js importScripts content-script-handshake.js (which defines
+  // waitForContentScriptReady) before the executors — replicate that load
+  // order in the sandbox so the executor's call resolves.
+  const handshakeSrc = readFileSync(
+    path.resolve(
+      process.cwd(),
+      "extensions/magnific-ext/src/executors/content-script-handshake.js"
+    ),
+    "utf8"
+  );
   const tabsQuery =
     opts.tabsQuery ?? vi.fn(async () => [] as FakeTab[]);
   const tabsCreate =
@@ -98,7 +108,7 @@ function loadExecutor(opts: LoadOpts = {}) {
     MAGNIFIC_PING_TIMEOUT_MS: opts.pingTimeoutMs ?? 1000,
   };
   vm.createContext(sandbox);
-  vm.runInContext(src, sandbox);
+  vm.runInContext(handshakeSrc + "\n" + src, sandbox);
   return {
     mod: sandbox as unknown as ImageHitlMod,
     tabsQuery,
