@@ -46,7 +46,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { execSync } from "node:child_process";
 import { join } from "node:path";
-import type { BrowserContext, Page } from "playwright";
+import type { BrowserContext } from "playwright";
 
 const RUN = process.env.RUN_MAGNIFIC_NARRATIVE_LIVE === "1";
 
@@ -55,7 +55,8 @@ const NB2_MODEL_SLUG = "ai-model-item-slim-imagen-nano-banana-2-flash";
 const TOKEN = `live-smoke-${Date.now()}`;
 const VIDEO_ID = `live_smoke_${Date.now()}`;
 const PROJECT_NAME = `PROBE_NARRATIVE_${Date.now()}`;
-const DRAIN_TIMEOUT_MS = 10 * 60 * 1000;
+// Default 10min; override with MAGNIFIC_LIVE_DRAIN_MIN for a fast diagnostic run.
+const DRAIN_TIMEOUT_MS = (Number(process.env.MAGNIFIC_LIVE_DRAIN_MIN) || 10) * 60 * 1000;
 const MAGNIFIC_PROJECTS_URL = "https://www.magnific.com/app/projects";
 const IMAGE_PROMPTS = [
   "a wide cinematic shot of a Roman senator addressing the forum, golden hour",
@@ -390,17 +391,17 @@ describe.skipIf(!RUN)(
         ).context;
         if (!browserCtx) throw new Error("runtime.start() resolved but context is null");
 
-        // Hook every page's console so the content-script step= logs land in
-        // the test output. The extension opens the Magnific tab AFTER this, so
-        // the 'page' listener catches it; also hook any already-open pages.
-        const hookConsole = (p: Page) => {
-          p.on("console", (m) => {
-            const t = m.text();
-            if (t.includes("magnific-ext")) extLogs.push(t);
-          });
-        };
-        browserCtx.pages().forEach(hookConsole);
-        browserCtx.on("page", hookConsole);
+        // Capture page AND service-worker console (Playwright 1.34+ routes both
+        // through the context 'console' event), so the SW-side runner/executor
+        // logs ("[image-batch] …", "✗ Executor for <id> failed: …", "Received
+        // task …") AND the content-script step= lines all reach the test output.
+        // Broad keyword filter; we dump the tail on failure.
+        browserCtx.on("console", (m) => {
+          const t = m.text();
+          if (/magnific|image-batch|executor|content script|received task|poll/i.test(t)) {
+            extLogs.push(t);
+          }
+        });
 
         const { granted } = await configureExtension(browserCtx);
         if (!granted) {
