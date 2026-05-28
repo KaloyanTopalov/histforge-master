@@ -3,6 +3,7 @@ import type { Database as DatabaseType } from "better-sqlite3";
 import { getSetting } from "@/lib/settings";
 import { resolveMagnificToken } from "@/lib/magnific-auth";
 import * as magnificRepo from "@/lib/repos/magnific";
+import * as videosRepo from "@/lib/repos/videos";
 import type { MagnificQueueItem } from "@/types";
 
 interface RouteCtx {
@@ -34,7 +35,7 @@ function shapeMagnificTaskForExtension(
   token: string
 ): Record<string, unknown> {
   const model =
-    row.mode === "image-hitl"
+    row.mode === "image-hitl" || row.mode === "image-batch"
       ? getSetting("magnific_image_model", db)
       : getSetting("magnific_video_model", db);
   const out: Record<string, unknown> = {
@@ -50,6 +51,15 @@ function shapeMagnificTaskForExtension(
       path: row.reference_image,
     });
     out.reference_image_url = `${origin}/api/magnific/artifact/${token}?${params.toString()}`;
+  }
+  // image-batch (narrative Magnific) carries two video-level facts the
+  // extension needs to scope generation to a per-video Project: the title
+  // (to name a new Project) and the cached Project UUID (null until the
+  // first row creates it). Joined here, not stored per queue row.
+  if (row.mode === "image-batch") {
+    const video = videosRepo.findById(db, row.video_id);
+    out.video_title = video?.title ?? null;
+    out.magnific_project_id = video?.magnific_project_id ?? null;
   }
   return out;
 }

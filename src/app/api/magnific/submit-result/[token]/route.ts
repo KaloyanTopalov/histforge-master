@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { resolveMagnificToken } from "@/lib/magnific-auth";
 import * as magnificRepo from "@/lib/repos/magnific";
+import * as videosRepo from "@/lib/repos/videos";
 import { downloadToProjectPath } from "@/lib/flow-media";
 import { isAllowedMagnificHost } from "@/lib/magnific-media";
 
@@ -28,12 +29,18 @@ const SubmitSchema = z.discriminatedUnion("status", [
     external_task_id: z.string().min(1),
     status: z.literal("done"),
     resultUrl: z.string().min(1),
+    // image-batch only: the Project UUID the extension created on the first
+    // row, echoed back so HistForge caches it on the videos row for reuse.
+    magnific_project_id: z.string().nullable().optional(),
   }),
   z.object({
     id: z.union([z.string(), z.number()]).optional(),
     external_task_id: z.string().min(1),
     status: z.literal("failed"),
     error: z.string().optional(),
+    // image-batch only: null + error="project_missing" signals the cached
+    // Project was deleted in Magnific, so HistForge clears the cached id.
+    magnific_project_id: z.string().nullable().optional(),
   }),
 ]);
 
@@ -77,6 +84,30 @@ export async function POST(
   // Already terminal — also idempotent OK.
   if (task.status === "done" || task.status === "failed") {
     return NextResponse.json({ success: true, duplicate: true });
+  }
+
+  // image-batch Project-id caching. The extension reports the Project UUID it
+  // created on the first row so later rows reuse it; {magnific_project_id:
+  // null, error: "project_missing"} means the cached Project was deleted in
+  // Magnific, so clear it and the next row recreates it. An absent field is a
+  // no-op. Runs before the download so the UUID is cached regardless of this
+  // row's outcome; the terminal early-return above prevents re-persist on
+  // retry, and setMagnificProjectId is itself idempotent.
+  if (parsed.data.magnific_project_id !== undefined) {
+    if (parsed.data.magnific_project_id === null) {
+      if (
+        parsed.data.status === "failed" &&
+        parsed.data.error === "project_missing"
+      ) {
+        videosRepo.setMagnificProjectId(db, task.video_id, null);
+      }
+    } else {
+      videosRepo.setMagnificProjectId(
+        db,
+        task.video_id,
+        parsed.data.magnific_project_id
+      );
+    }
   }
 
   if (parsed.data.status === "done") {

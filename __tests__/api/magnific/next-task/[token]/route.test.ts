@@ -36,19 +36,29 @@ beforeEach(async () => {
   seedDefaultSettings(db);
 });
 
-async function seedVideo(id: string): Promise<void> {
+async function seedVideo(
+  id: string,
+  opts?: { title?: string; magnificProjectId?: string | null }
+): Promise<void> {
   const { getDb } = await import("@/lib/db");
   getDb()
     .prepare(
-      `INSERT INTO videos (id, title, topic_info, workflow_id, status, kind, created_at)
-       VALUES (?, ?, ?, ?, 'queued', 'music_video', ?)`
+      `INSERT INTO videos (id, title, topic_info, workflow_id, status, kind, magnific_project_id, created_at)
+       VALUES (?, ?, ?, ?, 'queued', 'music_video', ?, ?)`
     )
-    .run(id, "T", "info", "music-video-magnific-suno", Date.now());
+    .run(
+      id,
+      opts?.title ?? "T",
+      "info",
+      "music-video-magnific-suno",
+      opts?.magnificProjectId ?? null,
+      Date.now()
+    );
 }
 
 async function enqueue(row: {
   video_id: string;
-  mode: "image-hitl" | "image-to-video";
+  mode: "image-hitl" | "image-to-video" | "image-batch";
   prompt: string;
   output_path: string;
   reference_image?: string | null;
@@ -130,6 +140,9 @@ describe("POST /api/magnific/next-task/:token", () => {
     });
     expect(body.id).toBeDefined();
     expect(body.reference_image_url).toBeUndefined();
+    // Regression guard: image-batch-only fields never leak into other modes.
+    expect(body.video_title).toBeUndefined();
+    expect(body.magnific_project_id).toBeUndefined();
 
     // Row flipped to dispatched + external_task_id minted; id in body
     // matches the minted external_task_id (the extension's task handle).
@@ -187,6 +200,64 @@ describe("POST /api/magnific/next-task/:token", () => {
     expect(url.pathname).toBe("/api/magnific/artifact/T-i2v");
     expect(url.searchParams.get("videoId")).toBe("vid_i2v");
     expect(url.searchParams.get("path")).toBe("loop_image.png");
+    // Regression guard: image-batch-only fields never leak into other modes.
+    expect(body.video_title).toBeUndefined();
+    expect(body.magnific_project_id).toBeUndefined();
+  });
+
+  it("dispatches an image-batch row with video_title + magnific_project_id joined from the video and model from magnific_image_model", async () => {
+    const { setSetting } = await import("@/lib/settings");
+    setSetting("magnific_token", "T-ib");
+    setSetting("magnific_image_model", "nano-banana-2");
+    // The video model must NOT bleed into image-batch.
+    setSetting("magnific_video_model", "seedance-v2");
+    await seedVideo("vid_ib", {
+      title: "The Fall of Rome",
+      magnificProjectId: "proj-uuid-123",
+    });
+    await enqueue({
+      video_id: "vid_ib",
+      mode: "image-batch",
+      prompt: "a Roman senator addressing the forum",
+      output_path: "images/0001.png",
+      no_timeout: 0,
+    });
+
+    const res = await callNextTask("T-ib", {});
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      mode: "image-batch",
+      prompt: "a Roman senator addressing the forum",
+      model: "nano-banana-2",
+      output_path: "images/0001.png",
+      video_title: "The Fall of Rome",
+      magnific_project_id: "proj-uuid-123",
+    });
+    // model resolves to the IMAGE model structurally, never the video model.
+    expect(body.model).not.toBe("seedance-v2");
+    // image-batch rides the normal reaper path — no reference frame upload.
+    expect(body.reference_image_url).toBeUndefined();
+  });
+
+  it("surfaces magnific_project_id: null for an image-batch row whose video has no cached Project yet (first row)", async () => {
+    const { setSetting } = await import("@/lib/settings");
+    setSetting("magnific_token", "T-ib0");
+    setSetting("magnific_image_model", "nano-banana-2");
+    // No magnificProjectId → defaults to null (the first row creates the Project).
+    await seedVideo("vid_ib0", { title: "Byzantium" });
+    await enqueue({
+      video_id: "vid_ib0",
+      mode: "image-batch",
+      prompt: "the walls of Constantinople",
+      output_path: "images/0001.png",
+    });
+
+    const res = await callNextTask("T-ib0", {});
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.video_title).toBe("Byzantium");
+    expect(body.magnific_project_id).toBeNull();
   });
 
   it("returns empty body when queue_state='paused', even with a dispatchable row", async () => {
