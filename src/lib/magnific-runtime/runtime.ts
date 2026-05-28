@@ -202,4 +202,18 @@ export class MagnificRuntime {
   }
 }
 
-export const magnificRuntime = new MagnificRuntime();
+// Next.js bundles each App Router route handler independently in production,
+// so a bare `export const x = new X()` can be instantiated once PER route
+// bundle rather than once per process. The route handlers must share ONE
+// runtime (the browser /connect launches has to be the one /stop closes), so
+// pin the instance on globalThis — the standard Next pattern for a true
+// process-wide singleton across route bundles and the worker.
+// (Note: the dashboard pill staleness was a separate issue — GET /status was
+// statically prerendered; that is fixed by `force-dynamic` on that route.)
+const globalForRuntime = globalThis as unknown as {
+  __magnificRuntime?: MagnificRuntime;
+};
+
+export const magnificRuntime: MagnificRuntime =
+  globalForRuntime.__magnificRuntime ??
+  (globalForRuntime.__magnificRuntime = new MagnificRuntime());
