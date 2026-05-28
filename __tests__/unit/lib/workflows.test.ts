@@ -206,7 +206,7 @@ describe("materializeStepList — built-in regression target", () => {
   });
 });
 
-describe("narrative-magnific-nano-banana built-in (S1: seeded, gated off)", () => {
+describe("narrative-magnific-nano-banana built-in (S2: enabled)", () => {
   it("resolves with image_provider=magnific, chunk_images_only, no video provider", () => {
     const db = freshDb();
     const snap = resolveSnapshot(db, "narrative-magnific-nano-banana");
@@ -235,11 +235,11 @@ describe("narrative-magnific-nano-banana built-in (S1: seeded, gated off)", () =
     expect(materializeStepList(snap)).toEqual(IMAGES_ONLY_STEPS);
   });
 
-  it("is seeded enabled=0 (gated off until S2 lands the real Magnific provider)", () => {
+  it("is seeded enabled=1 (S2 landed the real Magnific provider)", () => {
     const db = freshDb();
     expect(
       getWorkflowFromDb(db, "narrative-magnific-nano-banana")!.enabled
-    ).toBe(0);
+    ).toBe(1);
   });
 });
 

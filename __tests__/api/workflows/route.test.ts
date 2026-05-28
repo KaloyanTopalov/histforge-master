@@ -87,6 +87,7 @@ describe("GET /api/workflows", () => {
       "google-flow-clips-only",
       "google-flow-images-only",
       "music-video-magnific-suno",
+      "narrative-magnific-nano-banana",
     ]);
   });
 

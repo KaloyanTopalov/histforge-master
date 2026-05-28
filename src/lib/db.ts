@@ -280,10 +280,10 @@ export const BUILTIN_WORKFLOWS: readonly SeedWorkflow[] = [
     music_provider: null,
     upscaler_provider: null,
     chunker_step: "chunk_images_only",
-    // enabled in S2 once MagnificImageProvider.generateBatch replaces the
-    // throwing stub — see the magnific-narrative spec. Gated off in S1 so a
-    // video can't select it and fail at the generate_images step.
-    enabled: 0,
+    // Enabled in S2: MagnificImageProvider.generateBatch now enqueues
+    // image-batch rows and awaits the queue, replacing the throwing stub —
+    // see the magnific-narrative spec.
+    enabled: 1,
     steps: [
       { step_name: "research_outline" },
       { step_name: "write_hook" },

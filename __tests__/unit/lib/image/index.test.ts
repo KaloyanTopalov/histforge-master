@@ -23,22 +23,15 @@ describe("getImageProvider", () => {
     ).toThrow(/Unknown image provider: "nope"/);
   });
 
-  it('returns a stub ImageProvider for "magnific" (belt-and-braces guard; music_video kind dispatches via magnific_queue, not generateBatch)', () => {
+  it('returns an ImageProvider for "magnific"', () => {
     const provider = getImageProvider("magnific", { moderator: noOpModerator });
     expect(provider).toBeDefined();
     expect(typeof provider.generateBatch).toBe("function");
   });
-
-  it("magnific stub's generateBatch throws a clear error pointing at the magnific_queue worker step", async () => {
-    const provider = getImageProvider("magnific", { moderator: noOpModerator });
-    await expect(
-      provider.generateBatch([], "/tmp", { videoId: "v1", projectsDir: "/tmp" })
-    ).rejects.toThrow(/magnific.*magnific_queue/i);
-  });
 });
 
 describe("imageProviders", () => {
-  it("exposes comfyui (singleton), google_flow (factory), and magnific (stub) — Object.keys is the enumeration contract", () => {
+  it("exposes comfyui (singleton), google_flow (factory), and magnific (singleton) — Object.keys is the enumeration contract", () => {
     expect(Object.keys(imageProviders)).toEqual([
       "comfyui",
       "google_flow",

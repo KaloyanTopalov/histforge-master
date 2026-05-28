@@ -1937,11 +1937,10 @@ describe("seedDefaultWorkflows", () => {
       // below in dedicated lookups.
       for (const row of rows) {
         expect(row.is_builtin).toBe(1);
-        // enabled is uniform=1 except the narrative-magnific builtin, which
-        // ships gated off (enabled=0) until S2 lands the real Magnific provider.
-        expect(row.enabled).toBe(
-          row.id === "narrative-magnific-nano-banana" ? 0 : 1
-        );
+        // enabled is uniform=1 across builtins. The narrative-magnific builtin
+        // shipped gated off in S1 and was enabled in S2 once the real Magnific
+        // image provider replaced the throwing stub.
+        expect(row.enabled).toBe(1);
         expect(row.version).toBe(1);
         expect(row.created_at).toBeGreaterThanOrEqual(before);
         expect(row.created_at).toBeLessThanOrEqual(after);

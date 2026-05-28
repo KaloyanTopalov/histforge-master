@@ -2,7 +2,7 @@ import type { PromptModerator } from "@/lib/moderator";
 import type { ImageProvider } from "./types";
 import { comfyuiProvider } from "./comfyui";
 import { makeGoogleFlowImageProvider } from "./google-flow";
-import { magnificImageProviderStub } from "./magnific";
+import { magnificImageProvider } from "./magnific";
 
 export type { ImageProvider } from "./types";
 
@@ -22,7 +22,7 @@ type ImageProviderEntry =
 export const imageProviders: Record<string, ImageProviderEntry> = {
   comfyui: comfyuiProvider,
   google_flow: ({ moderator }) => makeGoogleFlowImageProvider(moderator),
-  magnific: magnificImageProviderStub,
+  magnific: magnificImageProvider,
 };
 
 export function getImageProvider(
