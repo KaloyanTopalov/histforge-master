@@ -23,7 +23,7 @@
   "content_scripts": [
     {
       "matches": ["https://www.magnific.com/*"],
-      "js": ["content-shared.js", "content-magnific.js", "content-magnific-i2v.js"],
+      "js": ["content-shared.js", "content-magnific.js", "content-magnific-i2v.js", "content-image-batch.js"],
       "run_at": "document_idle"
     }
   ],

@@ -91,6 +91,30 @@ describe("magnific-ext manifest", () => {
       existsSync(path.join(EXT_ROOT, "content-magnific-i2v.js")),
     ).toBe(true);
   });
+
+  it("declares a content_script entry that injects content-image-batch.js on www.magnific.com (S4)", () => {
+    const m = readManifest();
+    const scripts = (m.content_scripts ?? []) as Array<{
+      matches: string[];
+      js: string[];
+    }>;
+    const magnificMatching = scripts.filter((s) =>
+      s.matches.some((p) => p.includes("www.magnific.com")),
+    );
+    const injectsBatch = magnificMatching.some((s) =>
+      s.js.includes("content-image-batch.js"),
+    );
+    expect(injectsBatch).toBe(true);
+    expect(
+      existsSync(path.join(EXT_ROOT, "content-image-batch.js")),
+    ).toBe(true);
+    // content-shared.js must still load first so editableFrom/fillPrompt are
+    // defined as isolated-world globals before any orchestrator runs.
+    const sharedScript = magnificMatching.find((s) =>
+      s.js.includes("content-image-batch.js"),
+    );
+    expect(sharedScript?.js[0]).toBe("content-shared.js");
+  });
 });
 
 describe("magnific-ext background.js importScripts order", () => {
@@ -142,6 +166,20 @@ describe("magnific-ext background.js importScripts order", () => {
     expect(idx("image-to-video.js")).toBeGreaterThanOrEqual(0);
     // executor file must precede the registry (registry refs runImageToVideo)
     expect(idx("image-to-video.js")).toBeLessThan(idx("executors/index.js"));
+    // registry must still precede messages.js
+    expect(idx("executors/index.js")).toBeLessThan(idx("messages.js"));
+  });
+
+  it("loads the image-batch executor before the registry (S4)", () => {
+    const src = readFileSync(path.join(EXT_ROOT, "background.js"), "utf8");
+    const imports = [...src.matchAll(/importScripts\(['"]([^'"]+)['"]\)/g)].map(
+      (m) => m[1],
+    );
+    const idx = (file: string): number =>
+      imports.findIndex((s) => s.endsWith(file));
+    expect(idx("image-batch.js")).toBeGreaterThanOrEqual(0);
+    // executor file must precede the registry (registry refs runImageBatch)
+    expect(idx("image-batch.js")).toBeLessThan(idx("executors/index.js"));
     // registry must still precede messages.js
     expect(idx("executors/index.js")).toBeLessThan(idx("messages.js"));
   });

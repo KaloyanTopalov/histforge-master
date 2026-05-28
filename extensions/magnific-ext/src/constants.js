@@ -22,3 +22,7 @@ const PROCESSED_JOB_IDS_CAP = 100;
 // `src/app/videos/[id]/magnific-hitl-banner.tsx`).
 const MAGNIFIC_IMAGE_GEN_URL = 'https://www.magnific.com/app/ai-image-generator';
 const MAGNIFIC_IMAGE_TO_VIDEO_URL = 'https://www.magnific.com/app/ai-video-generator';
+// Projects area for the narrative image-batch flow. The executor opens
+// `${MAGNIFIC_PROJECTS_URL}/<uuid>` when a Project is cached, else
+// `${MAGNIFIC_PROJECTS_URL}/work` where the content script creates one.
+const MAGNIFIC_PROJECTS_URL = 'https://www.magnific.com/app/projects';
