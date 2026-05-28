@@ -427,8 +427,31 @@ describe("connect()", () => {
 
     expect(page.bringToFront).toHaveBeenCalled();
     expect(page.goto).toHaveBeenCalledWith("https://www.magnific.com/log-in");
-    expect(page.waitForURL).toHaveBeenCalledWith(/\/app\//, { timeout: 5 * 60 * 1000 });
+    expect(page.waitForURL).toHaveBeenCalledWith(/\/app(\/|$)/, { timeout: 5 * 60 * 1000 });
     expect(page.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits on a pattern that matches a bare /app redirect (no trailing slash) — the verification regression", async () => {
+    // Magnific redirects an already-logged-in /log-in visit to bare
+    // `https://www.magnific.com/app` (no trailing slash). The old pattern
+    // `/\/app\//` required a slash after `app`, so connect() never saw the
+    // transition and burned the full 5-min timeout reporting a false failure.
+    // Guard the exact URL shapes the pattern must (and must not) match.
+    const { runtime, ctx } = await startedRuntime();
+    const page = makeMockPage();
+    const cdp = makeMockCDPSession();
+    ctx.newPage.mockResolvedValueOnce(page);
+    ctx.newCDPSession.mockResolvedValueOnce(cdp);
+
+    const result = await runtime.connect();
+    expect(result).toEqual({ success: true });
+
+    const [pattern] = page.waitForURL.mock.calls[0] as [RegExp, unknown];
+    expect(pattern.test("https://www.magnific.com/app")).toBe(true); // bare /app
+    expect(pattern.test("https://www.magnific.com/app/projects/work")).toBe(true);
+    // Must not match the logged-out page, nor a coincidental /apps prefix.
+    expect(pattern.test("https://www.magnific.com/log-in")).toBe(false);
+    expect(pattern.test("https://www.magnific.com/apps")).toBe(false);
   });
 
   it("timeout: returns {success:false, reason:'timeout'} and does NOT reposition window back", async () => {

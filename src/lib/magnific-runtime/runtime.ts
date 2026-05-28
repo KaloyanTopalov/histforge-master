@@ -140,7 +140,11 @@ export class MagnificRuntime {
         await page.bringToFront();
         await page.goto("https://www.magnific.com/log-in");
         try {
-          await page.waitForURL(/\/app\//, { timeout: timeoutMs });
+          // Magnific's logged-in redirect lands on bare `/app` (no trailing
+          // slash) as well as `/app/...`. The pattern must match both, or an
+          // already-logged-in session never satisfies the wait and connect()
+          // burns the full timeout reporting a false failure.
+          await page.waitForURL(/\/app(\/|$)/, { timeout: timeoutMs });
         } catch {
           // Leave the window visible so the operator can see what stalled —
           // skip the return-to-hidden reposition. The dashboard surfaces the
