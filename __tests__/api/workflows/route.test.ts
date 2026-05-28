@@ -46,7 +46,7 @@ describe("GET /api/workflows", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(Array.isArray(body.workflows)).toBe(true);
-    expect(body.workflows).toHaveLength(5);
+    expect(body.workflows).toHaveLength(6);
 
     const comfyui = body.workflows.find(
       (w: { id: string }) => w.id === "comfyui"
@@ -105,6 +105,7 @@ describe("GET /api/workflows", () => {
       "google-flow-clips-only",
       "google-flow-images-only",
       "music-video-magnific-suno",
+      "narrative-magnific-nano-banana",
     ]);
   });
 });

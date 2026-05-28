@@ -52,6 +52,7 @@ function sampleVideo(overrides: Partial<Video> = {}): Video {
     image_chunk_target_seconds: null,
     image_chunk_min_seconds: null,
     image_chunk_max_seconds: null,
+    magnific_project_id: null,
     created_at: 100,
     ...overrides,
   };

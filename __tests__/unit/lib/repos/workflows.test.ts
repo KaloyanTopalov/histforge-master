@@ -53,6 +53,7 @@ describe("workflowsRepo.list", () => {
       "google-flow-clips-only",
       "google-flow-images-only",
       "music-video-magnific-suno",
+      "narrative-magnific-nano-banana",
     ]);
   });
 });

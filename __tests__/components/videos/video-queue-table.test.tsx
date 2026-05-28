@@ -40,6 +40,7 @@ function video(overrides: Partial<VideoListItem> = {}): VideoListItem {
     image_chunk_target_seconds: null,
     image_chunk_min_seconds: null,
     image_chunk_max_seconds: null,
+    magnific_project_id: null,
     created_at: 1000,
     runtime_ms: 0,
     running_step_started_at: null,
