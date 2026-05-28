@@ -24,11 +24,26 @@ Google Flow when Flow is not quota-blocked, and strictly better when it
 is.
 
 The operator also wants per-video organization in Magnific: each video
-gets its own folder in the `/app/projects/work` area, named after the
+gets its own **Project** in the `/app/projects` area, named after the
 video title, and all of that video's generated images land in it.
 
+> **Revised 2026-05-28 after a live probe.** The original draft modeled the
+> per-video unit on a `/app/projects/work` "Create" popover with create-new
+> menu options that a live probe found do not exist. The real per-video unit
+> is a Magnific **Project** (URL `/app/projects/<uuid>`, id is a UUID v4),
+> and generation is scoped to the **current Project** (there is no
+> per-generation "save here" picker). The sections below are rewritten
+> against the real model; the server-side plumbing (worker step, provider,
+> routes, tests) is unchanged apart from the `magnific_folder_id` →
+> `magnific_project_id` rename. Evidence: the
+> `project-magnific-narrative-folder-model-disproven` memory and the
+> `probe/magnific-folder-context` branch artifacts.
+
 Character-reference identity lock is **deferred to v2** — explicitly
-out of scope here.
+out of scope here. (The probe confirmed the generator exposes Style /
+Character / Add reference slots — `[data-cy="reference-style-placeholder"]`,
+`reference-character-placeholder`, `reference-add-button`, up to 14 inputs —
+which is the DOM hook the v2 character-lock spec will build on.)
 
 ## Scope
 
@@ -37,9 +52,10 @@ out of scope here.
 1. **New `magnific_queue` mode `image-batch`** (`no_timeout=0`, reaper
    applies normal dispatch-age timeouts).
 2. **New extension executor + content script** for `image-batch`:
-   create-folder-if-missing → enter folder → fill prompt → optionally
-   select Nano Banana 2 model → Generate → wait for one new
-   `img[src*=cdnpk.net]` → harvest URL → submit.
+   ensure-project-exists → set + VERIFY current Project → launch the image
+   generator → turn off the smart-prompt toggle → fill prompt → select
+   Nano Banana 2 model → Generate → wait for one new `img[src*=cdnpk.net]`
+   (diff on the numeric render id, not the filename) → harvest URL → submit.
 3. **`MagnificImageProvider.generateBatch`** actually enqueues queue
    rows instead of throwing; coordinates per-chunk dispatch and awaits
    completion via the existing `waitForMagnificQueue` pattern.
@@ -48,19 +64,19 @@ out of scope here.
    `resolveDeps` for narrative snapshots whose `image_provider` is
    `magnific`.
 5. **Database migration:** new nullable column
-   `videos.magnific_folder_id TEXT NULL` to cache the Magnific folder
-   identifier after first creation, so subsequent rows for the same
-   video skip the create step.
+   `videos.magnific_project_id TEXT NULL` to cache the Magnific Project
+   UUID after first creation, so subsequent rows for the same video skip
+   the create step.
 6. **Workflow registry entry** `narrative-magnific-nano-banana` with
    `image_provider='magnific'` and the existing narrative chunker/step
    list otherwise. Enabled by default.
 7. **`next-task` route enhancement:** add `video_title` and
-   `magnific_folder_id` to the per-row payload so the extension can
-   ensure-folder-exists without a separate API call.
-8. **Settings:** confirm `magnific_image_model` accepts a Nano Banana 2
-   slug (free-text string per the existing schema; verify the slug
-   Magnific's model picker displays — likely `Nano Banana 2` or
-   `Gemini Nano Banana 2`).
+   `magnific_project_id` to the per-row payload so the extension can
+   ensure-project-exists without a separate API call.
+8. **Settings:** confirm `magnific_image_model` accepts the Nano Banana 2
+   slug (free-text string per the existing schema). The probe confirmed
+   the model picker displays **"Google Nano Banana 2"** (picker item
+   `[data-cy="ai-model-item-slim-imagen-nano-banana-2-flash"]`).
 9. **Dashboard progress panel** mirroring `FlowProgressPanel`, gated on
    `image_provider === 'magnific'` for the video's workflow snapshot.
 
@@ -92,7 +108,7 @@ out of scope here.
 ```
 videos table
    image_provider='magnific' (via workflow snapshot)
-   magnific_folder_id ──┐  (cached after first folder creation)
+   magnific_project_id ─┐  (cached after first Project creation; UUID v4)
                         │
                         ▼
        src/worker/steps/generate-images-magnific.ts
@@ -103,7 +119,7 @@ videos table
        generateBatch(chunks, video):
          for each chunk:
            enqueueTask({mode:'image-batch', video_id, chunk_id,
-                        payload:{prompt, video_title, magnific_folder_id, model}})
+                        payload:{prompt, video_title, magnific_project_id, model}})
          await waitForMagnificQueue(video_id)
                         │
                         ▼
@@ -115,20 +131,30 @@ videos table
                         ▼
        extensions/magnific-ext/src/executors/image-batch.js
        (sibling of image-hitl.js + image-to-video.js)
-         1. ensureFolder(video_title, magnific_folder_id)
-            - if folder_id supplied: navigate to /app/projects/work/<id>
-            - else: create folder, harvest id, post back via submit-result
-         2. openCreatePopover → click [data-cy=creating-popover-new-image]
-         3. fillPrompt(prompt) via shared setNativeValue
-         4. selectModel(magnific_image_model) via existing model picker
-         5. clickGenerate
-         6. waitForNewCdnpkVariation (snapshot-then-diff)
-         7. submit-result with resultUrl + (first-time only) magnific_folder_id
+         1. ensureProject(video_title, magnific_project_id)
+            - if project_id supplied: navigate to /app/projects/<uuid>
+            - else: create Project (new-project-card → name modal →
+              "Create"), harvest the UUID from the URL, post it back
+              via submit-result
+         2. set + VERIFY current Project — read
+            [data-cy=header-current-project-link]; if it doesn't match the
+            target UUID, do NOT generate → submit-result
+            error="wrong_project_active", row → failed
+         3. launch generator: [data-cy=topbar-start-creating-button] →
+            [data-cy=registered-tool-ai-image-generator]
+         4. turn OFF [data-cy=smart-prompt-toggle]; fillPrompt(prompt)
+            into [data-cy=image-prompt-input] (contenteditable div)
+         5. selectModel → [data-cy=tti-mode-selector-v3-trigger] →
+            [data-cy=ai-model-item-slim-imagen-nano-banana-2-flash]
+         6. clickGenerate → button[data-cy=generate-button]
+         7. waitForNewCdnpkVariation (snapshot-then-diff on the numeric
+            render id in pikaso.cdnpk.net/.../<numericId>/render.png)
+         8. submit-result with resultUrl + (first-time only) magnific_project_id
                         │
                         ▼
        /api/magnific/submit-result/[token]
        - downloads variation to projects/<video_id>/images/<chunk_id>.png
-       - if magnific_folder_id present in body: persist to videos row
+       - if magnific_project_id present in body: persist to videos row
        - flips row to submitted
                         │
                         ▼
@@ -140,10 +166,17 @@ videos table
 ### Migration: `src/lib/db.ts`
 
 ```sql
-ALTER TABLE videos ADD COLUMN magnific_folder_id TEXT NULL;
+ALTER TABLE videos ADD COLUMN magnific_project_id TEXT NULL;
 ```
 
 Idempotent via the existing pragma-checked pattern. No default seed.
+
+> **`magnific_project_id` is a Magnific Project UUID v4** (URL
+> `/app/projects/<uuid>`). Magnific's hierarchy is **Project → Folders →
+> assets**; we use **one Project per video** for isolation. Magnific's
+> sub-folder layer is a *manual* organization feature we do **not** use —
+> the image generator scopes output to the current *Project* and cannot
+> target a sub-folder.
 
 ### `magnific_queue` mode enum
 
@@ -160,7 +193,7 @@ narrative videos only `image-batch` rows will ever exist.
 ```ts
 export interface Video {
   // ... existing fields
-  magnific_folder_id: string | null;
+  magnific_project_id: string | null; // Magnific Project UUID v4
 }
 ```
 
@@ -176,47 +209,74 @@ later, it can graduate to an enum.
 ### New executor: `src/executors/image-batch.js`
 
 Sibling of `image-hitl.js`. Registers under the `image-batch` mode in
-`src/executors/index.js`. Lifecycle:
+`src/executors/index.js`. Lifecycle (selectors confirmed live 2026-05-28):
 
 1. **Receive task** with payload `{prompt, video_title,
-   magnific_folder_id, model, chunk_id}`.
-2. **Ensure folder.** If `magnific_folder_id` is non-null, navigate to
-   `/app/projects/work/<id>` (URL pattern verified at implementation).
-   Else:
+   magnific_project_id, model, chunk_id}`.
+2. **Ensure Project.** If `magnific_project_id` is non-null, navigate to
+   `/app/projects/<uuid>`. Else:
    - Navigate to `/app/projects/work`.
-   - Click the "Create" button (text-based query — no `data-cy`).
-   - Wait for popover, click `button[data-cy="creating-popover-new-folder"]`.
-   - Wait for "New folder" modal, fill the name input with `video_title`.
-   - Click the modal's blue "Create" button (text + class chain query).
-   - Wait for folder tile to appear in grid, navigate into it.
-   - Harvest the folder id from the URL (likely `/app/projects/work/<id>`)
-     and stash it on the in-progress task — submit-result will include
-     it in the body.
-3. **Start image generation from inside folder.** Click "Create" again
-   → click `button[data-cy="creating-popover-new-image"]` (pattern
-   match — verify at implementation; the screenshot only confirmed
-   the data-cy for "Folder", but the sibling "Image" button has the
-   same `creating-popover-new-*` shape).
-4. **Fill prompt** via existing `[data-cy=image-prompt-input]` + the
-   `setNativeValue` helper from `content-shared.js`.
-5. **Select model** via existing `[data-cy=tti-mode-selector-v3-trigger]`
-   + prefix-match against the model setting value. This reuses the
-   logic from `content-magnific.js`.
-6. **Click Generate** via existing `button[data-cy=generate-button]`.
-7. **Wait for new variation.** Snapshot-then-diff on
-   `img[src*=cdnpk.net]` with the existing 200px size floor. Reuses
-   the harvester from `content-magnific-i2v.js`.
-8. **Submit result.** POST to `/api/magnific/submit-result/[token]` with
-   `{resultUrl, magnific_folder_id?}`. The `magnific_folder_id` field
-   is present only on the *first* row per video (when the extension
-   just created the folder).
+   - Dismiss the cookie-consent banner if present (it can intercept clicks).
+   - Click the create-project entry `[data-cy="new-project-card"]` (or the
+     sidebar `[data-cy="v3-create-project-button"]`).
+   - In the "New Project" modal (note: **not** a `[role=dialog]`), fill the
+     name input `input[placeholder*="Enter a name for your project"]` with
+     `video_title`. Access defaults to "Private" — leave it.
+   - Click the modal's primary **"Create"** button — text-based, it has
+     **no `data-cy`** (distinct from the header
+     `[data-cy="projects-work-header-create-button"]`).
+   - Magnific navigates into the new Project at `/app/projects/<uuid>`.
+     Harvest the UUID from the URL and stash it on the in-progress task —
+     submit-result will include it in the body.
+3. **Set + VERIFY current Project (load-bearing).** Read
+   `[data-cy="header-current-project-link"]`; if its target does not match
+   the task's Project UUID, switch via
+   `[data-cy="project-tree-dropdown-trigger"]`. If it still does not match,
+   **do NOT generate** — submit-result with `error="wrong_project_active"`,
+   row → failed. Generation is scoped to the *current* Project; skipping
+   this risks dumping one video's images into another's Project.
+4. **Launch the image generator from inside the Project.** Click
+   `[data-cy="topbar-start-creating-button"]` → click
+   `[data-cy="registered-tool-ai-image-generator"]`. This lands on the
+   global `/app/ai-image-generator`, but the current-Project context
+   carries over from the Project you launched from — re-read
+   `header-current-project-link` after the generator loads to be safe.
+5. **Turn OFF the smart-prompt toggle.** `[data-cy="smart-prompt-toggle"]`
+   ("AI prompt") is **ON by default** and rewrites/expands the prompt —
+   bad for literal storyboard prompts. Toggle it off before filling.
+6. **Fill prompt** via `[data-cy="image-prompt-input"]`. **Note:** this is
+   a **contenteditable `<div>`**, not a textarea/input — `setNativeValue`
+   does not apply; set `textContent` + dispatch `InputEvent('input')`, i.e.
+   `fillPrompt`'s contenteditable branch in `content-shared.js`.
+7. **Select model** via `[data-cy="tti-mode-selector-v3-trigger"]`
+   (defaults to "Auto") → click
+   `[data-cy="ai-model-item-slim-imagen-nano-banana-2-flash"]` (display
+   "Google Nano Banana 2"); type into the picker's search first if the item
+   isn't visible. Nano Banana 2 defaults to **1 image** per Generate.
+8. **Click Generate** via `button[data-cy="generate-button"]`.
+9. **Wait for new variation.** Snapshot-then-diff on `img[src*=cdnpk.net]`
+   with the existing 200px size floor. Results are served from
+   `pikaso.cdnpk.net/.../<numericId>/render.png` — **diff on the numeric
+   path segment, NOT the filename** (every result is `render.png`, so a
+   basename diff matches nothing new).
+10. **Submit result.** POST to `/api/magnific/submit-result/[token]` with
+    `{resultUrl, magnific_project_id?}`. The `magnific_project_id` field is
+    present only on the *first* row per video (when the extension just
+    created the Project).
 
 ### Shared primitives reused
 
-- `content-shared.js` helpers: `setNativeValue`, `editableFrom`,
-  `waitFor`, `dumpDataCyAttributes`, `fillPrompt`.
-- Variation harvester pattern from `content-magnific-i2v.js`.
-- Model picker pattern from `content-magnific.js`.
+- `content-shared.js` helpers: `editableFrom`, `waitFor`,
+  `dumpDataCyAttributes`, `fillPrompt`. **`fillPrompt` already handles the
+  contenteditable case** — `image-prompt-input` is a `<div>`, so it takes
+  the `textContent` + `InputEvent` branch, not the `setNativeValue`
+  textarea/input branch.
+- Variation harvester pattern from `content-magnific-i2v.js`, **adapted to
+  diff on the numeric render id** (`pikaso.cdnpk.net/.../<numericId>/render.png`)
+  rather than the URL string, since every result shares the `render.png`
+  basename.
+- Model picker pattern from `content-magnific.js`, targeting the
+  `[data-cy="ai-model-item-slim-imagen-nano-banana-2-flash"]` item.
 
 No new shared helpers should be needed.
 
@@ -227,12 +287,13 @@ already covers `/app/projects/work`. No manifest change required.
 
 ### Diagnostic logging
 
-The executor emits `step=create-folder status=...`, `step=enter-folder
-status=...`, `step=open-image-popover status=...`,
-`step=fill-prompt status=...`, etc. on the same logging contract as
-the existing executors. On a selector miss, dump the visible
-`[data-cy]` inventory + a screenshot of failing context so the
-operator can patch the selector list.
+The executor emits `step=ensure-project status=...`, `step=verify-project
+status=...`, `step=launch-generator status=...`, `step=smart-prompt-off
+status=...`, `step=fill-prompt status=...`, `step=select-model status=...`,
+`step=generate status=...`, etc. on the same logging contract as the
+existing executors. On a selector miss, dump the visible `[data-cy]`
+inventory + a screenshot of failing context so the operator can patch the
+selector list.
 
 ## Server-side changes
 
@@ -276,7 +337,7 @@ class MagnificImageProvider implements ImageProvider {
         payload: {
           prompt: chunk.prompt,
           video_title: video.title,
-          magnific_folder_id: video.magnific_folder_id, // null on first row
+          magnific_project_id: video.magnific_project_id, // null on first row
           model: getSetting("magnific_image_model", ctx.db),
         },
       });
@@ -323,23 +384,25 @@ the seed is operator-edited):
 
 `src/app/api/magnific/next-task/[token]/route.ts` already projects
 queue payloads to the wire format. Add `video_title` and
-`magnific_folder_id` to the projection for `image-batch` rows:
+`magnific_project_id` to the projection for `image-batch` rows:
 
 ```ts
 if (task.mode === "image-batch") {
   const video = videosRepo.findById(db, task.video_id);
   payload.video_title = video.title;
-  payload.magnific_folder_id = video.magnific_folder_id;
+  payload.magnific_project_id = video.magnific_project_id;
 }
 ```
 
 ### `submit-result` route enhancement
 
 `src/app/api/magnific/submit-result/[token]/route.ts` accepts an
-optional `magnific_folder_id` field for `image-batch` results. When
-present, persist to the videos row via a new `setMagnificFolderId(db,
-id, folderId)` helper. Idempotent — subsequent rows for the same
-video that include the same `magnific_folder_id` are no-ops.
+optional `magnific_project_id` field for `image-batch` results (and the
+`error="wrong_project_active"` / `error="project_create_failed"` failure
+cases). When present, persist to the videos row via a new
+`setMagnificProjectId(db, id, projectId)` helper. Idempotent — subsequent
+rows for the same video that include the same `magnific_project_id` are
+no-ops.
 
 ### Provider stub deprecation
 
@@ -357,21 +420,23 @@ New `MagnificProgressPanel` component mirroring `FlowProgressPanel`,
 gated on the video's workflow snapshot having
 `image_provider === 'magnific'`. Displays:
 
-- Folder created (yes/no, name)
+- Project created (yes/no, name + UUID)
 - Queue depth (pending / dispatched / submitted / failed counts)
 - Per-row status with chunk_id and current step
 - Failed-row inline retry button
 
 Hooks into the existing `/api/magnific/queue-summary/[videoId]`
-endpoint with a small extension to surface folder state.
+endpoint with a small extension to surface Project state.
 
 ### Settings → Magnific tab
 
 Existing tab gains a one-line note under `magnific_image_model`:
 
 > For narrative videos, set this to your preferred Magnific text-to-image
-> model (e.g. `Nano Banana 2`). The extension's model picker prefix-matches
-> against this string.
+> model (e.g. `Google Nano Banana 2`, picker item
+> `[data-cy="ai-model-item-slim-imagen-nano-banana-2-flash"]`). The
+> extension's model picker prefix-matches the display name against this
+> string.
 
 No new field — the existing `magnific_image_model` setting carries the
 slug.
@@ -380,12 +445,12 @@ slug.
 
 | Failure | Surface | Behavior |
 |---|---|---|
-| Folder creation fails (selector miss) | Extension | Selector dump logged; submit-result with `error="folder_create_failed"`; queue row → failed; operator retries |
-| Folder navigation fails (cached id stale because folder deleted in Magnific) | Extension | Detect via post-nav URL check; clear `magnific_folder_id` server-side via submit-result with `{magnific_folder_id: null, error: "folder_missing"}`; retry creates new folder |
+| Project creation fails (selector miss) | Extension | Selector dump logged; submit-result with `error="project_create_failed"`; queue row → failed; operator retries |
+| Project navigation fails (cached UUID stale because Project deleted in Magnific) | Extension | Detect via post-nav URL check; clear `magnific_project_id` server-side via submit-result with `{magnific_project_id: null, error: "project_missing"}`; retry creates a new Project |
+| **Wrong Project active at generate time** | Extension | After set-current-Project, `[data-cy=header-current-project-link]` does not match the task UUID → **do NOT generate**; submit-result with `error="wrong_project_active"`; row → failed (prevents polluting another video's Project) |
 | Image generation fails / variation never appears | Extension | Timeout via existing waitFor pattern; submit-result with error; row → failed |
 | Magnific session expires mid-batch | Extension SW | Existing `session_expired` status event flips `magnific_relogin_needed`; queue rows after that point fail until operator re-logs in |
-| Model picker can't find Nano Banana 2 | Extension | Existing prefix-match dump pattern; row → failed with diagnostic |
-| New Image popover option's data-cy doesn't match the assumed pattern | Extension | Fallback: text-based query for "Image" button inside the popover |
+| Model picker can't find Nano Banana 2 | Extension | Existing prefix-match dump pattern (target `[data-cy=ai-model-item-slim-imagen-nano-banana-2-flash]`); row → failed with diagnostic |
 
 No auto-retry. Per the domain skill, Magnific failures are operator-
 actionable (dashboard retry) or terminal.
@@ -393,8 +458,9 @@ actionable (dashboard retry) or terminal.
 ## Testing strategy
 
 1. **`__tests__/unit/extensions/magnific-ext/content-image-batch.test.ts`** (new) —
-   image-batch content script: folder creation flow, folder navigation by
-   cached id, prompt fill, model selection, variation harvest. Mirror
+   image-batch content script: Project creation flow, Project navigation by
+   cached UUID, current-Project verify-gate, prompt fill, model selection,
+   variation harvest. Mirror
    the existing `content-magnific.test.ts` / `content-magnific-i2v.test.ts`
    structure. Use jsdom + the existing test fixtures.
 
@@ -403,11 +469,11 @@ actionable (dashboard retry) or terminal.
    with the right payload shape; awaits `waitForMagnificQueue`.
 
 3. **`__tests__/api/magnific/next-task/route.test.ts`** (extend) —
-   image-batch rows surface `video_title` + `magnific_folder_id` in the
+   image-batch rows surface `video_title` + `magnific_project_id` in the
    response payload.
 
 4. **`__tests__/api/magnific/submit-result/route.test.ts`** (extend) —
-   `magnific_folder_id` in the body persists to videos row; null clears.
+   `magnific_project_id` in the body persists to videos row; null clears.
 
 5. **`__tests__/unit/worker/steps/generate-images-magnific.test.ts`** (new) —
    step reads chunks, filters image-kind, dispatches via
@@ -423,17 +489,17 @@ actionable (dashboard retry) or terminal.
 
 ## File-level deliverables
 
-- `src/types.ts` — `Video` gains `magnific_folder_id`.
+- `src/types.ts` — `Video` gains `magnific_project_id`.
 - `src/lib/db.ts` — ALTER TABLE migration; new workflow seed.
 - `src/lib/repos/magnific.ts` — `MagnificQueueMode` extended with
   `image-batch`.
-- `src/lib/repos/videos.ts` — `setMagnificFolderId` helper.
+- `src/lib/repos/videos.ts` — `setMagnificProjectId` helper.
 - `src/lib/image/magnific.ts` — real `MagnificImageProvider.generateBatch`.
 - `src/lib/workflows.ts` — registry entry (or seed).
 - `src/worker/steps/generate-images-magnific.ts` — new step.
 - `src/worker/pipeline.ts` — register the new step.
 - `src/app/api/magnific/next-task/[token]/route.ts` — payload projection.
-- `src/app/api/magnific/submit-result/[token]/route.ts` — folder-id persistence.
+- `src/app/api/magnific/submit-result/[token]/route.ts` — project-id persistence.
 - `src/app/videos/[id]/magnific-progress-panel.tsx` — new component.
 - `src/app/videos/[id]/video-detail-client.tsx` — mount the new panel.
 - `extensions/magnific-ext/manifest.json` — register the new executor
@@ -448,11 +514,15 @@ actionable (dashboard retry) or terminal.
 - **Backwards compatibility:** New workflow, new queue mode, new
   column. Existing videos / workflows / queue rows untouched. The
   music-video Magnific flow is unaffected.
-- **Selector fragility:** Three new selectors load-bear on Magnific's
-  DOM (Create popover trigger, New Image option, modal Create button).
-  All three have fallback queries (text-based or class-chain). If
-  Magnific renames any data-cy in a future release, the diagnostic
-  dump pattern surfaces it within one failed row.
+- **Selector fragility:** The executor load-bears on Magnific's v3 DOM
+  hooks — `new-project-card`, the no-`data-cy` modal "Create" button,
+  `header-current-project-link`, `project-tree-dropdown-trigger`,
+  `topbar-start-creating-button`, `registered-tool-ai-image-generator`,
+  `smart-prompt-toggle`, `image-prompt-input`,
+  `tti-mode-selector-v3-trigger`,
+  `ai-model-item-slim-imagen-nano-banana-2-flash`, `generate-button`. All
+  were confirmed live on 2026-05-28, but Magnific ships UI changes; the
+  diagnostic `[data-cy]` dump surfaces a rename within one failed row.
 - **No multi-tab parallelism:** Single-tab serial. Throughput estimate
   ~50min per 2-hour narrative video. Acceptable for the operator's
   v1 use case.
@@ -486,8 +556,9 @@ Manual smoke after each layer:
 - After (2): assert queue rows materialize correctly via a real PATCH
   → worker pickup → row inspection.
 - After (4): end-to-end against the live Magnific UI on one short
-  test video (e.g. 60s narrative with 7-8 images). Verify the folder
-  is created, images land inside, and the harvest URL matches.
+  test video (e.g. 60s narrative with 7-8 images). Verify the Project
+  is created, the current-Project verify-gate passes, images land inside
+  the Project, and the harvest URL matches.
 
 PR title: `magnific-narrative: per-video Magnific Nano Banana 2 image
-generation with folder isolation`.
+generation with Project isolation`.
