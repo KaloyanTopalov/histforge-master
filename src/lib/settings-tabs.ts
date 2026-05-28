@@ -53,6 +53,13 @@ export const TAB_FIELDS: Record<TabId, readonly SettingKey[]> = {
     "magnific_dispatch_timeout_minutes",
     "music_video_loop_trim_tail_seconds",
     "music_video_loop_xfade_seconds",
+    // Magnific runtime — HistForge-managed Playwright Chromium that boots
+    // the magnific-ext extension in a persistent context. Foundation-layer
+    // wiring in S1; the runtime lifecycle module ships in S2.
+    "magnific_runtime_enabled",
+    "magnific_runtime_user_data_dir",
+    "magnific_runtime_window_visible",
+    "magnific_runtime_extension_path",
   ],
   // Visual-style settings live in their own `visual_styles` table —
   // the tab renders a master-detail gallery that owns its own REST

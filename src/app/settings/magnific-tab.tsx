@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/collapsible";
 import { ChevronDown, Eye, EyeOff } from "lucide-react";
 import {
+  BoolField,
   FieldGrid,
   FieldGroup,
   NumberField,
@@ -17,6 +18,14 @@ import {
   ReadOnlyField,
   TextField,
 } from "./field-primitives";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { MagnificRuntimeStatus } from "./magnific-runtime-status";
 
 interface MagnificTabProps {
   values: AllSettings;
@@ -58,6 +67,28 @@ export function MagnificTab({
 }: MagnificTabProps): JSX.Element {
   const [revealed, setRevealed] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Connect modal is dismissible without canceling the in-flight POST —
+  // the runtime's re-entrancy guard fast-fails any re-click on Connect
+  // Magnific (returns connect_in_progress without restarting the wait).
+  const [connectOpen, setConnectOpen] = useState(false);
+
+  async function handleRuntimeAction(
+    action: "start" | "connect",
+  ): Promise<void> {
+    if (action === "start") {
+      await fetch("/api/magnific/runtime/start", { method: "POST" });
+      return;
+    }
+    setConnectOpen(true);
+    try {
+      await fetch("/api/magnific/runtime/connect", { method: "POST" });
+    } finally {
+      // Only close if the operator hasn't already dismissed the modal —
+      // an early dismissal should stay dismissed even after the POST
+      // returns.
+      setConnectOpen((open) => (open ? false : open));
+    }
+  }
 
   async function regenerate(): Promise<void> {
     if (busy) return;
@@ -185,6 +216,72 @@ export function MagnificTab({
           ))}
         </FieldGrid>
       </Panel>
+
+      <FieldGroup title="Runtime">
+        <BoolField
+          id="magnific_runtime_enabled"
+          label="Enable runtime"
+          value={values.magnific_runtime_enabled}
+          onChange={(v) => update("magnific_runtime_enabled", v)}
+        />
+        <div className="flex flex-wrap items-center gap-3">
+          <MagnificRuntimeStatus
+            enabled={values.magnific_runtime_enabled}
+            onAction={(a) => void handleRuntimeAction(a)}
+          />
+          <Button
+            type="button"
+            variant="success"
+            size="sm"
+            disabled={!values.magnific_runtime_enabled}
+            onClick={() => void handleRuntimeAction("connect")}
+          >
+            Connect Magnific
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          The runtime is HistForge&rsquo;s own Playwright Chromium with
+          magnific-ext preloaded and a persistent userDataDir. Click
+          &ldquo;Connect Magnific&rdquo; once after enabling to log in;
+          the cookies persist across restarts.
+        </p>
+        <FieldGrid>
+          <TextField
+            id="magnific_runtime_user_data_dir"
+            label="User data directory"
+            value={values.magnific_runtime_user_data_dir}
+            onChange={(v) => update("magnific_runtime_user_data_dir", v)}
+            hint="Persistent cookies / login state. Default 'data/magnific-userdata'."
+          />
+          <TextField
+            id="magnific_runtime_extension_path"
+            label="Extension path"
+            value={values.magnific_runtime_extension_path}
+            onChange={(v) => update("magnific_runtime_extension_path", v)}
+            hint="Path to magnific-ext directory loaded into the runtime."
+          />
+        </FieldGrid>
+        <BoolField
+          id="magnific_runtime_window_visible"
+          label="Show browser window"
+          value={values.magnific_runtime_window_visible}
+          onChange={(v) => update("magnific_runtime_window_visible", v)}
+        />
+      </FieldGroup>
+
+      <Dialog open={connectOpen} onOpenChange={setConnectOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Connect Magnific</DialogTitle>
+            <DialogDescription>
+              A browser window has opened — log in to Magnific in that
+              window. If you don&rsquo;t see it, check your taskbar. You
+              can close this dialog at any time; the runtime will
+              continue waiting.
+            </DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
 
       <Collapsible className="space-y-4">
         <CollapsibleTrigger className="group inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-background px-3 py-2 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:border-[hsl(225_22%_24%)] dark:hover:bg-[hsl(228_22%_12%)]">

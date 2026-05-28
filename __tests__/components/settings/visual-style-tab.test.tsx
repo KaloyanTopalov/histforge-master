@@ -122,6 +122,10 @@ const defaults: AllSettings = {
   music_video_loop_xfade_seconds: 0.2,
   style_lock_description: STYLE_LOCK_SEED,
   character_lock_negative: NEGATIVE_LOCK_SEED,
+  magnific_runtime_enabled: false,
+  magnific_runtime_user_data_dir: "data/magnific-userdata",
+  magnific_runtime_window_visible: false,
+  magnific_runtime_extension_path: "extensions/magnific-ext",
 };
 
 beforeEach(() => {

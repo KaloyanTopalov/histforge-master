@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { getDb } from "@/lib/db";
 import { startReaper } from "@/lib/flow-watcher";
+import { magnificRuntime } from "@/lib/magnific-runtime";
 import * as gfRepo from "@/lib/repos/google-flow";
 import * as magnificRepo from "@/lib/repos/magnific";
 import { getSetting } from "@/lib/settings";
@@ -44,6 +45,19 @@ async function main(): Promise<void> {
   resetStaleRunningSteps(db);
   gfRepo.resetAllDispatchedOnStartup(db);
   magnificRepo.resetAllDispatchedOnStartup(db);
+  // Magnific runtime auto-boot (Decision 3, refined in S3): narrowed from
+  // `NODE_ENV !== "development"` to `NODE_ENV === "production"`. Dev, test,
+  // CI, and any future env stay opt-in via the dashboard's "Connect Magnific"
+  // button — no env enumeration, no accidental browser launches from a
+  // `npm test` invocation that happens to import the worker.
+  if (
+    process.env.NODE_ENV === "production" &&
+    getSetting("magnific_runtime_enabled", db)
+  ) {
+    void magnificRuntime.start().catch((err) => {
+      console.error("[magnific-runtime] start failed:", err);
+    });
+  }
   const stopReaper = startReaper(db, {
     dispatchTimeoutMinutes: getSetting(
       "google_flow_dispatch_timeout_minutes",

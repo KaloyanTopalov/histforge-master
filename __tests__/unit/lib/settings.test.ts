@@ -268,7 +268,101 @@ describe("getAllSettings", () => {
         "2D hand-drawn animation style, plain white background, pure black line work only, no color, no shading, no gradients, no 3D rendering, no photorealism, slight hand-drawn imperfection in linework. The character must be drawn in the exact same minimalist style as the reference ingredient.",
       character_lock_negative:
         "color, shading, gradient, 3D, photorealistic, vector-clean lines, multiple characters, child, cartoon mascot, anime, manga, smiling, happy expression",
+      magnific_runtime_enabled: false,
+      magnific_runtime_user_data_dir: "data/magnific-userdata",
+      magnific_runtime_window_visible: false,
+      magnific_runtime_extension_path: "extensions/magnific-ext",
     });
+  });
+});
+
+describe("magnific runtime settings", () => {
+  // Foundation-layer keys for the HistForge-managed Playwright Chromium
+  // runtime that boots the magnific-ext extension in a persistent context.
+  // The runtime itself is a noop in S1 — these keys just configure the
+  // future lifecycle: whether to auto-boot, where to persist cookies, and
+  // where the extension lives on disk. The window-visible boolean lets the
+  // operator flip the off-screen-by-default window into view for debugging.
+
+  it("seeds magnific_runtime_enabled=false as default", () => {
+    const db = freshDb();
+    expect(getSetting("magnific_runtime_enabled", db)).toBe(false);
+    expect(typeof getSetting("magnific_runtime_enabled", db)).toBe("boolean");
+  });
+
+  it("seeds magnific_runtime_window_visible=false as default", () => {
+    const db = freshDb();
+    expect(getSetting("magnific_runtime_window_visible", db)).toBe(false);
+    expect(typeof getSetting("magnific_runtime_window_visible", db)).toBe(
+      "boolean"
+    );
+  });
+
+  it("seeds magnific_runtime_user_data_dir='data/magnific-userdata' as default", () => {
+    const db = freshDb();
+    expect(getSetting("magnific_runtime_user_data_dir", db)).toBe(
+      "data/magnific-userdata"
+    );
+    expect(typeof getSetting("magnific_runtime_user_data_dir", db)).toBe(
+      "string"
+    );
+  });
+
+  it("seeds magnific_runtime_extension_path='extensions/magnific-ext' as default", () => {
+    const db = freshDb();
+    expect(getSetting("magnific_runtime_extension_path", db)).toBe(
+      "extensions/magnific-ext"
+    );
+    expect(typeof getSetting("magnific_runtime_extension_path", db)).toBe(
+      "string"
+    );
+  });
+
+  it("both bool keys round-trip true/false through setSetting", () => {
+    const db = freshDb();
+    setSetting("magnific_runtime_enabled", true, db);
+    expect(getSetting("magnific_runtime_enabled", db)).toBe(true);
+    setSetting("magnific_runtime_enabled", false, db);
+    expect(getSetting("magnific_runtime_enabled", db)).toBe(false);
+    setSetting("magnific_runtime_window_visible", true, db);
+    expect(getSetting("magnific_runtime_window_visible", db)).toBe(true);
+  });
+
+  it("both bool keys throw on a corrupted non-'true'/'false' stored value", () => {
+    // Same defense as voice_use_speaker_boost: a "garbage" row must surface
+    // as a parse error rather than silently coerce to false.
+    const db = freshDb();
+    db.prepare("UPDATE settings SET value = ? WHERE key = ?").run(
+      "garbage",
+      "magnific_runtime_enabled"
+    );
+    expect(() => getSetting("magnific_runtime_enabled", db)).toThrow();
+
+    db.prepare("UPDATE settings SET value = ? WHERE key = ?").run(
+      "yes",
+      "magnific_runtime_window_visible"
+    );
+    expect(() => getSetting("magnific_runtime_window_visible", db)).toThrow();
+  });
+
+  it("both string keys round-trip arbitrary operator-supplied paths", () => {
+    const db = freshDb();
+    setSetting(
+      "magnific_runtime_user_data_dir",
+      "C:/HistForge/magnific-data",
+      db
+    );
+    expect(getSetting("magnific_runtime_user_data_dir", db)).toBe(
+      "C:/HistForge/magnific-data"
+    );
+    setSetting(
+      "magnific_runtime_extension_path",
+      "custom/magnific-ext-dev",
+      db
+    );
+    expect(getSetting("magnific_runtime_extension_path", db)).toBe(
+      "custom/magnific-ext-dev"
+    );
   });
 });
 

@@ -215,6 +215,23 @@ const SETTING_SCHEMAS = {
   // ComfyUI and Google Flow image paths alike.
   style_lock_description: z.string(),
   character_lock_negative: z.string(),
+  // Magnific runtime — HistForge-managed Playwright Chromium that boots
+  // the magnific-ext extension in a persistent context. `enabled` is the
+  // master toggle (auto-boots the runtime on worker start, except in dev
+  // — see src/worker/index.ts boot guard). `user_data_dir` is where
+  // Playwright persists cookies/localStorage/IndexedDB across HistForge
+  // restarts. `window_visible` flips the off-screen window into view for
+  // debugging. `extension_path` points at magnific-ext on disk and is
+  // configurable so a developer can point the runtime at a local checkout
+  // of the extension.
+  magnific_runtime_enabled: z
+    .enum(["true", "false"])
+    .transform((v) => v === "true"),
+  magnific_runtime_user_data_dir: z.string(),
+  magnific_runtime_window_visible: z
+    .enum(["true", "false"])
+    .transform((v) => v === "true"),
+  magnific_runtime_extension_path: z.string(),
 } as const;
 
 export type SettingKey = keyof typeof SETTING_SCHEMAS;
