@@ -75,6 +75,13 @@
     typeof MAGNIFIC_CREATE_UUID_TIMEOUT_MS !== 'undefined'
       ? MAGNIFIC_CREATE_UUID_TIMEOUT_MS
       : 10000;
+  // A freshly-opened /work tab (the row-1 first dispatch) can still be blank
+  // when the content script fires. Wait for the projects view to render before
+  // driving the create flow — overridable so the cold-tab unit test runs fast.
+  const PROJECTS_VIEW_READY_TIMEOUT_MS =
+    typeof MAGNIFIC_PROJECTS_VIEW_READY_TIMEOUT_MS !== 'undefined'
+      ? MAGNIFIC_PROJECTS_VIEW_READY_TIMEOUT_MS
+      : 8000;
 
   function log(...args) {
     try { console.log(LOG_PREFIX, ...args); } catch (_e) { /* ignore */ }
@@ -220,10 +227,43 @@
     return null;
   }
 
+  // Positive "projects view rendered" signal: a create entry (button or card)
+  // or any existing project row means the SPA has painted, so the create flow
+  // won't run against a blank cold tab.
+  function projectsViewRendered() {
+    return !!(
+      document.querySelector(V3_CREATE_PROJECT_BTN_DATA_CY) ||
+      document.querySelector(NEW_PROJECT_CARD_DATA_CY) ||
+      document.querySelector(V3_PROJECT_ROW_DATA_CY)
+    );
+  }
+
+  async function waitForProjectsViewReady(timeoutMs) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (projectsViewRendered()) return true;
+      await sleep(150);
+    }
+    return false;
+  }
+
   // Create a fresh Magnific Project named after the video. Returns its UUID, or
   // null on a selector miss (each sub-step logged + [data-cy] dumped loudly).
   async function createProject(videoTitle) {
     dismissCookieBanner();
+    // Cold-tab guard: don't drive the create flow until the projects view has
+    // actually rendered. A miss here is "view never rendered" — distinct from a
+    // create-button / name-input drift below — so a cold-tab regression reads
+    // legibly in the logs rather than masquerading as a selector miss.
+    if (!(await waitForProjectsViewReady(PROJECTS_VIEW_READY_TIMEOUT_MS))) {
+      log(
+        `step=create-project sub=view-ready status=error reason=projects-view-never-rendered ` +
+          `tried=${V3_CREATE_PROJECT_BTN_DATA_CY}, ${NEW_PROJECT_CARD_DATA_CY}, ${V3_PROJECT_ROW_DATA_CY}`,
+      );
+      dumpDataCyAttributes();
+      return null;
+    }
+    log('step=create-project sub=view-ready status=ok');
     let entry = await waitFor(V3_CREATE_PROJECT_BTN_DATA_CY, CREATE_STEP_TIMEOUT_MS);
     if (!(entry instanceof HTMLElement)) {
       entry = document.querySelector(NEW_PROJECT_CARD_DATA_CY);

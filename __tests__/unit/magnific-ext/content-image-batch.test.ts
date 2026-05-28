@@ -95,6 +95,10 @@ function loadContentScript(initialPathname = "/app/projects/work") {
     // create-diagnostics test doesn't burn the full production budget.
     MAGNIFIC_CREATE_STEP_TIMEOUT_MS: 150,
     MAGNIFIC_CREATE_UUID_TIMEOUT_MS: 150,
+    // View-ready gate budget: > the 400ms cold-render delay the cold-tab test
+    // uses (so it's absorbed), short enough that the never-renders test fails
+    // fast. Prod default is 8s.
+    MAGNIFIC_PROJECTS_VIEW_READY_TIMEOUT_MS: 1000,
   };
   vm.createContext(sandbox);
   vm.runInContext(sharedSrc + "\n" + src, sandbox);
@@ -387,6 +391,89 @@ describe("magnific-ext content-image-batch.js", () => {
     const failed = reportCalls(loaded.sendMessage, "magnificImageBatchFailed");
     expect(failed[0][0]).toMatchObject({
       taskId: "ib_diag",
+      reason: "project_create_failed",
+    });
+  });
+
+  it("create cold-tab: waits for the projects view to render before clicking, then succeeds", async () => {
+    // Freshly-opened /work tab: blank when the content script fires; the
+    // projects view (create button + a project row) renders only after 400ms,
+    // past the per-step budget. The view-ready gate must absorb the cold render
+    // rather than bailing — this is the row-1 cold-tab race.
+    document.body.innerHTML = `<div data-cy="diag-anchor">x</div>`;
+    const loaded = loadContentScript();
+    // Guard the deferred render so it can't leak into the next test if this one
+    // fails fast (e.g. a regressed gate that bails before the 400ms inject).
+    const injectTimer = setTimeout(() => {
+      document.body.innerHTML = `
+        <button data-cy="v3-create-project-button">New Project</button>
+        <input placeholder="Enter a name for your project">
+        <button id="create">Create</button>
+        <div data-cy="v3-project-row">The Fall of Rome</div>
+        ${generatorHtml({ headerUuid: "work" })}
+      `;
+      const row = document.querySelector(
+        '[data-cy="v3-project-row"]'
+      ) as HTMLElement;
+      row.addEventListener("click", () => {
+        loaded.location.pathname = "/app/projects/" + CREATED_UUID;
+      });
+      wireGenerateProducesImage("905");
+    }, 400);
+
+    try {
+      const { sendResponse } = dispatch(loaded.listeners, {
+        action: "magnificStartImageBatch",
+        taskId: "ib_cold",
+        prompt: "a forum",
+        model: "",
+        videoTitle: "The Fall of Rome",
+        magnificProjectId: null,
+      });
+      await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled(), {
+        timeout: 5000,
+      });
+
+      const flat = loaded.logs.flat().map(String).join(" ");
+      expect(flat).toContain("sub=view-ready status=ok");
+      const completed = reportCalls(loaded.sendMessage, "magnificImageBatchCompleted");
+      expect(completed[0][0]).toMatchObject({
+        taskId: "ib_cold",
+        magnificProjectId: CREATED_UUID,
+      });
+    } finally {
+      clearTimeout(injectTimer);
+    }
+  });
+
+  it("create cold-tab: fails project_create_failed with a view-never-rendered diagnostic when the projects view never appears", async () => {
+    // The projects view never renders (no create entry, no project row). This
+    // must read as a distinct failure from a name-input / create-button drift
+    // so a future cold-tab regression is legible in the logs.
+    document.body.innerHTML = `
+      <div data-cy="diag-anchor-aaa">x</div>
+      <div data-cy="diag-anchor-bbb">y</div>
+    `;
+    const loaded = loadContentScript();
+    const { sendResponse } = dispatch(loaded.listeners, {
+      action: "magnificStartImageBatch",
+      taskId: "ib_cold_fail",
+      prompt: "x",
+      model: "",
+      videoTitle: "Rome",
+      magnificProjectId: null,
+    });
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled(), {
+      timeout: 5000,
+    });
+
+    const flat = loaded.logs.flat().map(String).join(" ");
+    expect(flat).toContain("sub=view-ready");
+    expect(flat).toContain("projects-view-never-rendered");
+    expect(flat).toContain("diag-anchor-aaa"); // [data-cy] dump fired
+    const failed = reportCalls(loaded.sendMessage, "magnificImageBatchFailed");
+    expect(failed[0][0]).toMatchObject({
+      taskId: "ib_cold_fail",
       reason: "project_create_failed",
     });
   });
