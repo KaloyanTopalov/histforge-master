@@ -544,22 +544,62 @@ describe.skipIf(!RUN)(
         ).toBe(numericIds.length);
 
         // (e) containment: navigate into the created Project and confirm the
-        //     asset tiles are present — the S0 probe's check, now through the
-        //     real executor.
+        //     generated images landed inside it. The v3 asset tile is
+        //     [data-cy="feed-virtual-item"] (NOT feed-image-item, which doesn't
+        //     exist in v3 — confirmed by a live [data-cy] probe). It's a
+        //     VIRTUAL-LIST element (cf. feed-virtual-item-header), so its count
+        //     is not a verified 1:1 with images — we use it only as a "feed view
+        //     rendered" presence check and gate the QUANTITY on the cdnpk image
+        //     count (the directly-verified signal). Asserting both means a
+        //     feed-virtual-item rename can't silently pass (its presence check
+        //     fails) and missing images can't pass (the cdnpk count fails). Wait
+        //     for either to render so we count the feed, not a transient
+        //     tools/loading panel.
         const page = await browserCtx.newPage();
         try {
           await page.goto(`${MAGNIFIC_PROJECTS_URL}/${createdProjectUuid}`, {
             waitUntil: "domcontentloaded",
             timeout: 60_000,
           });
-          await page.waitForTimeout(4000);
-          const assetCount = await page
-            .locator('[data-cy^="feed-image-item-"]')
-            .count();
+          try {
+            await page.waitForSelector(
+              '[data-cy="feed-virtual-item"], img[src*="cdnpk.net"]',
+              { timeout: 20_000 },
+            );
+          } catch {
+            const seen = await page.evaluate(() =>
+              Array.from(
+                new Set(
+                  Array.from(document.querySelectorAll("[data-cy]")).map(
+                    (el) => el.getAttribute("data-cy") || "",
+                  ),
+                ),
+              ).slice(0, 60),
+            );
+            console.error(
+              `[live-smoke] containment: neither feed-virtual-item nor a cdnpk image rendered in ${createdProjectUuid}; data-cy seen: ${JSON.stringify(seen)}`,
+            );
+          }
+          await page.waitForTimeout(1500);
+          const { tiles, cdnImgs } = await page.evaluate(() => ({
+            tiles: document.querySelectorAll('[data-cy="feed-virtual-item"]')
+              .length,
+            cdnImgs: Array.from(
+              document.querySelectorAll('img[src*="cdnpk.net"]'),
+            ).filter(
+              (img) =>
+                img instanceof HTMLImageElement &&
+                (img.naturalWidth >= 200 || img.width >= 200),
+            ).length,
+          }));
           expect(
-            assetCount,
-            `expected >= ${IMAGE_PROMPTS.length} assets inside the Project, found ${assetCount}`,
+            cdnImgs,
+            `expected >= ${IMAGE_PROMPTS.length} cdnpk images inside the Project, found ${cdnImgs} (feed-virtual-item tiles=${tiles})`,
           ).toBeGreaterThanOrEqual(IMAGE_PROMPTS.length);
+          expect(
+            tiles,
+            `feed-virtual-item not rendered (tiles=${tiles}) — the v3 feed view selector may have drifted; cdnpk images found=${cdnImgs}`,
+          ).toBeGreaterThanOrEqual(1);
         } finally {
           await page.close().catch(() => {});
         }
