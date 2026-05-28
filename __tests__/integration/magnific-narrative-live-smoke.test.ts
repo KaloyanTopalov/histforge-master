@@ -46,7 +46,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { execSync } from "node:child_process";
 import { join } from "node:path";
-import type { BrowserContext } from "playwright";
+import type { BrowserContext, Page } from "playwright";
 
 const RUN = process.env.RUN_MAGNIFIC_NARRATIVE_LIVE === "1";
 
@@ -263,6 +263,10 @@ let projectsDir = "";
 let server: RouteServer | null = null;
 let runtimeStarted = false;
 let createdProjectUuid: string | null = null;
+// Captured magnific-ext content-script console (the [magnific-ext ...] step=
+// lines). Surfaced in the test output so a stall is diagnosable here, not only
+// in the live browser window.
+const extLogs: string[] = [];
 
 describe.skipIf(!RUN)(
   "magnific-narrative LIVE smoke (real Chromium + Magnific) — requires RUN_MAGNIFIC_NARRATIVE_LIVE=1",
@@ -296,6 +300,12 @@ describe.skipIf(!RUN)(
         /* already closed / never opened */
       }
       if (tempDir) rmSync(tempDir, { recursive: true, force: true });
+      if (extLogs.length > 0) {
+        console.warn(
+          `[live-smoke] captured ${extLogs.length} content-script log line(s); last reached step:\n` +
+            extLogs.slice(-15).join("\n"),
+        );
+      }
       if (createdProjectUuid) {
         console.warn(
           `[live-smoke] If cleanup did not delete it, remove the throwaway ` +
@@ -380,6 +390,18 @@ describe.skipIf(!RUN)(
         ).context;
         if (!browserCtx) throw new Error("runtime.start() resolved but context is null");
 
+        // Hook every page's console so the content-script step= logs land in
+        // the test output. The extension opens the Magnific tab AFTER this, so
+        // the 'page' listener catches it; also hook any already-open pages.
+        const hookConsole = (p: Page) => {
+          p.on("console", (m) => {
+            const t = m.text();
+            if (t.includes("magnific-ext")) extLogs.push(t);
+          });
+        };
+        browserCtx.pages().forEach(hookConsole);
+        browserCtx.on("page", hookConsole);
+
         const { granted } = await configureExtension(browserCtx);
         if (!granted) {
           console.warn(
@@ -413,6 +435,12 @@ describe.skipIf(!RUN)(
           counts = magnificRepo.countByStatusForVideo(db, VIDEO_ID, "image-batch");
         }
         if (counts.pending + counts.dispatched > 0) {
+          console.error(
+            "[live-smoke] extension content-script logs (last 80 lines):\n" +
+              (extLogs.slice(-80).join("\n") ||
+                "(NONE captured — the content script never logged, so it likely never ran: " +
+                  "suspect the SW handshake/dispatch, not a content-script step)"),
+          );
           throw new Error(
             `live-smoke: queue did not drain within ${DRAIN_TIMEOUT_MS / 60000}min — ` +
               `pending=${counts.pending} dispatched=${counts.dispatched} done=${counts.done} failed=${counts.failed}`,
