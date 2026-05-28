@@ -51,8 +51,15 @@ export class MagnificRuntime {
   // touching the BrowserContext, matching the dashboard UX where the
   // "Connect Magnific" button disables itself while a connect is in flight.
   private connecting = false;
+  // Intentional-stop marker. stop() sets this before closing the context so
+  // the on('close') → handleDisconnect path can tell an operator/provider
+  // stop apart from a crash and skip the backoff relaunch. Reset by start().
+  private stopping = false;
 
   async start(): Promise<void> {
+    // A fresh start clears any prior stop marker — the next unexpected
+    // disconnect should once again be treated as a crash worth relaunching.
+    this.stopping = false;
     if (this.context) return;
     const userDataDir = path.resolve(
       getSetting("magnific_runtime_user_data_dir"),
@@ -106,6 +113,9 @@ export class MagnificRuntime {
 
   async stop(): Promise<void> {
     if (!this.context) return;
+    // Mark intentional before close() — the close event fires during close,
+    // and handleDisconnect must see this flag to skip the relaunch.
+    this.stopping = true;
     await this.context.close();
     this.context = null;
     this.backoffMs = 1000;
@@ -191,6 +201,12 @@ export class MagnificRuntime {
 
   private async handleDisconnect(): Promise<void> {
     this.context = null;
+    if (this.stopping) {
+      // This disconnect came from an intentional stop(), not a crash.
+      // Consume the marker and stay down — do NOT relaunch.
+      this.stopping = false;
+      return;
+    }
     if (!getSetting("magnific_runtime_enabled")) return;
     const delay = this.backoffMs;
     this.backoffMs = Math.min(this.backoffMs * 2, 60_000);

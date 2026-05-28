@@ -330,6 +330,63 @@ describe("handleDisconnect()", () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect((await runtime.status()).last_error).toContain("boom");
   });
+
+  it("does NOT relaunch after an intentional stop() (stopping marker set)", async () => {
+    // enabled=true on purpose — proves the skip is driven by the stop marker,
+    // not by the enabled setting. Without the marker the narrative provider's
+    // between-batch stop() would be relaunched by the health monitor.
+    defaultSettings();
+    const ctx = makeMockContext();
+    mockLaunchPersistentContext.mockResolvedValueOnce(ctx);
+    mockInjectToken.mockResolvedValueOnce(undefined);
+
+    const runtime = new MagnificRuntime();
+    await runtime.start();
+    await runtime.stop();
+
+    const setTimeoutSpy = vi.spyOn(global, "setTimeout");
+    // Simulate the context 'close' event arriving as a result of stop().
+    ctx.__fireClose();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(setTimeoutSpy).not.toHaveBeenCalled();
+  });
+
+  it("DOES relaunch on a crash — disconnect with no preceding stop and enabled=true", async () => {
+    defaultSettings();
+    const ctx = makeMockContext();
+    mockLaunchPersistentContext.mockResolvedValueOnce(ctx);
+    mockInjectToken.mockResolvedValueOnce(undefined);
+
+    const runtime = new MagnificRuntime();
+    await runtime.start();
+
+    const setTimeoutSpy = vi.spyOn(global, "setTimeout");
+    ctx.__fireClose(); // crash: nothing called stop() first
+    await vi.advanceTimersByTimeAsync(0);
+    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 1000);
+  });
+
+  it("start() after a stop clears the marker so a later crash relaunches again", async () => {
+    defaultSettings();
+    const ctx1 = makeMockContext();
+    const ctx2 = makeMockContext();
+    mockLaunchPersistentContext
+      .mockResolvedValueOnce(ctx1)
+      .mockResolvedValueOnce(ctx2);
+    mockInjectToken.mockResolvedValue(undefined);
+
+    const runtime = new MagnificRuntime();
+    await runtime.start();
+    await runtime.stop();
+    ctx1.__fireClose(); // intentional-stop close → consumed, no relaunch
+    await vi.advanceTimersByTimeAsync(0);
+
+    await runtime.start(); // restart clears the stopping marker
+    const setTimeoutSpy = vi.spyOn(global, "setTimeout");
+    ctx2.__fireClose(); // genuine crash on the restarted context
+    await vi.advanceTimersByTimeAsync(0);
+    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 1000);
+  });
 });
 
 describe("production-lock error", () => {
