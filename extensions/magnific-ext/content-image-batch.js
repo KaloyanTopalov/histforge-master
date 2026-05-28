@@ -29,11 +29,12 @@
   // project-name input — are the most likely to drift, so the create-project
   // step logs each sub-step and dumps [data-cy] loudly on any miss.
   // v3 DOM (confirmed live 2026-05-28 via the live-smoke [data-cy] dump): the
-  // current-project indicator is the breadcrumb link (the formerly-assumed
-  // header-current-project-link does not exist), and projects show as
-  // v3-project-row entries — clicking "Create" lands back on the list rather
-  // than auto-navigating into the new project.
-  const HEADER_BREADCRUMB_DATA_CY = '[data-cy="header-work-breadcrumb-link"]';
+  // current-project indicator is the URL (/app/projects/<uuid>), NOT the
+  // breadcrumb. header-work-breadcrumb-link points at the WORKSPACE ("Work"),
+  // so it never matches a specific project — do not reintroduce it as the
+  // current-project signal (a prior rev did, and every verify failed
+  // wrong_project_active). Projects show as v3-project-row entries; clicking
+  // "Create" lands back on the list rather than auto-navigating in.
   const PROJECT_TREE_DROPDOWN_DATA_CY = '[data-cy="project-tree-dropdown-trigger"]';
   const V3_CREATE_PROJECT_BTN_DATA_CY = '[data-cy="v3-create-project-button"]';
   const NEW_PROJECT_CARD_DATA_CY = '[data-cy="new-project-card"]';
@@ -150,15 +151,13 @@
     return extractProjectUuid(locationPathname());
   }
 
-  // v3 current-project indicator: the breadcrumb link's href, falling back to
-  // the URL (the source of truth once inside a project).
-  function currentProjectUuid() {
-    const link = document.querySelector(HEADER_BREADCRUMB_DATA_CY);
-    const fromLink =
-      link instanceof HTMLElement
-        ? extractProjectUuid(link.getAttribute('href') || '')
-        : null;
-    return fromLink || locationProjectUuid();
+  // v3 current-project indicator: the active Project lives in the URL as a full
+  // 36-char UUID. The strict match means the projects list (/app/projects,
+  // /work, /all-assets) and the generator (/app/ai-image-generator) yield null
+  // instead of a false positive — only an actual /app/projects/<uuid> matches.
+  function urlProjectUuid() {
+    const m = locationPathname().match(/\/app\/projects\/([a-f0-9-]{36})/i);
+    return m ? m[1] : null;
   }
 
   function dismissCookieBanner() {
@@ -293,12 +292,24 @@
     return uuid;
   }
 
-  // Load-bearing correctness gate: generation is scoped to the CURRENT Project,
-  // so a mismatch would dump one video's images into another's Project. Reads
-  // the header link; on mismatch attempts one switch via the project-tree
-  // dropdown, then re-reads. Returns true only if the active Project matches.
-  async function verifyCurrentProject(targetUuid) {
-    if (currentProjectUuid() === targetUuid) return true;
+  // Load-bearing correctness gate: generation is scoped to the active Project,
+  // so a mismatch would dump one video's images into another's. The URL is the
+  // source of truth for the active Project. `phase` governs strictness:
+  //   'pre-launch'  → HARD: inside the Project the URL carries the UUID; on a
+  //      mismatch try one switch via the project-tree dropdown, re-read, and if
+  //      it still doesn't match the caller refuses to generate (fails the row).
+  //   'post-launch' → BEST-EFFORT: launching the generator navigates to
+  //      /app/ai-image-generator, which has NO project UUID in the URL, so a
+  //      missing UUID is LOGGED and treated as OK. This is a DELIBERATE
+  //      weakening (not an oversight): the generator page exposes no reliable
+  //      current-Project signal, and the pre-launch gate + launching from
+  //      inside the Project already scope generation.
+  async function verifyCurrentProject(targetUuid, phase) {
+    if (urlProjectUuid() === targetUuid) return true;
+    if (phase === 'post-launch') {
+      log('step=verify-project sub=post-launch status=skipped reason=no-uuid-on-generator-page');
+      return true;
+    }
     const dd = document.querySelector(PROJECT_TREE_DROPDOWN_DATA_CY);
     if (dd instanceof HTMLElement) {
       clickClickable(dd);
@@ -316,7 +327,7 @@
         }
       }
     }
-    return currentProjectUuid() === targetUuid;
+    return urlProjectUuid() === targetUuid;
   }
 
   // Launch the image generator from inside the Project (SPA clicks, no reload
@@ -498,20 +509,21 @@
     }
 
     // 2. Verify the active Project BEFORE doing anything (wrong-project guard).
-    if (!(await verifyCurrentProject(targetUuid))) {
+    if (!(await verifyCurrentProject(targetUuid, 'pre-launch'))) {
       log('step=verify-project status=error reason=wrong_project_active phase=pre-launch');
       dumpDataCyAttributes();
       reportFailure(taskId, 'wrong_project_active');
       return;
     }
 
-    // 3. Launch the generator, then RE-VERIFY — launching can carry/change the
-    //    Project context, so the post-launch check is the belt-and-suspenders.
+    // 3. Launch the generator, then RE-VERIFY (best-effort post-launch — the
+    //    generator page has no project UUID in the URL, so this logs+skips
+    //    rather than refusing; see verifyCurrentProject).
     if (!(await launchGenerator())) {
       reportFailure(taskId, 'launch_generator_failed');
       return;
     }
-    if (!(await verifyCurrentProject(targetUuid))) {
+    if (!(await verifyCurrentProject(targetUuid, 'post-launch'))) {
       log('step=verify-project status=error reason=wrong_project_active phase=post-launch');
       dumpDataCyAttributes();
       reportFailure(taskId, 'wrong_project_active');

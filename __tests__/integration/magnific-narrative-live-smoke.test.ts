@@ -403,11 +403,13 @@ describe.skipIf(!RUN)(
           }
         });
 
-        // Verify + force-fresh the extension wiring BEFORE configuring it. A
-        // version bump alone does NOT evict the cached SW the persistent
-        // profile serves, so introspect the SW; if the S4 executor isn't
-        // present (runImageBatch undefined), chrome.runtime.reload() re-reads
-        // the unpacked extension from disk, then we re-introspect.
+        // ALWAYS reload the unpacked extension once at smoke start. A persistent
+        // profile serves the extension code from when it was last loaded, so
+        // disk edits since the previous run are otherwise invisible — and a
+        // content-script change (e.g. content-image-batch.js) needs an extension
+        // reload, NOT just a page navigation, to take effect. One unconditional
+        // reload guarantees the run exercises the current disk state (SW + every
+        // content script), closing the stale-cache class for good.
         let sw =
           browserCtx.serviceWorkers()[0] ??
           (await browserCtx.waitForEvent("serviceworker", { timeout: 15000 }));
@@ -421,30 +423,26 @@ describe.skipIf(!RUN)(
               waitForContentScriptReady: typeof g["waitForContentScriptReady"],
             };
           });
-        let wiring = await introspectWiring();
-        console.error("[live-smoke] SW wiring:", JSON.stringify(wiring));
-        if (wiring.runImageBatch !== "function") {
-          console.error(
-            "[live-smoke] stale SW — chrome.runtime.reload() to re-read the unpacked extension from disk",
-          );
-          const swAfter = browserCtx.waitForEvent("serviceworker", { timeout: 20000 });
-          await sw
-            .evaluate(() => {
-              (
-                globalThis as unknown as { chrome: { runtime: { reload: () => void } } }
-              ).chrome.runtime.reload();
-            })
-            .catch(() => {
-              /* the SW tears itself down mid-eval — expected */
-            });
-          sw = await swAfter;
-          await new Promise((r) => setTimeout(r, 2500));
-          wiring = await introspectWiring();
-          console.error("[live-smoke] SW wiring after reload:", JSON.stringify(wiring));
-        }
+        console.error(
+          "[live-smoke] reloading unpacked extension to pick up the latest disk state (SW + content scripts)",
+        );
+        const swAfter = browserCtx.waitForEvent("serviceworker", { timeout: 20000 });
+        await sw
+          .evaluate(() => {
+            (
+              globalThis as unknown as { chrome: { runtime: { reload: () => void } } }
+            ).chrome.runtime.reload();
+          })
+          .catch(() => {
+            /* the SW tears itself down mid-eval — expected */
+          });
+        sw = await swAfter;
+        await new Promise((r) => setTimeout(r, 2500));
+        const wiring = await introspectWiring();
+        console.error("[live-smoke] SW wiring after reload:", JSON.stringify(wiring));
         if (wiring.runImageBatch !== "function") {
           throw new Error(
-            `live-smoke: extension SW still STALE after chrome.runtime.reload() — runImageBatch=${wiring.runImageBatch}. ` +
+            `live-smoke: extension SW STALE after chrome.runtime.reload() — runImageBatch=${wiring.runImageBatch}. ` +
               "The persistent profile is serving cached extension code; reload magnific-ext manually or clear the " +
               "runtime user_data_dir's extension state, then re-run.",
           );

@@ -3,6 +3,15 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
 
+// Real-format 36-char UUIDs: the URL-based current-Project check matches
+// /\/app\/projects\/([a-f0-9-]{36})/, so short labels like "want" do NOT
+// match — the active Project is driven via location.pathname, not the
+// breadcrumb (which is the WORKSPACE link, not the current project).
+const WANT_UUID = "6615feee-905d-4a53-8f51-9daccbcec41f";
+const OTHER_UUID = "21f4170c-bde5-4583-b55a-e501631370a0";
+const CREATED_UUID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+const NEW_UUID = "12345678-90ab-4cde-8f01-234567890abc";
+
 type Listener = (
   message: Record<string, unknown>,
   sender: unknown,
@@ -20,7 +29,7 @@ function setImageDimensions(img: HTMLImageElement, w: number, h: number): void {
 // shared isolated-world helpers (fillPrompt, editableFrom, setNativeValue,
 // waitFor, escapeRegex, dumpDataCyAttributes) are defined as globals the
 // orchestrator references by bare name. Mirrors content-magnific.test.ts.
-function loadContentScript() {
+function loadContentScript(initialPathname = "/app/projects/work") {
   const sharedSrc = readFileSync(
     path.resolve(process.cwd(), "extensions/magnific-ext/content-shared.js"),
     "utf8"
@@ -35,10 +44,11 @@ function loadContentScript() {
   });
   const logs: unknown[][] = [];
   // Mutable fake location so a row-click handler can simulate navigating into
-  // the new project (jsdom's real window.location isn't writable).
+  // the new project, and so the URL-based current-Project check sees the
+  // active project (jsdom's real window.location isn't writable).
   const fakeLocation = {
-    pathname: "/app/projects/work",
-    href: "https://www.magnific.com/app/projects/work",
+    pathname: initialPathname,
+    href: "https://www.magnific.com" + initialPathname,
   };
   const chrome = {
     runtime: {
@@ -161,7 +171,7 @@ describe("magnific-ext content-image-batch.js", () => {
   });
 
   it("cached Project happy path: fills prompt, selects Nano Banana 2, generates, harvests, reports completion (project id null on reuse)", async () => {
-    document.body.innerHTML = generatorHtml({ headerUuid: "want" });
+    document.body.innerHTML = generatorHtml({ headerUuid: "work" });
     wireGenerateProducesImage("777");
     const editable = document.querySelector(
       '[contenteditable="true"]'
@@ -172,14 +182,16 @@ describe("magnific-ext content-image-batch.js", () => {
     const modelClick = vi.fn();
     modelItem.addEventListener("click", modelClick);
 
-    const { listeners, sendMessage } = loadContentScript();
+    const { listeners, sendMessage } = loadContentScript(
+      "/app/projects/" + WANT_UUID
+    );
     const { sendResponse } = dispatch(listeners, {
       action: "magnificStartImageBatch",
       taskId: "ib_1",
       prompt: "a senator in the forum",
       model: "Nano Banana 2",
       videoTitle: "Rome",
-      magnificProjectId: "want",
+      magnificProjectId: WANT_UUID,
     });
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled(), {
       timeout: 4000,
@@ -197,7 +209,7 @@ describe("magnific-ext content-image-batch.js", () => {
   });
 
   it("turns the smart-prompt toggle OFF before filling when it is on", async () => {
-    document.body.innerHTML = generatorHtml({ headerUuid: "want", smartOn: true });
+    document.body.innerHTML = generatorHtml({ headerUuid: "work", smartOn: true });
     wireGenerateProducesImage("778");
     const toggle = document.querySelector(
       '[data-cy="smart-prompt-toggle"]'
@@ -206,14 +218,14 @@ describe("magnific-ext content-image-batch.js", () => {
     toggle.addEventListener("click", toggleClick);
 
     const { listeners, sendResponse } = (() => {
-      const loaded = loadContentScript();
+      const loaded = loadContentScript("/app/projects/" + WANT_UUID);
       return { ...loaded, ...dispatch(loaded.listeners, {
         action: "magnificStartImageBatch",
         taskId: "ib_t",
         prompt: "x",
         model: "",
         videoTitle: "Rome",
-        magnificProjectId: "want",
+        magnificProjectId: WANT_UUID,
       }) };
     })();
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled(), { timeout: 4000 });
@@ -222,7 +234,7 @@ describe("magnific-ext content-image-batch.js", () => {
   });
 
   it("does NOT toggle smart-prompt when it is already off", async () => {
-    document.body.innerHTML = generatorHtml({ headerUuid: "want", smartOn: false });
+    document.body.innerHTML = generatorHtml({ headerUuid: "work", smartOn: false });
     wireGenerateProducesImage("779");
     const toggle = document.querySelector(
       '[data-cy="smart-prompt-toggle"]'
@@ -230,21 +242,21 @@ describe("magnific-ext content-image-batch.js", () => {
     const toggleClick = vi.fn();
     toggle.addEventListener("click", toggleClick);
 
-    const loaded = loadContentScript();
+    const loaded = loadContentScript("/app/projects/" + WANT_UUID);
     const { sendResponse } = dispatch(loaded.listeners, {
       action: "magnificStartImageBatch",
       taskId: "ib_off",
       prompt: "x",
       model: "",
       videoTitle: "Rome",
-      magnificProjectId: "want",
+      magnificProjectId: WANT_UUID,
     });
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled(), { timeout: 4000 });
     expect(toggleClick).not.toHaveBeenCalled();
   });
 
   it("harvests the NEW render by numeric path id, ignoring the stale render.png already present", async () => {
-    document.body.innerHTML = generatorHtml({ headerUuid: "want" });
+    document.body.innerHTML = generatorHtml({ headerUuid: "work" });
     // Stale prior render already in the DOM (same basename render.png).
     const stale = document.createElement("img");
     stale.src = "https://pikaso.cdnpk.net/media/abc/100/render.png";
@@ -252,14 +264,14 @@ describe("magnific-ext content-image-batch.js", () => {
     setImageDimensions(stale, 1024, 1024);
     wireGenerateProducesImage("101"); // new id appears on Generate
 
-    const loaded = loadContentScript();
+    const loaded = loadContentScript("/app/projects/" + WANT_UUID);
     const { sendResponse } = dispatch(loaded.listeners, {
       action: "magnificStartImageBatch",
       taskId: "ib_h",
       prompt: "x",
       model: "",
       videoTitle: "Rome",
-      magnificProjectId: "want",
+      magnificProjectId: WANT_UUID,
     });
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled(), { timeout: 4000 });
 
@@ -283,16 +295,12 @@ describe("magnific-ext content-image-batch.js", () => {
     const row = document.querySelector(
       '[data-cy="v3-project-row"]'
     ) as HTMLElement;
-    const breadcrumb = document.querySelector(
-      '[data-cy="header-work-breadcrumb-link"]'
-    ) as HTMLAnchorElement;
 
     const loaded = loadContentScript();
-    // Clicking the matching row navigates into the project: the URL + the
-    // breadcrumb update to the created UUID.
+    // Clicking the matching row navigates into the project: the URL updates to
+    // the created UUID (the source of truth — the harvest + verify read it).
     row.addEventListener("click", () => {
-      loaded.location.pathname = "/app/projects/created-uuid";
-      breadcrumb.setAttribute("href", "/app/projects/created-uuid");
+      loaded.location.pathname = "/app/projects/" + CREATED_UUID;
     });
     wireGenerateProducesImage("900");
 
@@ -310,7 +318,7 @@ describe("magnific-ext content-image-batch.js", () => {
     const completed = reportCalls(loaded.sendMessage, "magnificImageBatchCompleted");
     expect(completed[0][0]).toMatchObject({
       taskId: "ib_c",
-      magnificProjectId: "created-uuid",
+      magnificProjectId: CREATED_UUID,
     });
   });
 
@@ -325,17 +333,13 @@ describe("magnific-ext content-image-batch.js", () => {
     `;
     const rowNew = document.getElementById("row-new") as HTMLElement;
     const rowOld = document.getElementById("row-old") as HTMLElement;
-    const breadcrumb = document.querySelector(
-      '[data-cy="header-work-breadcrumb-link"]'
-    ) as HTMLAnchorElement;
     const newClick = vi.fn();
     const oldClick = vi.fn();
 
     const loaded = loadContentScript();
     rowNew.addEventListener("click", () => {
       newClick();
-      loaded.location.pathname = "/app/projects/new-uuid";
-      breadcrumb.setAttribute("href", "/app/projects/new-uuid");
+      loaded.location.pathname = "/app/projects/" + NEW_UUID;
     });
     rowOld.addEventListener("click", oldClick);
     wireGenerateProducesImage("901");
@@ -353,7 +357,7 @@ describe("magnific-ext content-image-batch.js", () => {
     expect(newClick).toHaveBeenCalled();
     expect(oldClick).not.toHaveBeenCalled();
     const completed = reportCalls(loaded.sendMessage, "magnificImageBatchCompleted");
-    expect(completed[0][0]).toMatchObject({ magnificProjectId: "new-uuid" });
+    expect(completed[0][0]).toMatchObject({ magnificProjectId: NEW_UUID });
   });
 
   it("create-project diagnostics: a missing name input dumps [data-cy] attrs loudly and fails project_create_failed", async () => {
@@ -388,22 +392,22 @@ describe("magnific-ext content-image-batch.js", () => {
   });
 
   it("verify gate (pre-launch): refuses to generate and fails wrong_project_active when the active Project does not match", async () => {
-    // Cached target "want", but the header shows "other" and there is no way
-    // to switch — generation must be refused.
-    document.body.innerHTML = generatorHtml({ headerUuid: "other" });
+    // Cached target WANT_UUID, but the URL shows a DIFFERENT project and there
+    // is no project-tree dropdown to switch — generation must be refused.
+    document.body.innerHTML = generatorHtml({ headerUuid: "work" });
     const generateClick = vi.fn();
     (
       document.querySelector('[data-cy="generate-button"]') as HTMLButtonElement
     ).addEventListener("click", generateClick);
 
-    const loaded = loadContentScript();
+    const loaded = loadContentScript("/app/projects/" + OTHER_UUID);
     const { sendResponse } = dispatch(loaded.listeners, {
       action: "magnificStartImageBatch",
       taskId: "ib_wp1",
       prompt: "x",
       model: "",
       videoTitle: "Rome",
-      magnificProjectId: "want",
+      magnificProjectId: WANT_UUID,
     });
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled(), { timeout: 4000 });
 
@@ -415,41 +419,48 @@ describe("magnific-ext content-image-batch.js", () => {
     });
   });
 
-  it("verify gate (post-launch): refuses to generate when launching the generator changes the active Project", async () => {
-    // Pre-launch the header matches "want" (step b passes). Launching the
-    // generator flips the active Project to "other" — the post-launch
-    // re-verify (step c) must catch it and refuse.
-    document.body.innerHTML = generatorHtml({ headerUuid: "want" });
-    const breadcrumb = document.querySelector(
-      '[data-cy="header-work-breadcrumb-link"]'
-    ) as HTMLAnchorElement;
+  it("verify gate (post-launch): best-effort — LOGS skipped and PROCEEDS when the generator page carries no project UUID in the URL", async () => {
+    // Pre-launch the URL is the target Project (passes). Launching the
+    // generator navigates to /app/ai-image-generator, which has NO project
+    // UUID in the URL — the post-launch re-verify must LOG skipped and PROCEED
+    // (a deliberate weakening: the generator page exposes no current-project
+    // signal, and the pre-launch gate already scoped generation). It must NOT
+    // refuse.
+    document.body.innerHTML = generatorHtml({ headerUuid: "work" });
+    wireGenerateProducesImage("903");
     const tool = document.querySelector(
       '[data-cy="registered-tool-ai-image-generator"]'
     ) as HTMLButtonElement;
-    tool.addEventListener("click", () => {
-      breadcrumb.setAttribute("href", "/app/projects/other");
-    });
     const generateClick = vi.fn();
     (
       document.querySelector('[data-cy="generate-button"]') as HTMLButtonElement
     ).addEventListener("click", generateClick);
 
-    const loaded = loadContentScript();
+    const loaded = loadContentScript("/app/projects/" + WANT_UUID);
+    // Launching the generator leaves the project URL for the global generator.
+    tool.addEventListener("click", () => {
+      loaded.location.pathname = "/app/ai-image-generator";
+    });
+
     const { sendResponse } = dispatch(loaded.listeners, {
       action: "magnificStartImageBatch",
       taskId: "ib_wp2",
       prompt: "x",
       model: "",
       videoTitle: "Rome",
-      magnificProjectId: "want",
+      magnificProjectId: WANT_UUID,
     });
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled(), { timeout: 4000 });
 
-    expect(generateClick).not.toHaveBeenCalled();
+    // Proceeds: Generate fires and a completion is reported (NOT a failure).
+    expect(generateClick).toHaveBeenCalled();
+    const completed = reportCalls(loaded.sendMessage, "magnificImageBatchCompleted");
+    expect(completed.length).toBe(1);
     const failed = reportCalls(loaded.sendMessage, "magnificImageBatchFailed");
-    expect(failed[0][0]).toMatchObject({
-      taskId: "ib_wp2",
-      reason: "wrong_project_active",
-    });
+    expect(failed.length).toBe(0);
+    // The skip is documented loudly so it reads as deliberate, not an oversight.
+    const flat = loaded.logs.flat().map(String).join(" ");
+    expect(flat).toContain("sub=post-launch");
+    expect(flat).toContain("status=skipped");
   });
 });
