@@ -412,6 +412,32 @@ describe.skipIf(!RUN)(
           return doSkip(ctx);
         }
 
+        // SW introspection: run code INSIDE the extension service worker to
+        // confirm the executor wiring actually loaded. A broken importScripts
+        // chain would leave executeTaskViaExtension undefined → the runner
+        // claims tasks (dispatched) but never dispatches them (no tab, no
+        // content-script logs) — exactly the observed pattern. (consts like
+        // EXECUTORS aren't global props; the function declarations are.)
+        try {
+          let sw = browserCtx.serviceWorkers()[0];
+          if (!sw) {
+            sw = await browserCtx.waitForEvent("serviceworker", { timeout: 15000 });
+          }
+          const wiring = await sw.evaluate(() => {
+            const g = globalThis as unknown as Record<string, unknown>;
+            return {
+              executeTaskViaExtension: typeof g["executeTaskViaExtension"],
+              runImageBatch: typeof g["runImageBatch"],
+              runImageHitl: typeof g["runImageHitl"],
+              waitForContentScriptReady: typeof g["waitForContentScriptReady"],
+              getNextTaskUrl: typeof g["getNextTaskUrl"],
+            };
+          });
+          console.error("[live-smoke] SW wiring:", JSON.stringify(wiring));
+        } catch (e) {
+          console.error("[live-smoke] SW introspection failed:", e);
+        }
+
         // ── Phase 3: enqueue 2-3 real image-batch tasks; the extension drains ─
         const magnificRepo = await import("@/lib/repos/magnific");
         const nowSec = Math.floor(Date.now() / 1000);
@@ -436,6 +462,10 @@ describe.skipIf(!RUN)(
           counts = magnificRepo.countByStatusForVideo(db, VIDEO_ID, "image-batch");
         }
         if (counts.pending + counts.dispatched > 0) {
+          console.error(
+            "[live-smoke] open tabs:",
+            JSON.stringify(browserCtx.pages().map((p) => p.url())),
+          );
           console.error(
             "[live-smoke] extension content-script logs (last 80 lines):\n" +
               (extLogs.slice(-80).join("\n") ||
