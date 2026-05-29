@@ -48,6 +48,13 @@
   const MODEL_TRIGGER_DATA_CY = '[data-cy="tti-mode-selector-v3-trigger"]';
   const MODEL_ITEM_DATA_CY = '[data-cy="ai-model-item-slim-imagen-nano-banana-2-flash"]';
   const MODEL_SEARCH_DATA_CY = '[data-cy="ai-model-selector-search-input"]';
+  // Aspect ratio: narrative is always 16:9 (hard-coded; v1 scope — a vertical
+  // narrative would be its own spec). The 16:9 popover OPTION and its
+  // aria-pressed verify signal are confirmed live; the popover TRIGGER's exact
+  // data-cy was not captured, so it's discovered via the [data-cy*="aspect"]
+  // convention (dump [data-cy] on a miss to surface the real name).
+  const ASPECT_TRIGGER_SELECTOR = '[data-cy*="aspect"]';
+  const ASPECT_OPTION_16x9_DATA_CY = '[data-cy="popover-option-16:9"]';
   const GENERATE_BUTTON_SELECTOR = 'button[data-cy="generate-button"]';
   const RESULT_IMG_SELECTOR = 'img[src*="cdnpk.net"]';
   const RESULT_MIN_DIMENSION = 200;
@@ -81,6 +88,10 @@
   const PROJECTS_VIEW_READY_TIMEOUT_MS =
     typeof MAGNIFIC_PROJECTS_VIEW_READY_TIMEOUT_MS !== 'undefined'
       ? MAGNIFIC_PROJECTS_VIEW_READY_TIMEOUT_MS
+      : 8000;
+  const ASPECT_STEP_TIMEOUT_MS =
+    typeof MAGNIFIC_ASPECT_STEP_TIMEOUT_MS !== 'undefined'
+      ? MAGNIFIC_ASPECT_STEP_TIMEOUT_MS
       : 8000;
 
   function log(...args) {
@@ -470,6 +481,52 @@
     return 'not-found';
   }
 
+  // Set the aspect ratio to 16:9. Mirrors selectModel: open the popover via the
+  // trigger, wait for the option, click it, then VERIFY it stuck (aria-pressed
+  // is the authoritative signal; if selecting closed the popover, fall back to
+  // the trigger reflecting 16:9). Returns true only when 16:9 is confirmed —
+  // LOAD-BEARING, since a wrong aspect makes the image unusable.
+  async function setAspectRatio() {
+    const trigger = await waitFor(ASPECT_TRIGGER_SELECTOR, ASPECT_STEP_TIMEOUT_MS);
+    if (!(trigger instanceof HTMLElement)) {
+      log(`step=set-aspect-ratio status=error reason=trigger-not-found tried=${ASPECT_TRIGGER_SELECTOR}`);
+      dumpDataCyAttributes();
+      return false;
+    }
+    clickClickable(trigger);
+    await sleep(300);
+
+    const option = await waitFor(ASPECT_OPTION_16x9_DATA_CY, ASPECT_STEP_TIMEOUT_MS);
+    if (!(option instanceof HTMLElement)) {
+      log(`step=set-aspect-ratio status=error reason=option-not-found tried=${ASPECT_OPTION_16x9_DATA_CY}`);
+      dumpDataCyAttributes();
+      return false;
+    }
+    clickClickable(option);
+    await sleep(300);
+
+    // Verify 16:9 stuck. Prefer the option's aria-pressed (explicit signal).
+    const after = document.querySelector(ASPECT_OPTION_16x9_DATA_CY);
+    if (after instanceof HTMLElement) {
+      if (after.getAttribute('aria-pressed') === 'true') {
+        log('step=set-aspect-ratio status=ok');
+        return true;
+      }
+      log(`step=set-aspect-ratio status=error reason=not-selected aria-pressed=${after.getAttribute('aria-pressed')}`);
+      dumpDataCyAttributes();
+      return false;
+    }
+    // Option detached (popover closed on select) → fall back to the trigger.
+    const trig = document.querySelector(ASPECT_TRIGGER_SELECTOR);
+    if (trig instanceof HTMLElement && /16:9/.test(trig.textContent || '')) {
+      log('step=set-aspect-ratio status=ok via=trigger-text');
+      return true;
+    }
+    log('step=set-aspect-ratio status=error reason=not-verified-popover-closed');
+    dumpDataCyAttributes();
+    return false;
+  }
+
   async function clickGenerate() {
     const btn = await waitFor(GENERATE_BUTTON_SELECTOR, 5000);
     if (!(btn instanceof HTMLElement)) {
@@ -589,7 +646,15 @@
       return;
     }
 
-    // 7. Snapshot existing render ids, then Generate.
+    // 7. Set 16:9 (LOAD-BEARING — narrative is always 16:9; a wrong aspect is an
+    //    unusable image, so a miss fails the row and does NOT generate, same
+    //    severity as wrong_project_active).
+    if (!(await setAspectRatio())) {
+      reportFailure(taskId, 'aspect_ratio_failed');
+      return;
+    }
+
+    // 8. Snapshot existing render ids, then Generate.
     const snapshot = snapshotRenderIds();
     const gen = await clickGenerate();
     if (gen !== 'ok') {
@@ -600,7 +665,7 @@
       return;
     }
 
-    // 8. Harvest the new render (diff on numeric id), then report.
+    // 9. Harvest the new render (diff on numeric id), then report.
     const resultUrl = await harvestNewImage(snapshot);
     if (!resultUrl) {
       log('step=harvest status=error reason=generation_never_appeared');

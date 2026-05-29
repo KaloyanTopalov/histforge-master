@@ -99,6 +99,8 @@ function loadContentScript(initialPathname = "/app/projects/work") {
     // uses (so it's absorbed), short enough that the never-renders test fails
     // fast. Prod default is 8s.
     MAGNIFIC_PROJECTS_VIEW_READY_TIMEOUT_MS: 1000,
+    // Aspect-ratio step budget short so the option-not-found test fails fast.
+    MAGNIFIC_ASPECT_STEP_TIMEOUT_MS: 150,
   };
   vm.createContext(sandbox);
   vm.runInContext(sharedSrc + "\n" + src, sandbox);
@@ -116,6 +118,8 @@ function generatorHtml(opts: { headerUuid: string; smartOn?: boolean }): string 
     <div data-cy="image-prompt-input"><div contenteditable="true"></div></div>
     <button data-cy="tti-mode-selector-v3-trigger">Auto</button>
     <button data-cy="ai-model-item-slim-imagen-nano-banana-2-flash">Google Nano Banana 2</button>
+    <button data-cy="tti-aspect-ratio-trigger">Aspect</button>
+    <button data-cy="popover-option-16:9" aria-pressed="true">16:9</button>
     <button data-cy="generate-button">Generate</button>
   `;
 }
@@ -549,5 +553,81 @@ describe("magnific-ext content-image-batch.js", () => {
     const flat = loaded.logs.flat().map(String).join(" ");
     expect(flat).toContain("sub=post-launch");
     expect(flat).toContain("status=skipped");
+  });
+
+  it("sets 16:9 before generate: opens the aspect popover, clicks 16:9, verifies aria-pressed, then generates", async () => {
+    document.body.innerHTML = generatorHtml({ headerUuid: "work" });
+    // Start unselected so we exercise the real click → aria-pressed transition.
+    const option = document.querySelector(
+      '[data-cy="popover-option-16:9"]'
+    ) as HTMLElement;
+    option.setAttribute("aria-pressed", "false");
+    const trigger = document.querySelector(
+      '[data-cy="tti-aspect-ratio-trigger"]'
+    ) as HTMLElement;
+    const triggerClick = vi.fn();
+    trigger.addEventListener("click", triggerClick);
+    const optionClick = vi.fn();
+    option.addEventListener("click", () => {
+      optionClick();
+      option.setAttribute("aria-pressed", "true");
+    });
+    wireGenerateProducesImage("910");
+
+    const loaded = loadContentScript("/app/projects/" + WANT_UUID);
+    const { sendResponse } = dispatch(loaded.listeners, {
+      action: "magnificStartImageBatch",
+      taskId: "ib_ar",
+      prompt: "x",
+      model: "",
+      videoTitle: "Rome",
+      magnificProjectId: WANT_UUID,
+    });
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled(), {
+      timeout: 4000,
+    });
+
+    expect(triggerClick).toHaveBeenCalled();
+    expect(optionClick).toHaveBeenCalled();
+    expect(option.getAttribute("aria-pressed")).toBe("true");
+    const flat = loaded.logs.flat().map(String).join(" ");
+    expect(flat).toContain("step=set-aspect-ratio status=ok");
+    // Generate proceeded only because the aspect step verified.
+    const completed = reportCalls(loaded.sendMessage, "magnificImageBatchCompleted");
+    expect(completed.length).toBe(1);
+  });
+
+  it("set-aspect-ratio (load-bearing): fails aspect_ratio_failed with a loud [data-cy] dump and does NOT generate when the 16:9 option never renders", async () => {
+    document.body.innerHTML = generatorHtml({ headerUuid: "work" });
+    // Trigger present, but the popover never renders the 16:9 option.
+    document.querySelector('[data-cy="popover-option-16:9"]')!.remove();
+    const generateClick = vi.fn();
+    (
+      document.querySelector('[data-cy="generate-button"]') as HTMLButtonElement
+    ).addEventListener("click", generateClick);
+
+    const loaded = loadContentScript("/app/projects/" + WANT_UUID);
+    const { sendResponse } = dispatch(loaded.listeners, {
+      action: "magnificStartImageBatch",
+      taskId: "ib_ar_fail",
+      prompt: "x",
+      model: "",
+      videoTitle: "Rome",
+      magnificProjectId: WANT_UUID,
+    });
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled(), {
+      timeout: 4000,
+    });
+
+    expect(generateClick).not.toHaveBeenCalled();
+    const flat = loaded.logs.flat().map(String).join(" ");
+    expect(flat).toContain("step=set-aspect-ratio");
+    expect(flat).toContain("option-not-found");
+    expect(flat).toContain("tti-aspect-ratio-trigger"); // [data-cy] dump fired
+    const failed = reportCalls(loaded.sendMessage, "magnificImageBatchFailed");
+    expect(failed[0][0]).toMatchObject({
+      taskId: "ib_ar_fail",
+      reason: "aspect_ratio_failed",
+    });
   });
 });
