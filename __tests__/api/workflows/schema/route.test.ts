@@ -112,6 +112,13 @@ describe("GET /api/workflows/schema", () => {
     expect(body.providers.image).toEqual(Object.keys(imageProviders));
   });
 
+  it("providers.image includes magnific (matches the registered Magnific provider)", async () => {
+    const { GET } = await import("@/app/api/workflows/schema/route");
+    const res = await GET();
+    const body = await res.json();
+    expect(body.providers.image).toContain("magnific");
+  });
+
   it("providers.video is derived from the video registry", async () => {
     const { GET } = await import("@/app/api/workflows/schema/route");
     const { videoProviders } = await import("@/lib/video");

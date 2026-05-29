@@ -31,6 +31,10 @@ import {
   LLM_PROVIDER_NAMES,
   LLM_PROVIDER_LABELS,
 } from "@/lib/llm/names";
+import {
+  IMAGE_PROVIDER_NAMES,
+  IMAGE_PROVIDER_LABELS,
+} from "@/lib/image/names";
 
 // ─── Public types (also imported by the server page shell) ─────────────
 
@@ -440,14 +444,30 @@ export function EditForm({
               label="Image provider"
               value={values.image_provider ?? NONE}
               options={[
-                { value: "comfyui", label: "ComfyUI" },
-                { value: "google_flow", label: "Google Flow" },
+                ...IMAGE_PROVIDER_NAMES.map((value) => ({
+                  value,
+                  label: IMAGE_PROVIDER_LABELS[value],
+                })),
                 { value: NONE, label: "(none)" },
               ]}
               onChange={(v) =>
                 update("image_provider", v === NONE ? null : v)
               }
             />
+            {/*
+              video_provider is intentionally hardcoded — NOT derived from a
+              provider-names module like image_provider above. This editor is
+              narrative-only (the PATCH and validate routes both parse against
+              NarrativeRowSchema), and NarrativeRowSchema.video_provider
+              accepts only comfyui | google_flow. `magnific` is a valid video
+              provider solely on MusicVideoRowSchema, which is seeded — never
+              editor-authored. Deriving these options from IMAGE_PROVIDER_NAMES
+              or the image/video registries (all of which include magnific)
+              would surface Magnific as a selectable option that the narrative
+              PATCH/validate routes reject with a 400. If a future pass derives
+              video options too, source them from NarrativeRowSchema's
+              video_provider enum — not the registry.
+            */}
             <SelectField
               id="video_provider"
               label="Video provider"
