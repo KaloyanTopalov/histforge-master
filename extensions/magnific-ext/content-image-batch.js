@@ -93,6 +93,14 @@
     typeof MAGNIFIC_ASPECT_STEP_TIMEOUT_MS !== 'undefined'
       ? MAGNIFIC_ASPECT_STEP_TIMEOUT_MS
       : 8000;
+  // CARRY-FORWARD DIAGNOSTIC ONLY (not part of the shipping fix): observation
+  // window after the Create click, for the unresolved row-1 await-row failure.
+  // Fires on EVERY create (cold + warm) so the two can be compared; overridable
+  // so unit tests don't pay it. Kept on disk for the row-1 fix session.
+  const CREATE_DIAG_WINDOW_MS =
+    typeof MAGNIFIC_CREATE_DIAG_WINDOW_MS !== 'undefined'
+      ? MAGNIFIC_CREATE_DIAG_WINDOW_MS
+      : 1500;
 
   function log(...args) {
     try { console.log(LOG_PREFIX, ...args); } catch (_e) { /* ignore */ }
@@ -312,7 +320,38 @@
       return null;
     }
     log('step=create-project sub=create-button status=ok');
+    // CARRY-FORWARD DIAGNOSTIC (see CREATE_DIAG_WINDOW_MS) — NOT part of the
+    // shipping fix; fires on every create. Captures the name-input value +
+    // Create-button state at click time, then observes whether the modal closes
+    // / validation surfaces through a short window. Kept for the row-1 await-row
+    // fix session (the just-created project's row not appearing in budget).
+    log(
+      `step=create-project sub=DIAG phase=at-click ` +
+        `name-value="${nameInput instanceof HTMLInputElement ? nameInput.value : '(not-input)'}" ` +
+        `btn.disabled=${createBtn.disabled === true} ` +
+        `btn.aria-disabled=${createBtn.getAttribute('aria-disabled')} ` +
+        `btn.data-state=${createBtn.getAttribute('data-state')} ` +
+        `btn.text="${(createBtn.textContent || '').trim().slice(0, 24)}"`,
+    );
     clickClickable(createBtn);
+    await sleep(CREATE_DIAG_WINDOW_MS);
+    const niAfter = document.querySelector(PROJECT_NAME_INPUT_SELECTOR);
+    const diagErrors = [];
+    document
+      .querySelectorAll(
+        '[role="alert"], [aria-invalid="true"], [class*="error" i], [data-cy*="error" i], [class*="helper" i]',
+      )
+      .forEach((el) => {
+        const t = (el.textContent || '').trim().slice(0, 80);
+        if (t) diagErrors.push(t);
+      });
+    log(
+      `step=create-project sub=DIAG phase=t+${CREATE_DIAG_WINDOW_MS}ms ` +
+        `modal-open=${niAfter instanceof HTMLElement} ` +
+        `name-value-after="${niAfter instanceof HTMLInputElement ? niAfter.value : '(gone)'}" ` +
+        `errors=${JSON.stringify(diagErrors.slice(0, 6))}`,
+    );
+    dumpDataCyAttributes();
 
     // v3 does NOT auto-navigate into the new project; it lands back on the
     // projects list. Find the new project's row by name and click into it.

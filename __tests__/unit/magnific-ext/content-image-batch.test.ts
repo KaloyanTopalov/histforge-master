@@ -101,6 +101,8 @@ function loadContentScript(initialPathname = "/app/projects/work") {
     MAGNIFIC_PROJECTS_VIEW_READY_TIMEOUT_MS: 1000,
     // Aspect-ratio step budget short so the option-not-found test fails fast.
     MAGNIFIC_ASPECT_STEP_TIMEOUT_MS: 150,
+    // Carry-forward create-DIAG observation window ~0 so create tests don't pay it.
+    MAGNIFIC_CREATE_DIAG_WINDOW_MS: 10,
   };
   vm.createContext(sandbox);
   vm.runInContext(sharedSrc + "\n" + src, sandbox);
