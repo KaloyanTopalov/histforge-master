@@ -177,6 +177,88 @@ describe("EditForm tts_provider Select", () => {
   });
 });
 
+describe("EditForm image_provider Select", () => {
+  it("reflects image_provider='magnific' in the initial selector value (the seeded narrative-magnific-nano-banana case)", async () => {
+    await renderForm({ row: { image_provider: "magnific" } });
+
+    const trigger = screen.getByRole("combobox", { name: /image_provider/i });
+    expect(trigger.textContent).toMatch(/magnific/i);
+  });
+
+  it("offers all three image providers — ComfyUI, Google Flow, Magnific", async () => {
+    await renderForm();
+
+    const trigger = screen.getByRole("combobox", { name: /image_provider/i });
+    await act(async () => {
+      trigger.focus();
+      fireEvent.keyDown(trigger, { key: "Enter", code: "Enter" });
+    });
+
+    expect(
+      await screen.findByRole("option", { name: /^ComfyUI$/ })
+    ).toBeTruthy();
+    expect(screen.getByRole("option", { name: /^Google Flow$/ })).toBeTruthy();
+    expect(screen.getByRole("option", { name: /^Magnific$/ })).toBeTruthy();
+  });
+
+  it("reflects image_provider='google_flow' in the initial selector value (regression)", async () => {
+    await renderForm({ row: { image_provider: "google_flow" } });
+
+    const trigger = screen.getByRole("combobox", { name: /image_provider/i });
+    expect(trigger.textContent).toMatch(/google flow/i);
+  });
+
+  it("reflects image_provider='comfyui' in the initial selector value (regression)", async () => {
+    await renderForm({ row: { image_provider: "comfyui" } });
+
+    const trigger = screen.getByRole("combobox", { name: /image_provider/i });
+    expect(trigger.textContent).toMatch(/comfyui/i);
+  });
+
+  it("selecting Magnific includes image_provider in the PATCH body", async () => {
+    mockFetchOnce({ workflow: { version: 4 }, warnings: [] });
+
+    await renderForm(); // baseRow image_provider = comfyui
+
+    const trigger = screen.getByRole("combobox", { name: /image_provider/i });
+    await act(async () => {
+      trigger.focus();
+      fireEvent.keyDown(trigger, { key: "Enter", code: "Enter" });
+    });
+    const option = await screen.findByRole("option", { name: /^Magnific$/ });
+    await act(async () => {
+      fireEvent.click(option);
+    });
+
+    await clickSave();
+
+    const fetchMock = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.image_provider).toBe("magnific");
+    expect(body.expected_version).toBe(3);
+  });
+});
+
+describe("EditForm video_provider Select", () => {
+  it("offers only ComfyUI and Google Flow — never Magnific (narrative schema rejects video=magnific)", async () => {
+    await renderForm();
+
+    const trigger = screen.getByRole("combobox", { name: /video_provider/i });
+    await act(async () => {
+      trigger.focus();
+      fireEvent.keyDown(trigger, { key: "Enter", code: "Enter" });
+    });
+
+    expect(
+      await screen.findByRole("option", { name: /^ComfyUI$/ })
+    ).toBeTruthy();
+    expect(screen.getByRole("option", { name: /^Google Flow$/ })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: /^Magnific$/ })).toBeNull();
+  });
+});
+
 describe("EditForm chunker_step Select", () => {
   it("offers the three chunker variants", async () => {
     await renderForm();

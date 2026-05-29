@@ -39,12 +39,13 @@ export async function GET() {
       image: Object.keys(imageProviders),
       video: Object.keys(videoProviders),
     },
-    // Plan 1 Phase 1.2 Task 4: surface the kind discriminator so the
-    // AI-skill drafts importer can author music_video drafts too. The
-    // music_video kind's provider triple (image=magnific, video=magnific,
-    // music=suno) is enforced by `WorkflowImportSchema`'s discriminated
-    // union — the registry-derived `providers.*` arrays intentionally do
-    // NOT yet include `magnific` / `suno` (deferred to Plans 2/3).
+    // Surface the kind discriminator so the AI-skill drafts importer can
+    // author music_video drafts too. `providers.*` are registry-derived
+    // (the `Object.keys` calls above), so `magnific` now appears in both
+    // `image` and `video` — the Magnific providers are registered. There is
+    // no music-provider registry, so `suno` (the music_video music slot) is
+    // not enumerated here; it lives only in `WorkflowImportSchema`'s
+    // discriminated union.
     kinds: ["narrative", "music_video"],
   });
 }

@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { REAL_STEPS } from "@/worker/steps";
 import { LLM_PROVIDER_NAMES, type LlmProviderName } from "@/lib/llm/names";
+import {
+  IMAGE_PROVIDER_NAMES,
+  type ImageProviderName,
+} from "@/lib/image/names";
 
 /**
  * Per-row Zod schemas for the `workflows` table. These validate the
@@ -15,13 +19,15 @@ import { LLM_PROVIDER_NAMES, type LlmProviderName } from "@/lib/llm/names";
  * provider columns. Adding a new script step is enough to make it
  * pickable here — no schema edit needed.
  *
- * Plan 1 Phase 1.2 Task 4: `WorkflowRowSchema` is now a kind-discriminated
- * union over `narrative` and `music_video`. The narrative branch reuses
- * the pre-Phase-1.2 rules verbatim; the music_video branch hard-codes the
- * v1 provider triple (image=magnific, video=magnific, music=suno) with
- * `z.literal` so the `magnific` / `suno` strings stay out of
- * `IMAGE_PROVIDER_NAMES` / `VIDEO_PROVIDER_NAMES` until Plans 2/3
- * register them in the runtime registries.
+ * `WorkflowRowSchema` is a kind-discriminated union over `narrative` and
+ * `music_video`. The narrative branch derives its `image_provider` enum
+ * from `IMAGE_PROVIDER_NAMES` (`lib/image/names.ts`), which now includes
+ * `magnific` because the Magnific image provider is registered. The
+ * music_video branch hard-codes the v1 provider triple (image=magnific,
+ * video=magnific, music=suno) with `z.literal`. Narrative `video_provider`
+ * stays `comfyui | google_flow` — magnific-as-video is music-video-only —
+ * and `suno` has no runtime provider registry, so both remain literals on
+ * the music_video branch alone.
  *
  * Backward compat: payloads omitting `kind` default to `narrative` via the
  * outer `z.preprocess`, so pre-Phase-1.2 AI-skill drafts round-trip cleanly.
@@ -47,7 +53,14 @@ export const NarrativeRowSchema = z.object({
   tts_provider: z
     .enum(["ai33", "genaipro", "chatterbox", "chatterbox-fast"])
     .nullable(),
-  image_provider: z.enum(["comfyui", "google_flow", "magnific"]).nullable(),
+  image_provider: z
+    .enum(
+      IMAGE_PROVIDER_NAMES as unknown as [
+        ImageProviderName,
+        ...ImageProviderName[],
+      ]
+    )
+    .nullable(),
   video_provider: z.enum(["comfyui", "google_flow"]).nullable(),
   // Narrative rows always carry null for the music-video-only columns;
   // accepting absent or null keeps round-trip parity with legacy export
