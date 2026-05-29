@@ -437,14 +437,18 @@
     return false;
   }
 
-  // Returns 'ok' | 'skipped' | 'not-found'. Empty model → skip (Magnific
-  // default). Otherwise open the picker and click the Nano Banana 2 item,
-  // narrowing via the search box and falling back to a text prefix match.
+  // Select Nano Banana 2 and VERIFY it stuck. The Magnific account is SHARED, so
+  // a co-user can change the active model between or within runs — ALWAYS open
+  // the picker and select NB2 (never assume it's already selected), then confirm
+  // the trigger reflects "Nano Banana 2" before returning ok. Returns:
+  //   'ok'          — NB2 selected AND verified on the trigger
+  //   'not-found'   — the picker trigger or the NB2 item is missing
+  //   'wrong-model' — selected but the trigger does NOT reflect NB2 (load-bearing:
+  //                   wrong model = unusable image; the caller refuses to generate)
+  // `model` only steers the search-box / prefix fallback; the item is matched by
+  // its NB2 data-cy regardless, and there is no empty-model skip (a "default"
+  // could be any co-user's model).
   async function selectModel(model) {
-    if (!model) {
-      log('step=select-model status=skipped reason=empty-model');
-      return 'skipped';
-    }
     const trigger = await waitFor(MODEL_TRIGGER_DATA_CY, 8000);
     if (!(trigger instanceof HTMLElement)) {
       log(`step=select-model status=error reason=trigger-not-found tried=${MODEL_TRIGGER_DATA_CY}`);
@@ -458,27 +462,39 @@
     if (!(item instanceof HTMLElement)) {
       const search = document.querySelector(MODEL_SEARCH_DATA_CY);
       if (search instanceof HTMLElement) {
-        typeIntoInput(search, model);
+        typeIntoInput(search, model || 'Nano Banana 2');
         item = await waitFor(MODEL_ITEM_DATA_CY, 4000);
       }
     }
-    if (item instanceof HTMLElement) {
-      clickClickable(item);
-      log('step=select-model status=ok');
-      return 'ok';
-    }
-
-    const re = new RegExp(`^${escapeRegex(model)}`, 'i');
-    for (const row of document.querySelectorAll('[data-cy^="ai-model-item-"]')) {
-      if (re.test((row.textContent || '').trim())) {
-        clickClickable(row);
-        log('step=select-model status=ok match=prefix');
-        return 'ok';
+    if (!(item instanceof HTMLElement)) {
+      const re = new RegExp(`^${escapeRegex(model || 'Nano Banana 2')}`, 'i');
+      for (const row of document.querySelectorAll('[data-cy^="ai-model-item-"]')) {
+        if (re.test((row.textContent || '').trim())) {
+          item = row;
+          break;
+        }
       }
     }
-    log(`step=select-model status=error reason=not-found model=${model}`);
-    dumpDataCyAttributes();
-    return 'not-found';
+    if (!(item instanceof HTMLElement)) {
+      log(`step=select-model status=error reason=item-not-found model=${model || '(default NB2)'}`);
+      dumpDataCyAttributes();
+      return 'not-found';
+    }
+    clickClickable(item);
+    await sleep(300);
+
+    // VERIFY the trigger reflects Nano Banana 2 before generation runs — on a
+    // shared account a co-user's model could otherwise be the one that renders.
+    const current = (
+      document.querySelector(MODEL_TRIGGER_DATA_CY)?.textContent || ''
+    ).trim();
+    if (!/nano\s*banana\s*2/i.test(current)) {
+      log(`step=select-model status=error reason=wrong_model_selected trigger="${current.slice(0, 40)}"`);
+      dumpDataCyAttributes();
+      return 'wrong-model';
+    }
+    log(`step=select-model status=ok model="${current.slice(0, 40)}"`);
+    return 'ok';
   }
 
   // Set the aspect ratio to 16:9. Mirrors selectModel: open the popover via the
@@ -639,10 +655,16 @@
     }
     log('step=fill-prompt status=ok');
 
-    // 6. Select Nano Banana 2.
+    // 6. Select Nano Banana 2 and verify it stuck (shared account — a co-user
+    //    can swap the active model). A missing OR wrong model fails the row and
+    //    does NOT generate (wrong model = unusable image).
     const modelResult = await selectModel(model);
     if (modelResult === 'not-found') {
       reportFailure(taskId, 'model_not_found');
+      return;
+    }
+    if (modelResult === 'wrong-model') {
+      reportFailure(taskId, 'wrong_model_selected');
       return;
     }
 

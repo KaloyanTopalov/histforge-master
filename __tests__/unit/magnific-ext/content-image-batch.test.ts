@@ -116,7 +116,7 @@ function generatorHtml(opts: { headerUuid: string; smartOn?: boolean }): string 
     <button data-cy="registered-tool-ai-image-generator">AI Image Generator</button>
     <button data-cy="smart-prompt-toggle" aria-checked="${opts.smartOn === false ? "false" : "true"}">AI prompt</button>
     <div data-cy="image-prompt-input"><div contenteditable="true"></div></div>
-    <button data-cy="tti-mode-selector-v3-trigger">Auto</button>
+    <button data-cy="tti-mode-selector-v3-trigger">Google Nano Banana 2</button>
     <button data-cy="ai-model-item-slim-imagen-nano-banana-2-flash">Google Nano Banana 2</button>
     <button data-cy="tti-aspect-ratio-trigger">Aspect</button>
     <button data-cy="popover-option-16:9" aria-pressed="true">16:9</button>
@@ -628,6 +628,81 @@ describe("magnific-ext content-image-batch.js", () => {
     expect(failed[0][0]).toMatchObject({
       taskId: "ib_ar_fail",
       reason: "aspect_ratio_failed",
+    });
+  });
+
+  it("model select (shared account): always opens the picker, selects Nano Banana 2, and verifies the trigger reflects it before generating", async () => {
+    document.body.innerHTML = generatorHtml({ headerUuid: "work" });
+    // Simulate a co-user having swapped the model: the trigger shows another
+    // model until our selection lands. The executor must NOT assume it's
+    // already selected — it always opens the picker and selects NB2.
+    const trigger = document.querySelector(
+      '[data-cy="tti-mode-selector-v3-trigger"]'
+    ) as HTMLElement;
+    trigger.textContent = "Seedream 5 Lite";
+    const item = document.querySelector(
+      '[data-cy="ai-model-item-slim-imagen-nano-banana-2-flash"]'
+    ) as HTMLElement;
+    const triggerClick = vi.fn();
+    trigger.addEventListener("click", triggerClick);
+    item.addEventListener("click", () => {
+      trigger.textContent = "Google Nano Banana 2";
+    });
+    wireGenerateProducesImage("920");
+
+    const loaded = loadContentScript("/app/projects/" + WANT_UUID);
+    const { sendResponse } = dispatch(loaded.listeners, {
+      action: "magnificStartImageBatch",
+      taskId: "ib_m",
+      prompt: "x",
+      model: "",
+      videoTitle: "Rome",
+      magnificProjectId: WANT_UUID,
+    });
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled(), {
+      timeout: 4000,
+    });
+
+    expect(triggerClick).toHaveBeenCalled(); // never assumes it's already selected
+    const flat = loaded.logs.flat().map(String).join(" ");
+    expect(flat).toContain("step=select-model status=ok");
+    const completed = reportCalls(loaded.sendMessage, "magnificImageBatchCompleted");
+    expect(completed.length).toBe(1);
+  });
+
+  it("model select (load-bearing): fails wrong_model_selected and does NOT generate when the trigger doesn't reflect Nano Banana 2 after selecting", async () => {
+    document.body.innerHTML = generatorHtml({ headerUuid: "work" });
+    // A co-user's model stays active — our selection doesn't make the trigger
+    // reflect Nano Banana 2, so generation must be refused.
+    const trigger = document.querySelector(
+      '[data-cy="tti-mode-selector-v3-trigger"]'
+    ) as HTMLElement;
+    trigger.textContent = "Seedream 5 Lite";
+    const generateClick = vi.fn();
+    (
+      document.querySelector('[data-cy="generate-button"]') as HTMLButtonElement
+    ).addEventListener("click", generateClick);
+
+    const loaded = loadContentScript("/app/projects/" + WANT_UUID);
+    const { sendResponse } = dispatch(loaded.listeners, {
+      action: "magnificStartImageBatch",
+      taskId: "ib_mfail",
+      prompt: "x",
+      model: "",
+      videoTitle: "Rome",
+      magnificProjectId: WANT_UUID,
+    });
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled(), {
+      timeout: 4000,
+    });
+
+    expect(generateClick).not.toHaveBeenCalled();
+    const flat = loaded.logs.flat().map(String).join(" ");
+    expect(flat).toContain("wrong_model_selected");
+    const failed = reportCalls(loaded.sendMessage, "magnificImageBatchFailed");
+    expect(failed[0][0]).toMatchObject({
+      taskId: "ib_mfail",
+      reason: "wrong_model_selected",
     });
   });
 });
