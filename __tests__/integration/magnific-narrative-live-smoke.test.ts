@@ -302,9 +302,12 @@ describe.skipIf(!RUN)(
       }
       if (tempDir) rmSync(tempDir, { recursive: true, force: true });
       if (extLogs.length > 0) {
+        // Print the FULL captured log (oldest→newest), not just the tail: in a
+        // multi-row run the tail only shows the last row, hiding an earlier
+        // row's failing sub-step (e.g. the row-1 cold-tab create failure).
         console.warn(
-          `[live-smoke] captured ${extLogs.length} content-script log line(s); last reached step:\n` +
-            extLogs.slice(-15).join("\n"),
+          `[live-smoke] captured ${extLogs.length} content-script log line(s) (full, oldest→newest):\n` +
+            extLogs.slice(-80).join("\n"),
         );
       }
       if (createdProjectUuid) {
