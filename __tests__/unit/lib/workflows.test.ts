@@ -114,6 +114,7 @@ describe("listWorkflows", () => {
       "google-flow-clips-only",
       "google-flow-images-only",
       "music-video-magnific-suno",
+      "narrative-magnific-nano-banana",
     ]);
   });
 });
@@ -202,6 +203,43 @@ describe("materializeStepList — built-in regression target", () => {
     const db = freshDb();
     const snap = resolveSnapshot(db, "google-flow-clips-only");
     expect(materializeStepList(snap)).toEqual(CLIPS_ONLY_STEPS);
+  });
+});
+
+describe("narrative-magnific-nano-banana built-in (S2: enabled)", () => {
+  it("resolves with image_provider=magnific, chunk_images_only, no video provider", () => {
+    const db = freshDb();
+    const snap = resolveSnapshot(db, "narrative-magnific-nano-banana");
+    expect(snap).toEqual({
+      workflow_id: "narrative-magnific-nano-banana",
+      version: 1,
+      kind: "narrative",
+      script_llm_provider: "openrouter",
+      tts_provider: "ai33",
+      image_provider: "magnific",
+      video_provider: null,
+      music_provider: null,
+      upscaler_provider: null,
+      chunker_step: "chunk_images_only",
+      steps: [
+        { step_name: "research_outline" },
+        { step_name: "write_hook" },
+        { step_name: "write_chapters" },
+      ],
+    });
+  });
+
+  it("materializes to the images-only unified step list (unified generate_images, no generate_clips)", () => {
+    const db = freshDb();
+    const snap = resolveSnapshot(db, "narrative-magnific-nano-banana");
+    expect(materializeStepList(snap)).toEqual(IMAGES_ONLY_STEPS);
+  });
+
+  it("is seeded enabled=1 (S2 landed the real Magnific provider)", () => {
+    const db = freshDb();
+    expect(
+      getWorkflowFromDb(db, "narrative-magnific-nano-banana")!.enabled
+    ).toBe(1);
   });
 });
 

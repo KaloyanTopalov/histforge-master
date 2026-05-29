@@ -62,6 +62,14 @@ describe("WorkflowRowSchema", () => {
     ).toBe(false);
   });
 
+  it("accepts image_provider 'magnific' on a narrative row (narrative-magnific workflow)", () => {
+    const result = WorkflowRowSchema.safeParse({
+      ...VALID_ROW,
+      image_provider: "magnific",
+    });
+    expect(result.success).toBe(true);
+  });
+
   it("accepts every documented tts_provider value (incl. null)", () => {
     for (const v of ["ai33", "genaipro", "chatterbox", null]) {
       const result = WorkflowRowSchema.safeParse({

@@ -47,7 +47,7 @@ export const NarrativeRowSchema = z.object({
   tts_provider: z
     .enum(["ai33", "genaipro", "chatterbox", "chatterbox-fast"])
     .nullable(),
-  image_provider: z.enum(["comfyui", "google_flow"]).nullable(),
+  image_provider: z.enum(["comfyui", "google_flow", "magnific"]).nullable(),
   video_provider: z.enum(["comfyui", "google_flow"]).nullable(),
   // Narrative rows always carry null for the music-video-only columns;
   // accepting absent or null keeps round-trip parity with legacy export

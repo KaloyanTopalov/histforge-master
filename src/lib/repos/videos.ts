@@ -562,6 +562,23 @@ export function clearDeferredUntil(db: DatabaseType, id: string): void {
   db.prepare("UPDATE videos SET deferred_until = NULL WHERE id = ?").run(id);
 }
 
+/**
+ * Cache the Magnific Project UUID created for this video's narrative
+ * image batch. Passing `null` clears it (e.g. when a cached Project was
+ * deleted in Magnific and must be re-created). Idempotent at the row
+ * level — re-setting the same value is a no-op UPDATE.
+ */
+export function setMagnificProjectId(
+  db: DatabaseType,
+  id: string,
+  projectId: string | null
+): void {
+  db.prepare("UPDATE videos SET magnific_project_id = ? WHERE id = ?").run(
+    projectId,
+    id
+  );
+}
+
 export function setPaused(db: DatabaseType, id: string): void {
   db.prepare("UPDATE videos SET paused = 1 WHERE id = ?").run(id);
 }

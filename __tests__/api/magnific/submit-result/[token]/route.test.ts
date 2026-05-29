@@ -45,19 +45,37 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function seedVideo(id: string): Promise<void> {
+async function seedVideo(
+  id: string,
+  opts?: { title?: string; magnificProjectId?: string | null }
+): Promise<void> {
   const { getDb } = await import("@/lib/db");
   getDb()
     .prepare(
-      `INSERT INTO videos (id, title, topic_info, workflow_id, status, kind, created_at)
-       VALUES (?, ?, ?, ?, 'queued', 'music_video', ?)`
+      `INSERT INTO videos (id, title, topic_info, workflow_id, status, kind, magnific_project_id, created_at)
+       VALUES (?, ?, ?, ?, 'queued', 'music_video', ?, ?)`
     )
-    .run(id, "T", "info", "music-video-magnific-suno", Date.now());
+    .run(
+      id,
+      opts?.title ?? "T",
+      "info",
+      "music-video-magnific-suno",
+      opts?.magnificProjectId ?? null,
+      Date.now()
+    );
+}
+
+async function readVideoProjectId(id: string): Promise<string | null> {
+  const { getDb } = await import("@/lib/db");
+  const row = getDb()
+    .prepare("SELECT magnific_project_id FROM videos WHERE id = ?")
+    .get(id) as { magnific_project_id: string | null } | undefined;
+  return row?.magnific_project_id ?? null;
 }
 
 async function seedDispatched(args: {
   videoId: string;
-  mode: "image-hitl" | "image-to-video";
+  mode: "image-hitl" | "image-to-video" | "image-batch";
   externalTaskId: string;
   outputPath: string;
   referenceImage?: string | null;
@@ -274,5 +292,147 @@ describe("POST /api/magnific/submit-result/:token", () => {
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ success: true, duplicate: true });
+  });
+
+  it("persists magnific_project_id from an image-batch done body to the videos row", async () => {
+    const { setSetting } = await import("@/lib/settings");
+    setSetting("magnific_token", "T-ibp");
+    await seedVideo("vid_ibp"); // magnific_project_id starts null
+    await seedDispatched({
+      videoId: "vid_ibp",
+      mode: "image-batch",
+      externalTaskId: "70_1700000000",
+      outputPath: "images/0001.png",
+    });
+
+    const bodyBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response(bodyBytes, {
+          status: 200,
+          headers: { "content-type": "image/png" },
+        })
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const res = await callSubmit("T-ibp", {
+      external_task_id: "70_1700000000",
+      status: "done",
+      resultUrl: "https://cdn.cdnpk.net/output/70.png",
+      magnific_project_id: "new-proj-uuid",
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true });
+
+    expect(await readVideoProjectId("vid_ibp")).toBe("new-proj-uuid");
+  });
+
+  it("clears a stale cached magnific_project_id when an image-batch row reports project_missing", async () => {
+    const { setSetting } = await import("@/lib/settings");
+    setSetting("magnific_token", "T-ibc");
+    await seedVideo("vid_ibc", { magnificProjectId: "stale-uuid" });
+    const rowId = await seedDispatched({
+      videoId: "vid_ibc",
+      mode: "image-batch",
+      externalTaskId: "71_1700000000",
+      outputPath: "images/0001.png",
+    });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const res = await callSubmit("T-ibc", {
+      external_task_id: "71_1700000000",
+      status: "failed",
+      error: "project_missing",
+      magnific_project_id: null,
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true });
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(await readVideoProjectId("vid_ibc")).toBeNull();
+
+    const { getDb } = await import("@/lib/db");
+    const row = getDb()
+      .prepare("SELECT status, error_reason FROM magnific_queue WHERE id = ?")
+      .get(rowId) as { status: string; error_reason: string | null };
+    expect(row.status).toBe("failed");
+    expect(row.error_reason).toBe("project_missing");
+  });
+
+  it("leaves the cached magnific_project_id untouched when the field is absent from the body", async () => {
+    const { setSetting } = await import("@/lib/settings");
+    setSetting("magnific_token", "T-iba");
+    await seedVideo("vid_iba", { magnificProjectId: "keep-uuid" });
+    await seedDispatched({
+      videoId: "vid_iba",
+      mode: "image-batch",
+      externalTaskId: "72_1700000000",
+      outputPath: "images/0001.png",
+    });
+    const bodyBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response(bodyBytes, {
+          status: 200,
+          headers: { "content-type": "image/png" },
+        })
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const res = await callSubmit("T-iba", {
+      external_task_id: "72_1700000000",
+      status: "done",
+      resultUrl: "https://cdn.cdnpk.net/output/72.png",
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true });
+
+    expect(await readVideoProjectId("vid_iba")).toBe("keep-uuid");
+  });
+
+  it("is idempotent when two image-batch rows report the same magnific_project_id", async () => {
+    const { setSetting } = await import("@/lib/settings");
+    setSetting("magnific_token", "T-ibi");
+    await seedVideo("vid_ibi"); // starts null
+    await seedDispatched({
+      videoId: "vid_ibi",
+      mode: "image-batch",
+      externalTaskId: "73_1700000000",
+      outputPath: "images/0001.png",
+    });
+    await seedDispatched({
+      videoId: "vid_ibi",
+      mode: "image-batch",
+      externalTaskId: "74_1700000000",
+      outputPath: "images/0002.png",
+    });
+    const bodyBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response(bodyBytes, {
+          status: 200,
+          headers: { "content-type": "image/png" },
+        })
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const r1 = await callSubmit("T-ibi", {
+      external_task_id: "73_1700000000",
+      status: "done",
+      resultUrl: "https://cdn.cdnpk.net/output/73.png",
+      magnific_project_id: "X",
+    });
+    expect(await r1.json()).toEqual({ success: true });
+    expect(await readVideoProjectId("vid_ibi")).toBe("X");
+
+    const r2 = await callSubmit("T-ibi", {
+      external_task_id: "74_1700000000",
+      status: "done",
+      resultUrl: "https://cdn.cdnpk.net/output/74.png",
+      magnific_project_id: "X",
+    });
+    expect(await r2.json()).toEqual({ success: true });
+    expect(await readVideoProjectId("vid_ibi")).toBe("X");
   });
 });

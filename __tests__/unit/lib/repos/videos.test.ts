@@ -54,6 +54,7 @@ function sampleVideo(overrides: Partial<Video> = {}): Video {
     image_chunk_target_seconds: null,
     image_chunk_min_seconds: null,
     image_chunk_max_seconds: null,
+    magnific_project_id: null,
     created_at: 100,
     ...overrides,
   };
@@ -1042,6 +1043,31 @@ describe("videosRepo defer lifecycle", () => {
     videosRepo.setDeferredUntil(db, "v1", 1_800_000);
     videosRepo.setDeferredUntil(db, "v1", null);
     expect(videosRepo.findById(db, "v1")!.deferred_until).toBeNull();
+  });
+});
+
+describe("videosRepo.setMagnificProjectId", () => {
+  const UUID = "329f5c65-05dc-441d-8515-89b8d6915006";
+
+  it("persists a Project UUID and is idempotent on repeat", () => {
+    const db = freshDb();
+    seed(db, sampleVideo());
+    expect(videosRepo.findById(db, "v1")!.magnific_project_id).toBeNull();
+
+    videosRepo.setMagnificProjectId(db, "v1", UUID);
+    expect(videosRepo.findById(db, "v1")!.magnific_project_id).toBe(UUID);
+
+    // Re-setting the same value is a no-op (row-level idempotent UPDATE).
+    videosRepo.setMagnificProjectId(db, "v1", UUID);
+    expect(videosRepo.findById(db, "v1")!.magnific_project_id).toBe(UUID);
+  });
+
+  it("setMagnificProjectId(null) clears the value", () => {
+    const db = freshDb();
+    seed(db, sampleVideo());
+    videosRepo.setMagnificProjectId(db, "v1", UUID);
+    videosRepo.setMagnificProjectId(db, "v1", null);
+    expect(videosRepo.findById(db, "v1")!.magnific_project_id).toBeNull();
   });
 });
 

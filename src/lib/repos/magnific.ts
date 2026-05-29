@@ -275,6 +275,29 @@ export function countByStatusForVideoAllModes(
 }
 
 /**
+ * Output paths of non-failed rows for a (video, mode). The narrative
+ * image-batch provider uses this for resume idempotency: the magnific_queue
+ * has no chunk_id column, so output_path is the per-chunk identity. Rows in
+ * pending/dispatched/done all count as "already covered" and are skipped on
+ * re-entry; failed rows are excluded so a re-run enqueues a fresh attempt
+ * (mirrors the google_flow producer's treatment of settled failed rows).
+ */
+export function listActiveOutputPaths(
+  db: DatabaseType,
+  videoId: string,
+  mode: MagnificQueueMode
+): string[] {
+  return (
+    db
+      .prepare(
+        `SELECT output_path FROM magnific_queue
+          WHERE video_id = ? AND mode = ? AND status != 'failed'`
+      )
+      .all(videoId, mode) as Array<{ output_path: string }>
+  ).map((r) => r.output_path);
+}
+
+/**
  * Latest dispatched HITL row for a video, if any. Powers the magnific
  * HITL banner: the banner pops only once the row is dispatched (the
  * extension has claimed it and opened/focused the Magnific tab), and

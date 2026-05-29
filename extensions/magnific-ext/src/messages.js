@@ -127,6 +127,40 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       break;
     }
 
+    case 'magnificImageBatchCompleted': {
+      // Narrative image-batch content script reports a harvested image URL,
+      // plus the Project UUID it created on the first row (null on reuse) so
+      // the executor can echo it to submit-result for server-side caching.
+      const matched =
+        typeof notifyImageBatchCompleted === 'function'
+          ? notifyImageBatchCompleted(
+              message.taskId,
+              message.resultUrl,
+              message.magnificProjectId
+            )
+          : false;
+      sendResponse({ success: true, matched });
+      break;
+    }
+
+    case 'magnificImageBatchFailed': {
+      // Narrative image-batch content script reports a reached-conclusion
+      // failure (selector miss, wrong_project_active, project_missing,
+      // model-not-found, generation-never-appeared). The executor POSTs
+      // submit-result failed; clearProjectId=true (project_missing) tells it
+      // to send magnific_project_id:null so the server clears the stale id.
+      const matched =
+        typeof notifyImageBatchFailed === 'function'
+          ? notifyImageBatchFailed(
+              message.taskId,
+              message.reason,
+              message.clearProjectId
+            )
+          : false;
+      sendResponse({ success: true, matched });
+      break;
+    }
+
     case 'fetchReference': {
       // Cross-origin proxy for the i2v content script. The script runs on
       // https://www.magnific.com so a direct fetch() of the HistForge

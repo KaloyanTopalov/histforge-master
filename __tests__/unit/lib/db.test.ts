@@ -97,6 +97,23 @@ describe("createDb", () => {
     }
   });
 
+  it("videos table carries magnific_project_id nullable with no default", () => {
+    const db = createDb(":memory:");
+    try {
+      const cols = db
+        .prepare("PRAGMA table_info(videos)")
+        .all() as Array<{ name: string; notnull: number; dflt_value: string | null }>;
+      const byName = Object.fromEntries(cols.map((c) => [c.name, c]));
+      expect(byName).toHaveProperty("magnific_project_id");
+      expect(byName.magnific_project_id).toMatchObject({
+        notnull: 0,
+        dflt_value: null,
+      });
+    } finally {
+      db.close();
+    }
+  });
+
   it("videos table carries paused NOT NULL DEFAULT 0", () => {
     const db = createDb(":memory:");
     try {
@@ -1912,6 +1929,7 @@ describe("seedDefaultWorkflows", () => {
         "google-flow-clips-only",
         "google-flow-images-only",
         "music-video-magnific-suno",
+        "narrative-magnific-nano-banana",
       ]);
 
       // Lifecycle columns are stamped uniformly across all builtins
@@ -1919,6 +1937,9 @@ describe("seedDefaultWorkflows", () => {
       // below in dedicated lookups.
       for (const row of rows) {
         expect(row.is_builtin).toBe(1);
+        // enabled is uniform=1 across builtins. The narrative-magnific builtin
+        // shipped gated off in S1 and was enabled in S2 once the real Magnific
+        // image provider replaced the throwing stub.
         expect(row.enabled).toBe(1);
         expect(row.version).toBe(1);
         expect(row.created_at).toBeGreaterThanOrEqual(before);
@@ -2025,6 +2046,7 @@ describe("seedDefaultWorkflows", () => {
         "google-flow-clips-only",
         "google-flow-images-only",
         "music-video-magnific-suno",
+        "narrative-magnific-nano-banana",
       ]);
     } finally {
       db.close();
@@ -2047,6 +2069,7 @@ describe("seedDefaultWorkflows", () => {
         "google-flow",
         "google-flow-clips-only",
         "google-flow-images-only",
+        "narrative-magnific-nano-banana",
       ]);
       for (const row of rows) {
         expect(row.kind).toBe("narrative");

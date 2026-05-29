@@ -164,6 +164,8 @@ export type SeedWorkflow = {
     | "chunk_images_only"
     | "chunk_clips_only"
     | null;
+  /** Optional seed override of the `enabled` flag; omitted entries default to 1 (enabled). */
+  enabled?: 0 | 1;
   steps: { step_name: string }[];
 };
 
@@ -264,6 +266,30 @@ export const BUILTIN_WORKFLOWS: readonly SeedWorkflow[] = [
     chunker_step: null,
     steps: [],
   },
+  {
+    id: "narrative-magnific-nano-banana",
+    label: "Narrative — Magnific (Nano Banana 2)",
+    short_label: "Magnific NB2",
+    description:
+      "Narrative still images via Magnific's Google Nano Banana 2 model, one Project per video.",
+    kind: "narrative",
+    script_llm_provider: "openrouter",
+    tts_provider: "ai33",
+    image_provider: "magnific",
+    video_provider: null,
+    music_provider: null,
+    upscaler_provider: null,
+    chunker_step: "chunk_images_only",
+    // Enabled in S2: MagnificImageProvider.generateBatch now enqueues
+    // image-batch rows and awaits the queue, replacing the throwing stub —
+    // see the magnific-narrative spec.
+    enabled: 1,
+    steps: [
+      { step_name: "research_outline" },
+      { step_name: "write_hook" },
+      { step_name: "write_chapters" },
+    ],
+  },
 ];
 
 /**
@@ -288,7 +314,7 @@ export function seedDefaultWorkflows(db: DatabaseType): void {
         music_provider, upscaler_provider,
         is_builtin, enabled, version, created_at, updated_at,
         chunker_step)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, 1, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 1, ?, ?, ?)`
   );
   const insertStep = db.prepare(
     "INSERT OR IGNORE INTO workflow_steps (workflow_id, position, step_name) VALUES (?, ?, ?)"
@@ -308,6 +334,7 @@ export function seedDefaultWorkflows(db: DatabaseType): void {
         wf.video_provider,
         wf.music_provider,
         wf.upscaler_provider,
+        wf.enabled ?? 1,
         now,
         now,
         wf.chunker_step
@@ -775,6 +802,20 @@ export function createDb(path: string): DatabaseType {
   }
   try {
     db.exec("ALTER TABLE videos ADD COLUMN image_chunk_max_seconds INTEGER");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/duplicate column name/i.test(msg)) {
+      throw err;
+    }
+  }
+
+  // Per-video Magnific Project UUID. The narrative-magnific image path
+  // caches the created Project's id here after first creation so later
+  // chunks reuse it instead of re-creating a Project. Nullable TEXT;
+  // NULL = no Project created yet. Additive ALTER per the
+  // duplicate-column-swallow pattern above.
+  try {
+    db.exec("ALTER TABLE videos ADD COLUMN magnific_project_id TEXT");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (!/duplicate column name/i.test(msg)) {

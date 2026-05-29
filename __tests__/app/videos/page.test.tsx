@@ -55,6 +55,7 @@ describe("listEnabledWorkflowsForClient", () => {
       "google-flow-clips-only",
       "google-flow-images-only",
       "music-video-magnific-suno",
+      "narrative-magnific-nano-banana",
     ]);
   });
 
@@ -94,6 +95,12 @@ describe("listEnabledWorkflowsForClient", () => {
         shortLabel: "Magnific × Suno",
         label: "Music video (Magnific images + Suno music)",
         kind: "music_video",
+      },
+      {
+        id: "narrative-magnific-nano-banana",
+        shortLabel: "Magnific NB2",
+        label: "Narrative — Magnific (Nano Banana 2)",
+        kind: "narrative",
       },
     ]);
   });

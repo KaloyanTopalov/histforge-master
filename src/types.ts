@@ -60,6 +60,12 @@ export interface Video {
    * to the global setting via `getImageChunkPacing`.
    */
   image_chunk_max_seconds: number | null;
+  /**
+   * Magnific Project UUID for the narrative-magnific image path. NULL
+   * until the extension creates a Project for this video; cached here so
+   * later image chunks reuse it. See the magnific-narrative spec.
+   */
+  magnific_project_id: string | null;
   created_at: number;
 }
 
@@ -133,7 +139,7 @@ export interface GoogleFlowQueueItem {
  * `image-to-video` is the unattended Magnific Seedance step (no_timeout=0
  * so the reaper can requeue a hung extension session). Per ADR-0012.
  */
-export type MagnificQueueMode = "image-hitl" | "image-to-video";
+export type MagnificQueueMode = "image-hitl" | "image-to-video" | "image-batch";
 export type MagnificQueueStatus =
   | "pending"
   | "dispatched"

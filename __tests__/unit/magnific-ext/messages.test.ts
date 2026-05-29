@@ -254,6 +254,56 @@ describe("magnific-ext messages router", () => {
     expect(sendResponse).toHaveBeenCalledWith({ success: true, matched: false });
   });
 
+  // image-batch (narrative) — completion carries the Project UUID the
+  // content script harvested (present only on the first row, when it
+  // created the Project) so the executor can echo it to submit-result.
+  it("routes magnificImageBatchCompleted to notifyImageBatchCompleted(taskId, resultUrl, magnificProjectId)", () => {
+    const notifyImageBatchCompleted = vi.fn(() => true);
+    const listener = loadMessages({ notifyImageBatchCompleted });
+    const sendResponse = vi.fn();
+    listener(
+      {
+        action: "magnificImageBatchCompleted",
+        taskId: "ib_1",
+        resultUrl: "https://pikaso.cdnpk.net/media/123/render.png",
+        magnificProjectId: "proj-x",
+      },
+      null,
+      sendResponse,
+    );
+    expect(notifyImageBatchCompleted).toHaveBeenCalledWith(
+      "ib_1",
+      "https://pikaso.cdnpk.net/media/123/render.png",
+      "proj-x",
+    );
+    expect(sendResponse).toHaveBeenCalledWith({ success: true, matched: true });
+  });
+
+  // image-batch failures are reached conclusions → the executor POSTs
+  // submit-result failed. clearProjectId=true signals project_missing
+  // (the cached Project was deleted → clear it server-side).
+  it("routes magnificImageBatchFailed to notifyImageBatchFailed(taskId, reason, clearProjectId)", () => {
+    const notifyImageBatchFailed = vi.fn(() => true);
+    const listener = loadMessages({ notifyImageBatchFailed });
+    const sendResponse = vi.fn();
+    listener(
+      {
+        action: "magnificImageBatchFailed",
+        taskId: "ib_2",
+        reason: "project_missing",
+        clearProjectId: true,
+      },
+      null,
+      sendResponse,
+    );
+    expect(notifyImageBatchFailed).toHaveBeenCalledWith(
+      "ib_2",
+      "project_missing",
+      true,
+    );
+    expect(sendResponse).toHaveBeenCalledWith({ success: true, matched: true });
+  });
+
   // The i2v content script can't fetch the HistForge artifact URL directly
   // (mixed-content blocking + no CORS), so the SW proxies it. Verifies the
   // success path returns ok:true + a data URL the content script can decode.

@@ -72,4 +72,22 @@ describe("magnific-ext executor registry", () => {
     expect(runImageToVideo).toHaveBeenCalledWith(task);
     expect(runImageHitl).not.toHaveBeenCalled();
   });
+
+  it("dispatches mode='image-batch' to runImageBatch", async () => {
+    const runImageHitl = vi.fn();
+    const runImageToVideo = vi.fn();
+    const runImageBatch = vi.fn(async (_task: unknown) => ({ ok: true }));
+    const reg = loadRegistry({ runImageHitl, runImageToVideo, runImageBatch });
+    const task = {
+      id: "x_5",
+      mode: "image-batch",
+      prompt: "a senator in the forum",
+      video_title: "The Fall of Rome",
+      magnific_project_id: null,
+    };
+    await reg.executeTaskViaExtension(task);
+    expect(runImageBatch).toHaveBeenCalledWith(task);
+    expect(runImageHitl).not.toHaveBeenCalled();
+    expect(runImageToVideo).not.toHaveBeenCalled();
+  });
 });

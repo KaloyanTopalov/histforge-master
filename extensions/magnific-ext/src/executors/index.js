@@ -5,11 +5,13 @@
 //
 // Runtime deps (resolved at call time): runImageHitl
 // (src/executors/image-hitl.js), runImageToVideo
-// (src/executors/image-to-video.js), safeLog (src/logger.js).
+// (src/executors/image-to-video.js), runImageBatch
+// (src/executors/image-batch.js), safeLog (src/logger.js).
 
 const EXECUTORS = {
   'image-hitl': { run: (task) => runImageHitl(task) },
   'image-to-video': { run: (task) => runImageToVideo(task) },
+  'image-batch': { run: (task) => runImageBatch(task) },
 };
 
 async function executeTaskViaExtension(task) {

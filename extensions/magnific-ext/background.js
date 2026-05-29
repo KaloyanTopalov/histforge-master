@@ -17,6 +17,7 @@ importScripts('src/runner.js');
 importScripts('src/executors/content-script-handshake.js');
 importScripts('src/executors/image-hitl.js');
 importScripts('src/executors/image-to-video.js');
+importScripts('src/executors/image-batch.js');
 importScripts('src/executors/index.js');
 importScripts('src/status.js');
 importScripts('src/messages.js');
