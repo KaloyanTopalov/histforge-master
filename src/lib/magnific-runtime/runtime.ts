@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { chromium, type BrowserContext } from "playwright";
 import { getSetting } from "@/lib/settings";
-import { injectToken } from "./extension-token";
+import { configureAndStartExtension, sendStopPolling } from "./extension-token";
 
 export interface RuntimeStatus {
   running: boolean;
@@ -92,7 +92,11 @@ export class MagnificRuntime {
     this.context = ctx;
 
     try {
-      await injectToken(ctx, getSetting("magnific_token"));
+      await configureAndStartExtension(
+        ctx,
+        getSetting("histforge_base_url"),
+        getSetting("magnific_token"),
+      );
     } catch (err) {
       this.lastError = err instanceof Error ? err.message : String(err);
       // Best-effort: tear down the half-initialized browser so the next
@@ -116,6 +120,17 @@ export class MagnificRuntime {
     // Mark intentional before close() — the close event fires during close,
     // and handleDisconnect must see this flag to skip the relaunch.
     this.stopping = true;
+    // Disarm the SW alarm before tearing down the browser so any in-flight
+    // alarm tick fires through the now-disabled gate rather than racing the
+    // teardown. sendStopPolling already swallows transport failures, but
+    // belt-and-braces a defensive catch here: the runtime must continue to
+    // ctx.close() regardless — a half-closed runtime is worse than a
+    // missing stopPolling round-trip.
+    try {
+      await sendStopPolling(this.context);
+    } catch {
+      // ignore — see comment above
+    }
     await this.context.close();
     this.context = null;
     this.backoffMs = 1000;

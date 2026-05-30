@@ -23,11 +23,29 @@
  */
 
 import type { Database as DatabaseType } from "better-sqlite3";
-import { rmSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import * as videosRepo from "@/lib/repos/videos";
 import * as stepsRepo from "@/lib/repos/steps";
 import * as videoPredicates from "@/lib/lifecycle/predicates/video";
+import { cleanupProjectArtifacts } from "@/lib/cleanup";
+
+/**
+ * Intermediate directories whose presence flips `already_clean` in
+ * `cleanupIntermediates`. Keep narrow to the four asset-typed dirs the
+ * KEEP set in `lib/cleanup.ts` excludes — touching root files
+ * (`final.mp4`, `pipeline.log`) or `script/` would muddy the signal
+ * because the KEEP set itself lives there. Exported so the video
+ * detail page derives `intermediatesPresent` from the same list — UI
+ * and lifecycle must agree on what counts as an intermediate or the
+ * dashboard would lie to the operator about cleanup state.
+ */
+export const INTERMEDIATE_DIRS = [
+  "images",
+  "audio",
+  "alignment",
+  "chunks",
+] as const;
 
 export type PauseResult =
   | { ok: true }
@@ -51,6 +69,10 @@ export type RestartResult =
 export type RerenderLastStepResult =
   | { ok: true }
   | { ok: false; reason: "not_found" | "wrong_kind" | "not_done" };
+
+export type CleanupIntermediatesResult =
+  | { ok: true; already_clean: boolean }
+  | { ok: false; reason: "not_found" | "not_done" };
 
 /**
  * Atomic pause: read the video, guard via `videoPredicates.isPausable`,
@@ -223,6 +245,39 @@ export function rerenderLastStep(
     videosRepo.setStatus(db, videoId, "queued");
   })();
   return { ok: true };
+}
+
+/**
+ * Operator-triggered cleanup of a done video's intermediates. No DB
+ * write — this method is read-then-FS. Returns `already_clean: true`
+ * when the four intermediate dirs are already absent so a re-click on
+ * the dashboard button is harmless rather than a 500. Idempotency
+ * detection runs BEFORE the wipe so a no-op call doesn't redundantly
+ * invoke `cleanupProjectArtifacts`.
+ *
+ * Deliberately bypasses the `auto_cleanup_after_render` setting: the
+ * setting gates only the post-render step (15-cleanup.ts). This is the
+ * explicit operator trigger and runs regardless of the gate's value.
+ */
+export function cleanupIntermediates(
+  db: DatabaseType,
+  videoId: string,
+  projectsDir: string
+): CleanupIntermediatesResult {
+  const video = videosRepo.findById(db, videoId);
+  if (!video) return { ok: false, reason: "not_found" };
+  if (!videoPredicates.isCleanupable(video)) {
+    return { ok: false, reason: "not_done" };
+  }
+  const projDir = join(projectsDir, videoId);
+  const hasAnyIntermediate = INTERMEDIATE_DIRS.some((d) =>
+    existsSync(join(projDir, d))
+  );
+  if (!hasAnyIntermediate) {
+    return { ok: true, already_clean: true };
+  }
+  cleanupProjectArtifacts(projectsDir, videoId);
+  return { ok: true, already_clean: false };
 }
 
 /**

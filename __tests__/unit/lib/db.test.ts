@@ -7,6 +7,7 @@ import {
   seedDefaultSettings,
   seedDefaultWorkflows,
 } from "@/lib/db";
+import { getSetting } from "@/lib/settings";
 
 // Some pragmas (journal_mode=WAL) only take effect on real file-backed DBs.
 // Helper to create an isolated temp file DB per test and clean it up.
@@ -2237,7 +2238,23 @@ describe("seedDefaultSettings", () => {
         magnific_runtime_user_data_dir: "data/magnific-userdata",
         magnific_runtime_window_visible: "false",
         magnific_runtime_extension_path: "extensions/magnific-ext",
+        auto_cleanup_after_render: "false",
+        histforge_base_url: "http://localhost:3000",
       });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("seeds histforge_base_url default to http://localhost:3000", () => {
+    // Magnific runtime configures the magnific-ext extension at start by
+    // sending updateWebhooks with URLs derived from this base. Default
+    // matches the dev server origin so a fresh DB Just Works in dev; ops
+    // override the row in prod.
+    const db = createDb(":memory:");
+    try {
+      seedDefaultSettings(db);
+      expect(getSetting("histforge_base_url", db)).toBe("http://localhost:3000");
     } finally {
       db.close();
     }

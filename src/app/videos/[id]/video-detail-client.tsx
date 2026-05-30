@@ -43,6 +43,7 @@ import { VideoActions } from "./video-actions";
 import { FlowModerationPanel } from "./flow-moderation-panel";
 import { FlowProgressPanel } from "./flow-progress-panel";
 import { ArtifactsPanel } from "./artifacts-panel";
+import { CleanupSection } from "./cleanup-section";
 import { VoiceoverUpload } from "./voiceover-upload";
 import { AlignmentUpload } from "./alignment-upload";
 import { CharacterReferenceUpload } from "./character-reference-upload";
@@ -86,6 +87,15 @@ interface VideoDetailClientProps {
   // `script/full_script.md` exists yet; the panel renders `—` in that
   // case.
   scriptWordCount?: number | null;
+  // True when any of the four INTERMEDIATE_DIRS (images/, audio/,
+  // alignment/, chunks/) is present under the project dir. Drives the
+  // disabled state of the Cleanup intermediates button. Computed
+  // server-side in page.tsx from the same list lib/lifecycle/video.ts
+  // uses, so UI and route agree on what counts as an intermediate.
+  // Optional with default false so component tests can mount the
+  // client without restating the prop; the production caller always
+  // passes it.
+  intermediatesPresent?: boolean;
 }
 
 const STEP_ICONS: Record<VideoStepStatus, LucideIcon> = {
@@ -132,6 +142,7 @@ export function VideoDetailClient({
   serverNow,
   globalPacing,
   scriptWordCount = null,
+  intermediatesPresent = false,
 }: VideoDetailClientProps): JSX.Element {
   const router = useRouter();
   const [video, setVideo] = useState(initialVideo);
@@ -611,6 +622,12 @@ export function VideoDetailClient({
         )}
 
         <ArtifactsPanel videoId={videoId} artifacts={artifacts} steps={steps} />
+
+        <CleanupSection
+          videoId={videoId}
+          status={video.status}
+          intermediatesPresent={intermediatesPresent}
+        />
       </div>
 
       {confirmRerender && (

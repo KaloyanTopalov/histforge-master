@@ -8,8 +8,9 @@ export {
 export { resolveUserDataDir, ensureUserDataDir } from "./userdata";
 export {
   resolveExtensionId,
-  injectToken,
+  configureAndStartExtension,
+  sendStopPolling,
   deriveIdFromKey,
   ExtensionIdResolutionError,
-  TokenInjectionError,
+  ExtensionConfigurationError,
 } from "./extension-token";

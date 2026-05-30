@@ -94,6 +94,9 @@ export const TAB_FIELDS: Record<TabId, readonly SettingKey[]> = {
     "long_edge_px",
     "framerate",
     "video_encoder",
+    // Post-render cleanup gate. Belongs on the Render tab because it
+    // governs what happens after the render step completes.
+    "auto_cleanup_after_render",
   ],
   script: [
     "script_length_minutes",

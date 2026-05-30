@@ -29,9 +29,10 @@ vi.mock("node:fs", async (importOriginal) => {
 
 import {
   resolveExtensionId,
-  injectToken,
+  configureAndStartExtension,
+  sendStopPolling,
   ExtensionIdResolutionError,
-  TokenInjectionError,
+  ExtensionConfigurationError,
 } from "@/lib/magnific-runtime/extension-token";
 
 // Hard-coded fixture: the deterministic extension ID that S1's manifest
@@ -116,33 +117,61 @@ describe("resolveExtensionId", () => {
   });
 });
 
-describe("injectToken", () => {
-  it("opens the bridge page at the right URL, evaluates the storage write, and closes the page", async () => {
+describe("configureAndStartExtension", () => {
+  it("sends updateWebhooks (camelCase magnificToken + URLs derived from baseUrl) then startPolling, in that order", async () => {
+    // Two evaluate calls — first updateWebhooks, then startPolling — so the
+    // ordering pin is observable from outside the page boundary. The recover
+    // route used one evaluate with both sendMessage's inline; splitting them
+    // is the test-visible structural form.
     const goto = vi.fn(async () => undefined);
-    const evaluate = vi.fn(async () => undefined);
+    const evaluate = vi.fn();
+    evaluate.mockResolvedValueOnce({ success: true }); // updateWebhooks
+    evaluate.mockResolvedValueOnce({ success: true }); // startPolling
     const close = vi.fn(async () => undefined);
-    const pageFactory = (): unknown => ({ goto, evaluate, close });
-    const ctx = mockContext({ serviceWorkers: [], pageFactory });
+    const ctx = mockContext({
+      serviceWorkers: [],
+      pageFactory: () => ({ goto, evaluate, close }),
+    });
 
-    const result = await injectToken(ctx, "my-token");
+    await configureAndStartExtension(ctx, "http://example.test", "tok-xyz");
 
-    expect(result).toBeUndefined();
     expect(goto).toHaveBeenCalledTimes(1);
     expect(goto).toHaveBeenCalledWith(
       `chrome-extension://${EXPECTED_EXT_ID}/blank.html`,
     );
-    expect(evaluate).toHaveBeenCalledTimes(1);
-    expect(typeof evaluate.mock.calls[0][0]).toBe("function");
-    expect(evaluate.mock.calls[0][1]).toBe("my-token");
+    expect(evaluate).toHaveBeenCalledTimes(2);
+
+    // First call: updateWebhooks. CamelCase magnificToken (matches what the
+    // extension's settings cache reads on settings.js:111-112) and the four
+    // URLs recomputed from baseUrl + token.
+    const updateArgs = evaluate.mock.calls[0][1] as Record<string, unknown>;
+    expect(updateArgs).toEqual({
+      action: "updateWebhooks",
+      magnificToken: "tok-xyz",
+      histforgeDomain: "http://example.test",
+      nextTaskUrl: "http://example.test/api/magnific/next-task/tok-xyz",
+      submitResultUrl: "http://example.test/api/magnific/submit-result/tok-xyz",
+      statusUrl: "http://example.test/api/magnific/status/tok-xyz",
+      queueSummaryUrl: "http://example.test/api/magnific/queue-summary",
+    });
+
+    // Second call: startPolling, no payload.
+    const startArgs = evaluate.mock.calls[1][1] as Record<string, unknown>;
+    expect(startArgs).toEqual({ action: "startPolling" });
+
     expect(close).toHaveBeenCalledTimes(1);
   });
 
-  it("wraps a page.goto failure in TokenInjectionError and still closes the page", async () => {
-    const gotoErr = new Error("nav failed");
-    const goto = vi.fn(async () => {
-      throw gotoErr;
-    });
-    const evaluate = vi.fn(async () => undefined);
+  it("throws ExtensionConfigurationError when updateWebhooks returns {success:false} and does NOT send startPolling", async () => {
+    // Failure-loud: a router-side updateWebhooks failure must surface as a
+    // hard error, NOT silently fall back to unconfigured polling. The
+    // startPolling message must not be sent after a failed configure.
+    const goto = vi.fn(async () => undefined);
+    const evaluate = vi.fn();
+    evaluate.mockResolvedValueOnce({
+      success: false,
+      error: "router boom",
+    }); // updateWebhooks fails
     const close = vi.fn(async () => undefined);
     const ctx = mockContext({
       serviceWorkers: [],
@@ -151,21 +180,26 @@ describe("injectToken", () => {
 
     let caught: unknown;
     try {
-      await injectToken(ctx, "tok");
+      await configureAndStartExtension(ctx, "http://example.test", "tok-xyz");
     } catch (e) {
       caught = e;
     }
-    expect(caught).toBeInstanceOf(TokenInjectionError);
-    expect((caught as TokenInjectionError).cause).toBe(gotoErr);
-    expect(evaluate).not.toHaveBeenCalled();
+    expect(caught).toBeInstanceOf(ExtensionConfigurationError);
+    expect((caught as Error).message).toContain("router boom");
+    // startPolling was NEVER sent — the helper returned at the failure check.
+    expect(evaluate).toHaveBeenCalledTimes(1);
+    // Page still closes on the failure path.
     expect(close).toHaveBeenCalledTimes(1);
   });
 
-  it("wraps a page.evaluate failure in TokenInjectionError and still closes the page", async () => {
-    const evalErr = new Error("eval blew up");
+  it("wraps a transport-level evaluate failure in ExtensionConfigurationError and still closes the page", async () => {
+    // Distinct from router-failure: if page.evaluate itself throws (e.g.
+    // the page navigated away mid-call), the helper still surfaces a
+    // single error class to the caller so runtime.start has one catch.
+    const transportErr = new Error("evaluate transport boom");
     const goto = vi.fn(async () => undefined);
     const evaluate = vi.fn(async () => {
-      throw evalErr;
+      throw transportErr;
     });
     const close = vi.fn(async () => undefined);
     const ctx = mockContext({
@@ -175,12 +209,62 @@ describe("injectToken", () => {
 
     let caught: unknown;
     try {
-      await injectToken(ctx, "tok");
+      await configureAndStartExtension(ctx, "http://example.test", "tok-xyz");
     } catch (e) {
       caught = e;
     }
-    expect(caught).toBeInstanceOf(TokenInjectionError);
-    expect((caught as TokenInjectionError).cause).toBe(evalErr);
+    expect(caught).toBeInstanceOf(ExtensionConfigurationError);
+    expect((caught as ExtensionConfigurationError).cause).toBe(transportErr);
     expect(close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("sendStopPolling", () => {
+  it("opens blank.html and posts stopPolling to the SW", async () => {
+    const goto = vi.fn(async () => undefined);
+    const evaluate = vi.fn(async () => ({ success: true }));
+    const close = vi.fn(async () => undefined);
+    const ctx = mockContext({
+      serviceWorkers: [],
+      pageFactory: () => ({ goto, evaluate, close }),
+    });
+
+    await sendStopPolling(ctx);
+
+    expect(goto).toHaveBeenCalledWith(
+      `chrome-extension://${EXPECTED_EXT_ID}/blank.html`,
+    );
+    expect(evaluate).toHaveBeenCalledTimes(1);
+    expect(evaluate.mock.calls[0][1]).toEqual({ action: "stopPolling" });
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("swallows transport failures and still closes the page", async () => {
+    // The runtime.stop() path uses sendStopPolling as a soft signal — if
+    // the SW is already dead or the page navigation fails, the caller
+    // proceeds to ctx.close() regardless. Swallowing here keeps that
+    // contract self-contained in this helper.
+    const goto = vi.fn(async () => undefined);
+    const evaluate = vi.fn(async () => {
+      throw new Error("sw dead");
+    });
+    const close = vi.fn(async () => undefined);
+    const ctx = mockContext({
+      serviceWorkers: [],
+      pageFactory: () => ({ goto, evaluate, close }),
+    });
+
+    await expect(sendStopPolling(ctx)).resolves.toBeUndefined();
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("swallows resolveExtensionId failures and returns undefined", async () => {
+    // Both manifest read and SW scan return nothing — resolveExtensionId
+    // throws. sendStopPolling must not propagate; the caller (stop) needs
+    // to keep going to ctx.close().
+    mockReadFileSync.mockReturnValueOnce(JSON.stringify({}));
+    const ctx = mockContext({ serviceWorkers: [] });
+
+    await expect(sendStopPolling(ctx)).resolves.toBeUndefined();
   });
 });

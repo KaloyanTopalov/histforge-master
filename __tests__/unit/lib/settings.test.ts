@@ -272,6 +272,8 @@ describe("getAllSettings", () => {
       magnific_runtime_user_data_dir: "data/magnific-userdata",
       magnific_runtime_window_visible: false,
       magnific_runtime_extension_path: "extensions/magnific-ext",
+      auto_cleanup_after_render: false,
+      histforge_base_url: "http://localhost:3000",
     });
   });
 });
@@ -363,6 +365,40 @@ describe("magnific runtime settings", () => {
     expect(getSetting("magnific_runtime_extension_path", db)).toBe(
       "custom/magnific-ext-dev"
     );
+  });
+});
+
+describe("auto_cleanup_after_render setting", () => {
+  // Operator-gated cleanup: step 15 reads this and returns early when
+  // false, so a failed image batch leaves intermediates on disk for
+  // recovery instead of being silently wiped. Default false intentionally
+  // changes the historical "cleanup always runs" behavior — operators who
+  // want the old behavior opt in via the Render tab.
+
+  it("seeds auto_cleanup_after_render=false as default (intermediates preserved by default)", () => {
+    const db = freshDb();
+    expect(getSetting("auto_cleanup_after_render", db)).toBe(false);
+    expect(typeof getSetting("auto_cleanup_after_render", db)).toBe("boolean");
+  });
+
+  it("round-trips true/false through setSetting", () => {
+    const db = freshDb();
+    setSetting("auto_cleanup_after_render", true, db);
+    expect(getSetting("auto_cleanup_after_render", db)).toBe(true);
+    setSetting("auto_cleanup_after_render", false, db);
+    expect(getSetting("auto_cleanup_after_render", db)).toBe(false);
+  });
+
+  it("throws on a corrupted non-'true'/'false' stored value", () => {
+    // Same defense as voice_use_speaker_boost / magnific_runtime_enabled:
+    // a "garbage" row must surface as a parse error rather than silently
+    // coerce to false (which would re-arm the destructive wipe).
+    const db = freshDb();
+    db.prepare("UPDATE settings SET value = ? WHERE key = ?").run(
+      "garbage",
+      "auto_cleanup_after_render"
+    );
+    expect(() => getSetting("auto_cleanup_after_render", db)).toThrow();
   });
 });
 

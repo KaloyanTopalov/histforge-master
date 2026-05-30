@@ -232,6 +232,20 @@ const SETTING_SCHEMAS = {
     .enum(["true", "false"])
     .transform((v) => v === "true"),
   magnific_runtime_extension_path: z.string(),
+  // Operator-gated cleanup: when false (default), step 15 returns early
+  // and preserves intermediates on disk. Same string-stored boolean
+  // coercion as magnific_runtime_enabled — a corrupted non-"true"/"false"
+  // value must surface as a parse error rather than silently coerce to
+  // false (re-arming the destructive wipe).
+  auto_cleanup_after_render: z
+    .enum(["true", "false"])
+    .transform((v) => v === "true"),
+  // Origin the magnific runtime uses to derive the four extension
+  // webhook URLs (next-task / submit-result / status / queue-summary)
+  // when configuring the magnific-ext SW at start. Default matches the
+  // dev server origin; ops override the row in prod. Free-text string so
+  // any scheme://host:port shape Magnific can reach is accepted.
+  histforge_base_url: z.string(),
 } as const;
 
 export type SettingKey = keyof typeof SETTING_SCHEMAS;

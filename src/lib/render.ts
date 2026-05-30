@@ -14,6 +14,21 @@ export const CROSSFADE_SECONDS = 1.0;
 export const ZOOM_TARGET = 1.275;
 export const SEGMENT_CONCURRENCY = 4;
 
+/**
+ * Thrown by `render()` when one or more image-chunk files are missing on
+ * disk before any ffmpeg work begins. Holds `missingChunkIds` for callers
+ * (e.g. the worker step's failure logging) to surface specifically. Spec
+ * §13.4's placeholder fallback was deliberately removed in the structural-
+ * safety baseline — render must fail loudly rather than silently substitute
+ * a black "MISSING" frame and then have cleanup wipe the intermediates.
+ */
+export class RenderPrecheckError extends Error {
+  constructor(message: string, public readonly missingChunkIds: string[]) {
+    super(message);
+    this.name = "RenderPrecheckError";
+  }
+}
+
 export type VideoEncoder =
   | "libx264"
   | "h264_nvenc"
@@ -312,41 +327,6 @@ export function buildClipArgs(opts: ClipArgsOpts): string[] {
   return args;
 }
 
-export interface PlaceholderArgsOpts {
-  chunkId: string;
-  duration: number;
-  width: number;
-  height: number;
-  framerate: number;
-  outPath: string;
-}
-
-/**
- * Build ffmpeg argv for a placeholder segment — a black frame with white
- * "MISSING: <chunk_id>" text. Used when a chunk's image file is absent.
- * Spec §13.4 (Placeholder fallback).
- */
-export function buildPlaceholderArgs(opts: PlaceholderArgsOpts): string[] {
-  const { chunkId, duration, width, height, framerate, outPath } = opts;
-
-  // Single lavfi source: color generates frames, drawtext overlays the
-  // MISSING label, format converts to yuv420p for libx264.
-  const lavfi = [
-    `color=c=black:s=${width}x${height}:r=${framerate}:d=${duration}`,
-    `drawtext=text='MISSING\\: ${chunkId}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=(h-text_h)/2`,
-    `format=yuv420p`,
-  ].join(",");
-
-  return [
-    "-f", "lavfi",
-    "-i", lavfi,
-    "-c:v", "libx264",
-    "-preset", "ultrafast",
-    "-crf", "18",
-    outPath,
-  ];
-}
-
 /**
  * Find a chunk's asset file by basename, regardless of extension.
  * Accepts a pre-read file list to avoid calling readdirSync per chunk.
@@ -482,6 +462,23 @@ export async function render(
   const clipDir = join(projectDir, "videos", "clip");
   const clipFiles = listDir(clipDir);
 
+  // Render precheck: refuse to render when any image-chunk's file is absent
+  // on disk. Spec §13.4's placeholder fallback (a black "MISSING" frame)
+  // silently substituted in production and was then masked by the cleanup
+  // step wiping intermediates — see the structural-safety baseline PR.
+  // Scope is image-files-only by design; clip-missing keeps its existing
+  // throw inside Stage A (see :504 below), pinned by the
+  // "precheck does NOT cover clip-missing" test.
+  const missingImages = imageChunks
+    .filter((c) => findChunkAsset(imageDir, imageFiles, c.id) === null)
+    .map((c) => c.id);
+  if (missingImages.length > 0) {
+    throw new RenderPrecheckError(
+      `Render precheck failed: missing image files for ${missingImages.join(", ")}`,
+      missingImages
+    );
+  }
+
   // ── Stages A and B run in parallel ────────────────────────────────
   // They share no inputs and write to disjoint output trees; Stage CD/E
   // consume the outputs post-join.
@@ -595,48 +592,42 @@ export async function render(
         segPaths.push(segPath);
 
         const imagePath = findChunkAsset(imageDir, imageFiles, chunk.id);
-        if (!imagePath) {
-          log(`Missing image for ${chunk.id}, using placeholder`);
-          const renderDur = isLast ? duration : duration + CROSSFADE_SECONDS;
-          segmentTasks.push(() =>
-            exec(
-              buildPlaceholderArgs({
-                chunkId: chunk.id,
-                duration: renderDur,
-                width,
-                height,
-                framerate,
-                outPath: segPath,
-              })
-            )
-          );
-        } else {
-          const renderDur = isLast ? duration : duration + CROSSFADE_SECONDS;
-          const frames = Math.round(renderDur * framerate);
-          const { ceilingClamped, derived } = deriveZoomBuffer(
-            frames,
-            width,
-            height
-          );
-          if (ceilingClamped) {
-            log(
-              `Stage B buffer capped at 12000 for chunk ${chunk.id} (N_frames=${frames}, derived=${derived})`
-            );
-          }
-          segmentTasks.push(() =>
-            exec(
-              buildSegmentArgs({
-                imagePath,
-                chunkDuration: duration,
-                isLast,
-                width,
-                height,
-                framerate,
-                outPath: segPath,
-              })
-            )
+        if (imagePath === null) {
+          // Unreachable in practice: the render precheck (above the
+          // Promise.all) throws on any missing image. Kept as a TypeScript
+          // narrowing throw and a regression backstop so a precheck
+          // regression surfaces loudly here instead of NPE-ing inside
+          // buildSegmentArgs.
+          throw new RenderPrecheckError(
+            `invariant: image for ${chunk.id} disappeared after precheck`,
+            [chunk.id]
           );
         }
+        const renderDur = isLast ? duration : duration + CROSSFADE_SECONDS;
+        const frames = Math.round(renderDur * framerate);
+        const { ceilingClamped, derived } = deriveZoomBuffer(
+          frames,
+          width,
+          height
+        );
+        if (ceilingClamped) {
+          log(
+            `Stage B buffer capped at 12000 for chunk ${chunk.id} (N_frames=${frames}, derived=${derived})`
+          );
+        }
+        segmentTasks.push(() =>
+          exec(
+            buildSegmentArgs({
+              imagePath,
+              chunkDuration: duration,
+              isLast,
+              width,
+              height,
+              framerate,
+              outPath: segPath,
+            })
+          )
+        );
       }
 
       await runWithConcurrency(segmentTasks, SEGMENT_CONCURRENCY);
