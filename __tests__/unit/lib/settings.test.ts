@@ -273,6 +273,7 @@ describe("getAllSettings", () => {
       magnific_runtime_window_visible: false,
       magnific_runtime_extension_path: "extensions/magnific-ext",
       auto_cleanup_after_render: false,
+      histforge_base_url: "http://localhost:3000",
     });
   });
 });
