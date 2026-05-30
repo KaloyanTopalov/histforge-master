@@ -9,7 +9,9 @@ export { resolveUserDataDir, ensureUserDataDir } from "./userdata";
 export {
   resolveExtensionId,
   injectToken,
+  configureAndStartExtension,
   deriveIdFromKey,
   ExtensionIdResolutionError,
   TokenInjectionError,
+  ExtensionConfigurationError,
 } from "./extension-token";
