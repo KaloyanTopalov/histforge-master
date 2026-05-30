@@ -2,12 +2,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import path from "node:path";
 import { existsSync } from "node:fs";
 
-const { mockLaunchPersistentContext, mockInjectToken, mockGetSetting } =
-  vi.hoisted(() => ({
-    mockLaunchPersistentContext: vi.fn(),
-    mockInjectToken: vi.fn(),
-    mockGetSetting: vi.fn(),
-  }));
+const {
+  mockLaunchPersistentContext,
+  mockConfigureAndStartExtension,
+  mockSendStopPolling,
+  mockGetSetting,
+} = vi.hoisted(() => ({
+  mockLaunchPersistentContext: vi.fn(),
+  mockConfigureAndStartExtension: vi.fn(),
+  mockSendStopPolling: vi.fn(),
+  mockGetSetting: vi.fn(),
+}));
 
 vi.mock("playwright", () => ({
   chromium: { launchPersistentContext: mockLaunchPersistentContext },
@@ -17,7 +22,11 @@ vi.mock("@/lib/magnific-runtime/extension-token", async (importOriginal) => {
   const actual = await importOriginal<
     typeof import("@/lib/magnific-runtime/extension-token")
   >();
-  return { ...actual, injectToken: mockInjectToken };
+  return {
+    ...actual,
+    configureAndStartExtension: mockConfigureAndStartExtension,
+    sendStopPolling: mockSendStopPolling,
+  };
 });
 
 vi.mock("@/lib/settings", async (importOriginal) => {
@@ -103,6 +112,7 @@ function defaultSettings(overrides: Record<string, unknown> = {}): void {
     magnific_runtime_enabled: true,
     magnific_token: "tok-123",
     magnific_relogin_needed: false,
+    histforge_base_url: "http://localhost:3000",
     ...overrides,
   };
   mockGetSetting.mockImplementation((key: string) => {
@@ -113,7 +123,8 @@ function defaultSettings(overrides: Record<string, unknown> = {}): void {
 
 beforeEach(() => {
   mockLaunchPersistentContext.mockReset();
-  mockInjectToken.mockReset();
+  mockConfigureAndStartExtension.mockReset();
+  mockSendStopPolling.mockReset();
   mockGetSetting.mockReset();
   vi.mocked(existsSync).mockReset();
 });
@@ -123,7 +134,7 @@ describe("start()", () => {
     defaultSettings();
     const ctx = makeMockContext();
     mockLaunchPersistentContext.mockResolvedValueOnce(ctx);
-    mockInjectToken.mockResolvedValueOnce(undefined);
+    mockConfigureAndStartExtension.mockResolvedValueOnce(undefined);
 
     const runtime = new MagnificRuntime();
     await runtime.start();
@@ -142,15 +153,22 @@ describe("start()", () => {
         "--window-position=4000,4000",
       ]),
     );
-    expect(mockInjectToken).toHaveBeenCalledTimes(1);
-    expect(mockInjectToken).toHaveBeenCalledWith(ctx, "tok-123");
+    expect(mockConfigureAndStartExtension).toHaveBeenCalledTimes(1);
+    // The runtime passes (ctx, baseUrl, token) — baseUrl from
+    // histforge_base_url, token from magnific_token. Ordering pinned in
+    // the dedicated describe block below.
+    expect(mockConfigureAndStartExtension).toHaveBeenCalledWith(
+      ctx,
+      "http://localhost:3000",
+      "tok-123",
+    );
     expect(ctx.on).toHaveBeenCalledWith("close", expect.any(Function));
   });
 
   it("path.resolves a relative userDataDir against process.cwd before passing to Playwright", async () => {
     defaultSettings({ magnific_runtime_user_data_dir: "data/magnific-userdata" });
     mockLaunchPersistentContext.mockResolvedValueOnce(makeMockContext());
-    mockInjectToken.mockResolvedValueOnce(undefined);
+    mockConfigureAndStartExtension.mockResolvedValueOnce(undefined);
 
     await new MagnificRuntime().start();
 
@@ -162,7 +180,7 @@ describe("start()", () => {
   it("does NOT pass --window-position when window_visible=true", async () => {
     defaultSettings({ magnific_runtime_window_visible: true });
     mockLaunchPersistentContext.mockResolvedValueOnce(makeMockContext());
-    mockInjectToken.mockResolvedValueOnce(undefined);
+    mockConfigureAndStartExtension.mockResolvedValueOnce(undefined);
 
     await new MagnificRuntime().start();
 
@@ -173,14 +191,14 @@ describe("start()", () => {
   it("is idempotent — calling twice does not relaunch", async () => {
     defaultSettings();
     mockLaunchPersistentContext.mockResolvedValueOnce(makeMockContext());
-    mockInjectToken.mockResolvedValueOnce(undefined);
+    mockConfigureAndStartExtension.mockResolvedValueOnce(undefined);
 
     const runtime = new MagnificRuntime();
     await runtime.start();
     await runtime.start();
 
     expect(mockLaunchPersistentContext).toHaveBeenCalledTimes(1);
-    expect(mockInjectToken).toHaveBeenCalledTimes(1);
+    expect(mockConfigureAndStartExtension).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -189,7 +207,7 @@ describe("stop()", () => {
     defaultSettings();
     const ctx = makeMockContext();
     mockLaunchPersistentContext.mockResolvedValueOnce(ctx);
-    mockInjectToken.mockResolvedValueOnce(undefined);
+    mockConfigureAndStartExtension.mockResolvedValueOnce(undefined);
 
     const runtime = new MagnificRuntime();
     await runtime.start();
@@ -198,7 +216,7 @@ describe("stop()", () => {
     expect(ctx.close).toHaveBeenCalledTimes(1);
 
     mockLaunchPersistentContext.mockResolvedValueOnce(makeMockContext());
-    mockInjectToken.mockResolvedValueOnce(undefined);
+    mockConfigureAndStartExtension.mockResolvedValueOnce(undefined);
     await runtime.start();
     expect(mockLaunchPersistentContext).toHaveBeenCalledTimes(2);
   });
@@ -206,6 +224,50 @@ describe("stop()", () => {
   it("is a noop when not running", async () => {
     const runtime = new MagnificRuntime();
     await expect(runtime.stop()).resolves.toBeUndefined();
+  });
+
+  it("sends stopPolling to the extension before closing the context", async () => {
+    // Ordering pin: the SW must see stopPolling before the browser dies,
+    // so any in-flight alarm fires through the now-disabled gate rather
+    // than racing the teardown. sendStopPolling itself swallows transport
+    // errors — even if the SW is already dead, stop() must continue to
+    // context.close() and leave the runtime tearable-down.
+    defaultSettings();
+    const ctx = makeMockContext();
+    mockLaunchPersistentContext.mockResolvedValueOnce(ctx);
+    mockConfigureAndStartExtension.mockResolvedValueOnce(undefined);
+    mockSendStopPolling.mockResolvedValueOnce(undefined);
+
+    const runtime = new MagnificRuntime();
+    await runtime.start();
+    await runtime.stop();
+
+    expect(mockSendStopPolling).toHaveBeenCalledTimes(1);
+    expect(mockSendStopPolling).toHaveBeenCalledWith(ctx);
+
+    // Pin the ordering: sendStopPolling resolved BEFORE ctx.close fired.
+    const stopOrder = mockSendStopPolling.mock.invocationCallOrder[0];
+    const closeOrder = ctx.close.mock.invocationCallOrder[0];
+    expect(stopOrder).toBeLessThan(closeOrder);
+  });
+
+  it("still closes the context if sendStopPolling rejects (tolerate)", async () => {
+    // sendStopPolling swallows errors internally per design, but pin
+    // tolerance at the runtime layer too — if a future refactor lets a
+    // throw escape, stop() must still tear the browser down. The
+    // alternative (a half-closed runtime) is worse than missing a
+    // stopPolling round-trip.
+    defaultSettings();
+    const ctx = makeMockContext();
+    mockLaunchPersistentContext.mockResolvedValueOnce(ctx);
+    mockConfigureAndStartExtension.mockResolvedValueOnce(undefined);
+    mockSendStopPolling.mockRejectedValueOnce(new Error("sw died early"));
+
+    const runtime = new MagnificRuntime();
+    await runtime.start();
+    await runtime.stop();
+
+    expect(ctx.close).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -227,7 +289,7 @@ describe("status()", () => {
     defaultSettings({ magnific_relogin_needed: false });
     vi.mocked(existsSync).mockReturnValue(true);
     mockLaunchPersistentContext.mockResolvedValueOnce(makeMockContext());
-    mockInjectToken.mockResolvedValueOnce(undefined);
+    mockConfigureAndStartExtension.mockResolvedValueOnce(undefined);
 
     const runtime = new MagnificRuntime();
     await runtime.start();
@@ -242,7 +304,7 @@ describe("status()", () => {
     defaultSettings();
     vi.mocked(existsSync).mockReturnValue(false);
     mockLaunchPersistentContext.mockResolvedValueOnce(makeMockContext());
-    mockInjectToken.mockResolvedValueOnce(undefined);
+    mockConfigureAndStartExtension.mockResolvedValueOnce(undefined);
 
     const runtime = new MagnificRuntime();
     await runtime.start();
@@ -253,7 +315,7 @@ describe("status()", () => {
     defaultSettings({ magnific_relogin_needed: true });
     vi.mocked(existsSync).mockReturnValue(true);
     mockLaunchPersistentContext.mockResolvedValueOnce(makeMockContext());
-    mockInjectToken.mockResolvedValueOnce(undefined);
+    mockConfigureAndStartExtension.mockResolvedValueOnce(undefined);
 
     const runtime = new MagnificRuntime();
     await runtime.start();
@@ -276,7 +338,7 @@ describe("handleDisconnect()", () => {
       const c = makeMockContext();
       contexts.push(c);
       mockLaunchPersistentContext.mockResolvedValueOnce(c);
-      mockInjectToken.mockResolvedValueOnce(undefined);
+      mockConfigureAndStartExtension.mockResolvedValueOnce(undefined);
     }
 
     const runtime = new MagnificRuntime();
@@ -302,7 +364,7 @@ describe("handleDisconnect()", () => {
     defaultSettings();
     const ctx = makeMockContext();
     mockLaunchPersistentContext.mockResolvedValueOnce(ctx);
-    mockInjectToken.mockResolvedValueOnce(undefined);
+    mockConfigureAndStartExtension.mockResolvedValueOnce(undefined);
 
     const runtime = new MagnificRuntime();
     await runtime.start();
@@ -322,7 +384,7 @@ describe("handleDisconnect()", () => {
     mockLaunchPersistentContext
       .mockResolvedValueOnce(ctx)
       .mockRejectedValueOnce(new Error("boom"));
-    mockInjectToken.mockResolvedValueOnce(undefined);
+    mockConfigureAndStartExtension.mockResolvedValueOnce(undefined);
 
     const runtime = new MagnificRuntime();
     await runtime.start();
@@ -338,7 +400,7 @@ describe("handleDisconnect()", () => {
     defaultSettings();
     const ctx = makeMockContext();
     mockLaunchPersistentContext.mockResolvedValueOnce(ctx);
-    mockInjectToken.mockResolvedValueOnce(undefined);
+    mockConfigureAndStartExtension.mockResolvedValueOnce(undefined);
 
     const runtime = new MagnificRuntime();
     await runtime.start();
@@ -355,7 +417,7 @@ describe("handleDisconnect()", () => {
     defaultSettings();
     const ctx = makeMockContext();
     mockLaunchPersistentContext.mockResolvedValueOnce(ctx);
-    mockInjectToken.mockResolvedValueOnce(undefined);
+    mockConfigureAndStartExtension.mockResolvedValueOnce(undefined);
 
     const runtime = new MagnificRuntime();
     await runtime.start();
@@ -373,7 +435,7 @@ describe("handleDisconnect()", () => {
     mockLaunchPersistentContext
       .mockResolvedValueOnce(ctx1)
       .mockResolvedValueOnce(ctx2);
-    mockInjectToken.mockResolvedValue(undefined);
+    mockConfigureAndStartExtension.mockResolvedValue(undefined);
 
     const runtime = new MagnificRuntime();
     await runtime.start();
@@ -411,7 +473,7 @@ describe("production-lock error", () => {
     const s = await runtime.status();
     expect(s.last_error).toMatch(/locked/i);
     expect(s.last_error).toContain("pid 12345");
-    expect(mockInjectToken).not.toHaveBeenCalled();
+    expect(mockConfigureAndStartExtension).not.toHaveBeenCalled();
   });
 
   it("does not classify as RuntimeLockedError under NODE_ENV=test", async () => {
@@ -448,7 +510,7 @@ describe("connect()", () => {
     defaultSettings();
     const ctx = makeMockContext();
     mockLaunchPersistentContext.mockResolvedValueOnce(ctx);
-    mockInjectToken.mockResolvedValueOnce(undefined);
+    mockConfigureAndStartExtension.mockResolvedValueOnce(undefined);
     const runtime = new MagnificRuntime();
     await runtime.start();
     return { runtime, ctx };
@@ -538,7 +600,7 @@ describe("connect()", () => {
     defaultSettings();
     const ctx = makeMockContext();
     mockLaunchPersistentContext.mockResolvedValueOnce(ctx);
-    mockInjectToken.mockResolvedValueOnce(undefined);
+    mockConfigureAndStartExtension.mockResolvedValueOnce(undefined);
 
     const runtime = new MagnificRuntime();
     // No prior .start() call.

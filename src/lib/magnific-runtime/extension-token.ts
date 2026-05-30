@@ -16,13 +16,6 @@ export class ExtensionIdResolutionError extends Error {
   }
 }
 
-export class TokenInjectionError extends Error {
-  constructor(message: string, options?: { cause?: unknown }) {
-    super(message, options);
-    this.name = "TokenInjectionError";
-  }
-}
-
 // Raised by `configureAndStartExtension` when the magnific-ext SW reports
 // `updateWebhooks` failure, or when the page.evaluate transport itself
 // throws. Runtime.start surfaces this as `lastError` and tears down — there
@@ -167,40 +160,38 @@ export async function configureAndStartExtension(
   }
 }
 
-export async function injectToken(
+// Symmetric to `configureAndStartExtension`: open blank.html and post
+// `stopPolling` to disarm the SW alarm before the browser teardown. All
+// errors are swallowed — stop() is on the teardown path, and a failed
+// stopPolling round-trip is a soft warning, not a hard failure (the next
+// ctx.close() tears the browser down anyway). Callers must NOT rely on
+// the return value or the absence of throws to mean "polling actually
+// stopped" — the SW's alarm-cleared state is the real evidence.
+export async function sendStopPolling(
   context: BrowserContext,
-  token: string,
 ): Promise<void> {
-  const id = await resolveExtensionId(context);
-  const url = `chrome-extension://${id}/blank.html`;
-  const page = await context.newPage();
+  let page: Awaited<ReturnType<BrowserContext["newPage"]>> | null = null;
   try {
-    await page.goto(url);
+    const id = await resolveExtensionId(context);
+    page = await context.newPage();
+    await page.goto(`chrome-extension://${id}/blank.html`);
     await page.evaluate(
-      (t: string) => {
-        // Pages on the chrome-extension:// origin have direct access to
-        // the chrome.* APIs; declare the minimal shape here so TS accepts
-        // the eval body without pulling in @types/chrome.
-        (
-          globalThis as unknown as {
-            chrome: {
-              storage: {
-                local: {
-                  set: (v: Record<string, string>) => Promise<void>;
-                };
-              };
-            };
-          }
-        ).chrome.storage.local.set({ magnific_token: t });
+      async (m: Record<string, unknown>) => {
+        const c = (globalThis as unknown as { chrome: ChromeInPage }).chrome;
+        return await c.runtime.sendMessage(m);
       },
-      token,
+      { action: "stopPolling" },
     );
-  } catch (err) {
-    throw new TokenInjectionError(
-      `failed to inject magnific token into extension at ${url}`,
-      { cause: err },
-    );
+  } catch {
+    // intentional swallow — see helper docstring
   } finally {
-    await page.close();
+    if (page) {
+      try {
+        await page.close();
+      } catch {
+        // page may already be gone
+      }
+    }
   }
 }
+
