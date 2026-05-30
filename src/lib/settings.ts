@@ -240,6 +240,12 @@ const SETTING_SCHEMAS = {
   auto_cleanup_after_render: z
     .enum(["true", "false"])
     .transform((v) => v === "true"),
+  // Origin the magnific runtime uses to derive the four extension
+  // webhook URLs (next-task / submit-result / status / queue-summary)
+  // when configuring the magnific-ext SW at start. Default matches the
+  // dev server origin; ops override the row in prod. Free-text string so
+  // any scheme://host:port shape Magnific can reach is accepted.
+  histforge_base_url: z.string(),
 } as const;
 
 export type SettingKey = keyof typeof SETTING_SCHEMAS;

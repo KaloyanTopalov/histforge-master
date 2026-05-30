@@ -131,6 +131,13 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   // also trigger cleanup manually from the video detail page regardless
   // of this setting.
   auto_cleanup_after_render: "false",
+  // Origin used by the magnific runtime to derive the four extension
+  // webhook URLs (next-task / submit-result / status / queue-summary)
+  // when it configures the magnific-ext SW at start. Default matches the
+  // dev server origin so a fresh DB Just Works in dev. Operators override
+  // the row in prod. Keep in sync with the INSERT OR IGNORE migration
+  // statement below.
+  histforge_base_url: "http://localhost:3000",
 };
 
 export function seedDefaultSettings(db: DatabaseType): void {
@@ -1002,6 +1009,13 @@ export function createDb(path: string): DatabaseType {
   // DBs that miss db:init still pick up the seed here.
   db.prepare(
     "INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_cleanup_after_render', 'false')"
+  ).run();
+
+  // histforge_base_url: origin the magnific runtime feeds into
+  // updateWebhooks at extension-configure time. Same upgrade path as
+  // auto_cleanup_after_render — DBs that miss db:init pick it up here.
+  db.prepare(
+    "INSERT OR IGNORE INTO settings (key, value) VALUES ('histforge_base_url', 'http://localhost:3000')"
   ).run();
 
   // Character-lock + style-lock plan. Two free-text settings consumed
