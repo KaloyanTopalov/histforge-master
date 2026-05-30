@@ -12,11 +12,11 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import {
   computeResolution,
   buildSegmentArgs,
-  buildPlaceholderArgs,
   buildXfadeFilterGraph,
   buildClipArgs,
   getEncoderArgs,
   render,
+  RenderPrecheckError,
   CROSSFADE_SECONDS,
   ZOOM_TARGET,
   SEGMENT_CONCURRENCY,
@@ -484,43 +484,191 @@ describe("getEncoderArgs", () => {
   });
 });
 
-describe("buildPlaceholderArgs", () => {
-  it("generates a lavfi source with MISSING text for a given chunk_id", () => {
-    const args = buildPlaceholderArgs({
-      chunkId: "image_007",
-      duration: 30,
-      width: 1920,
-      height: 1080,
-      framerate: 30,
-      outPath: "/tmp/render/placeholder_007.mp4",
-    });
-    // Entire filter chain is in the lavfi -i arg (no separate -vf)
-    expect(args.indexOf("-vf")).toBe(-1);
-    const iIdx = args.indexOf("-i");
-    const lavfi = args[iIdx + 1];
-    expect(lavfi).toContain("color=c=black:s=1920x1080:r=30:d=30");
-    expect(lavfi).toContain("MISSING");
-    expect(lavfi).toContain("image_007");
-    expect(lavfi).toContain("format=yuv420p");
-    // Output path
-    expect(args[args.length - 1]).toBe("/tmp/render/placeholder_007.mp4");
+describe("render() precheck", () => {
+  function makeImageChunks(ids: string[]): Chunk[] {
+    return ids.map((id, i) => ({
+      id,
+      kind: "image",
+      start: i * 30,
+      end: (i + 1) * 30,
+      text: "x",
+      prompt: "p",
+    }));
+  }
+
+  // Scoped image-only project setup for precheck tests. Writes chunks.json
+  // and a narration.mp3 stub (Stage E mux is downstream of the precheck so
+  // it's never reached), creates images/, and writes a .png for each id in
+  // `presentImageIds` so callers can omit entries to simulate missing files.
+  function setupImagesOnlyProject(
+    projectsDir: string,
+    videoId: string,
+    chunks: Chunk[],
+    presentImageIds: string[],
+  ): string {
+    const projDir = join(projectsDir, videoId);
+    mkdirSync(join(projDir, "chunks"), { recursive: true });
+    mkdirSync(join(projDir, "images"), { recursive: true });
+    mkdirSync(join(projDir, "audio"), { recursive: true });
+    writeFileSync(
+      join(projDir, "chunks", "chunks.json"),
+      JSON.stringify(chunks)
+    );
+    for (const id of presentImageIds) {
+      writeFileSync(join(projDir, "images", `${id}.png`), "");
+    }
+    writeFileSync(join(projDir, "audio", "narration.mp3"), "");
+    return projDir;
+  }
+
+  const baseRenderOpts = {
+    aspectRatio: "16:9",
+    longEdgePx: 1920,
+    framerate: 30,
+    videoEncoder: "libx264" as const,
+  };
+
+  it("throws RenderPrecheckError when a single image file is missing", async () => {
+    const projectsDir = tempDir("projects");
+    const videoId = "v_precheck_single";
+    const chunks = makeImageChunks(["image_001", "image_002", "image_003"]);
+    // image_002 absent on disk
+    setupImagesOnlyProject(projectsDir, videoId, chunks, [
+      "image_001",
+      "image_003",
+    ]);
+
+    const exec = vi.fn();
+    const probe = vi.fn();
+    let err: unknown;
+    try {
+      await render(videoId, {
+        projectsDir,
+        ...baseRenderOpts,
+        exec,
+        probe,
+        log: () => {},
+      });
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(RenderPrecheckError);
+    expect((err as RenderPrecheckError).missingChunkIds).toEqual(["image_002"]);
+    expect((err as Error).message).toContain("image_002");
   });
 
-  it("uses -preset ultrafast -crf 18 (Stage B throwaway intermediate, ADR-0002)", () => {
-    const args = buildPlaceholderArgs({
-      chunkId: "image_007",
-      duration: 30,
-      width: 1920,
-      height: 1080,
-      framerate: 30,
-      outPath: "/tmp/render/placeholder_007.mp4",
-    });
-    const presetIdx = args.indexOf("-preset");
-    expect(presetIdx).toBeGreaterThan(-1);
-    expect(args[presetIdx + 1]).toBe("ultrafast");
-    const crfIdx = args.indexOf("-crf");
-    expect(crfIdx).toBeGreaterThan(-1);
-    expect(args[crfIdx + 1]).toBe("18");
+  it("RenderPrecheckError lists every missing chunk_id (multiple missing)", async () => {
+    const projectsDir = tempDir("projects");
+    const videoId = "v_precheck_multi";
+    const chunks = makeImageChunks([
+      "image_001",
+      "image_002",
+      "image_003",
+      "image_004",
+    ]);
+    // image_001 and image_003 absent on disk
+    setupImagesOnlyProject(projectsDir, videoId, chunks, [
+      "image_002",
+      "image_004",
+    ]);
+
+    const exec = vi.fn();
+    const probe = vi.fn();
+    let err: unknown;
+    try {
+      await render(videoId, {
+        projectsDir,
+        ...baseRenderOpts,
+        exec,
+        probe,
+        log: () => {},
+      });
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(RenderPrecheckError);
+    expect((err as RenderPrecheckError).missingChunkIds).toEqual([
+      "image_001",
+      "image_003",
+    ]);
+    expect((err as Error).message).toContain("image_001");
+    expect((err as Error).message).toContain("image_003");
+  });
+
+  it("throws BEFORE any ffmpeg exec runs — precheck is upstream of Stage A/B (ordering pin)", async () => {
+    // Both assertions are load-bearing: the error type AND the exec-call
+    // count. "exec wasn't called" alone could pass on a structural change
+    // that breaks the precheck (e.g. render() throwing earlier for an
+    // unrelated reason); pairing it with the error-type assertion proves
+    // the precheck — and only the precheck — caused the abort.
+    const projectsDir = tempDir("projects");
+    const videoId = "v_precheck_no_exec";
+    const chunks = makeImageChunks(["image_001", "image_002"]);
+    setupImagesOnlyProject(projectsDir, videoId, chunks, ["image_001"]); // image_002 missing
+
+    const exec = vi.fn();
+    const probe = vi.fn();
+    let err: unknown;
+    try {
+      await render(videoId, {
+        projectsDir,
+        ...baseRenderOpts,
+        exec,
+        probe,
+        log: () => {},
+      });
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(RenderPrecheckError);
+    expect(exec).not.toHaveBeenCalled();
+  });
+
+  it("precheck does NOT cover clip-missing — Stage A's existing throw still handles that (scope pin)", async () => {
+    // Pins the deliberate narrow scope: the precheck is image-files-only.
+    // A missing clip video continues to surface via Stage A's existing
+    // `Missing clip video for <id>` throw at render.ts:504-508.
+    // Harmonization into the precheck is a deliberately deferred follow-up;
+    // this test ensures any future "harmonize" pass is a conscious change,
+    // not an accidental scope creep.
+    const projectsDir = tempDir("projects");
+    const videoId = "v_precheck_clip_scope";
+    const projDir = join(projectsDir, videoId);
+    mkdirSync(join(projDir, "chunks"), { recursive: true });
+    mkdirSync(join(projDir, "images"), { recursive: true });
+    mkdirSync(join(projDir, "videos", "clip"), { recursive: true });
+    mkdirSync(join(projDir, "audio"), { recursive: true });
+    const chunks: Chunk[] = [
+      { id: "clip_01", kind: "clip", start: 0, end: 10, text: "a", prompt: "p" },
+      { id: "image_001", kind: "image", start: 10, end: 40, text: "b", prompt: "p" },
+    ];
+    writeFileSync(
+      join(projDir, "chunks", "chunks.json"),
+      JSON.stringify(chunks)
+    );
+    // All images present; clip_01.mp4 is intentionally NOT created.
+    writeFileSync(join(projDir, "images", "image_001.png"), "");
+    writeFileSync(join(projDir, "audio", "narration.mp3"), "");
+
+    const exec = vi.fn();
+    const probe = vi.fn();
+    let err: unknown;
+    try {
+      await render(videoId, {
+        projectsDir,
+        ...baseRenderOpts,
+        exec,
+        probe,
+        log: () => {},
+      });
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeDefined();
+    // Crucial scope pin: the error is NOT a RenderPrecheckError. Clip-missing
+    // belongs to Stage A's existing throw, not the new precheck.
+    expect(err).not.toBeInstanceOf(RenderPrecheckError);
+    expect((err as Error).message).toContain("Missing clip video for clip_01");
   });
 });
 
@@ -718,40 +866,6 @@ describe("render() orchestration", () => {
     // to collide with 17.3 / 20 in this fixture (main chunks: D=30, D=25).
     expect(filterValue).not.toContain("offset=20");
     expect(filterValue).not.toContain("offset=17.3");
-  });
-
-  it("uses placeholder for missing main images and logs it", async () => {
-    const projectsDir = tempDir("projects");
-    const videoId = "v_render_placeholder";
-    const chunks = makeChunks();
-    const projDir = setupProject(projectsDir, videoId, chunks);
-
-    // Delete image_002.png to trigger placeholder
-    rmSync(join(projDir, "images", "image_002.png"));
-
-    const logged: string[] = [];
-    const exec = vi.fn();
-    const probe = vi.fn().mockResolvedValue(20);
-
-    await render(videoId, {
-      projectsDir,
-      aspectRatio: "16:9",
-      longEdgePx: 1920,
-      framerate: 30,
-      videoEncoder: "libx264",
-      exec,
-      probe,
-      log: (msg: string) => logged.push(msg),
-    });
-
-    // Should have logged the missing image
-    expect(logged.some((m) => m.includes("image_002"))).toBe(true);
-
-    // One of the exec calls should contain MISSING in the lavfi source
-    const placeholderCall = exec.mock.calls.find((c: string[][]) =>
-      c[0].some((a: string) => a.includes("MISSING") && a.includes("image_002"))
-    );
-    expect(placeholderCall).toBeDefined();
   });
 
   it("produces hook concat list pointing at per-chunk timed clips in order", async () => {

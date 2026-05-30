@@ -102,22 +102,25 @@ describe("render step (step 14)", () => {
     const chunks = makeChunks();
     setupProject(projectsDir, videoId, chunks);
 
-    // Delete an image to trigger placeholder + log
-    rmSync(join(projectsDir, videoId, "images", "image_002.png"));
-
     setSetting("aspect_ratio", "16:9", db);
     setSetting("long_edge_px", 1920, db);
     setSetting("framerate", 30, db);
+    setSetting("video_encoder", "libx264", db);
 
     const exec = vi.fn();
     const probe = vi.fn().mockResolvedValue(10);
     await runRender(videoId, { db, projectsDir, exec, probe });
 
-    // Pipeline.log should have been written with missing-image notice
+    // Pipeline.log should be written via appendLog wiring on step 14.
+    // The placeholder-substitution log line that previously witnessed this
+    // is gone (structural-safety baseline removed the placeholder fallback);
+    // use the always-emitted `Encoder: <encoder>` line at render.ts:658 as
+    // the new wiring witness — it fires on every render regardless of
+    // chunk content.
     const { readFileSync } = await import("node:fs");
     const logPath = join(projectsDir, videoId, "pipeline.log");
     const logContent = readFileSync(logPath, "utf-8");
     expect(logContent).toContain("[render]");
-    expect(logContent).toContain("image_002");
+    expect(logContent).toContain("Encoder: libx264");
   });
 });
