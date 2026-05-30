@@ -2,7 +2,7 @@
 
 import type { AllSettings } from "@/lib/settings";
 import { enumOptions } from "@/lib/settings-enums";
-import { NumberField, Panel, SelectField } from "./field-primitives";
+import { BoolField, NumberField, Panel, SelectField } from "./field-primitives";
 
 interface RenderTabProps {
   values: AllSettings;
@@ -44,6 +44,12 @@ export function RenderTab({ values, update }: RenderTabProps): JSX.Element {
         onChange={(v) =>
           update("video_encoder", v as AllSettings["video_encoder"])
         }
+      />
+      <BoolField
+        id="auto_cleanup_after_render"
+        label="Wipe intermediates automatically after render (images, audio, alignment, chunks) — off by default; recommended to leave off unless you don't need intermediates for retry/diagnosis."
+        value={values.auto_cleanup_after_render}
+        onChange={(v) => update("auto_cleanup_after_render", v)}
       />
     </Panel>
   );

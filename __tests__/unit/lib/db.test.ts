@@ -2237,6 +2237,7 @@ describe("seedDefaultSettings", () => {
         magnific_runtime_user_data_dir: "data/magnific-userdata",
         magnific_runtime_window_visible: "false",
         magnific_runtime_extension_path: "extensions/magnific-ext",
+        auto_cleanup_after_render: "false",
       });
     } finally {
       db.close();

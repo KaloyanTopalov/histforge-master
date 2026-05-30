@@ -79,3 +79,15 @@ export function isDeletable(_video: Video): boolean {
 export function isRerenderable(video: Video): boolean {
   return video.kind === "music_video" && video.status === "done";
 }
+
+/**
+ * True when the operator-triggered cleanup endpoint accepts: a finished
+ * video. Non-done statuses are rejected uniformly because the dashboard
+ * surface is done-only — there's no scenario where the operator wants to
+ * wipe a queued / in_progress / failed video's intermediates from this
+ * action (failed videos still need their intermediates for recovery,
+ * which is the whole reason the auto-cleanup gate exists).
+ */
+export function isCleanupable(video: Video): boolean {
+  return video.status === "done";
+}

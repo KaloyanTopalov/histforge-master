@@ -232,6 +232,14 @@ const SETTING_SCHEMAS = {
     .enum(["true", "false"])
     .transform((v) => v === "true"),
   magnific_runtime_extension_path: z.string(),
+  // Operator-gated cleanup: when false (default), step 15 returns early
+  // and preserves intermediates on disk. Same string-stored boolean
+  // coercion as magnific_runtime_enabled — a corrupted non-"true"/"false"
+  // value must surface as a parse error rather than silently coerce to
+  // false (re-arming the destructive wipe).
+  auto_cleanup_after_render: z
+    .enum(["true", "false"])
+    .transform((v) => v === "true"),
 } as const;
 
 export type SettingKey = keyof typeof SETTING_SCHEMAS;

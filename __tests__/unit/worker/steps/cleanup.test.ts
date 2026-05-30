@@ -9,7 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { step as cleanupStep } from "@/worker/steps/15-cleanup";
-import { makeStepContext } from "../../../helpers/step-fixtures";
+import { cleanupProjectArtifacts } from "@/lib/cleanup";
 
 const tmpDirs: string[] = [];
 
@@ -71,7 +71,7 @@ describe("step 15 — cleanup", () => {
     const videoId = "vid_001";
     const projDir = setupFullProject(projectsDir, videoId);
 
-    await cleanupStep.run(videoId, makeStepContext({ projectsDir }));
+    cleanupProjectArtifacts(projectsDir, videoId);
 
     // Kept
     expect(existsSync(join(projDir, "final.mp4"))).toBe(true);
@@ -108,7 +108,7 @@ describe("step 15 — cleanup", () => {
     writeFileSync(join(projDir, "pipeline.log"), "log");
 
     // Should not throw
-    await cleanupStep.run(videoId, makeStepContext({ projectsDir }));
+    cleanupProjectArtifacts(projectsDir, videoId);
 
     expect(existsSync(join(projDir, "final.mp4"))).toBe(true);
     expect(existsSync(join(projDir, "script", "full_script.md"))).toBe(true);
@@ -128,7 +128,7 @@ describe("step 15 — cleanup", () => {
     mkdirSync(join(projDir, "unknown_dir"), { recursive: true });
     writeFileSync(join(projDir, "unknown_dir", "file.bin"), "data");
 
-    await cleanupStep.run(videoId, makeStepContext({ projectsDir }));
+    cleanupProjectArtifacts(projectsDir, videoId);
 
     expect(existsSync(join(projDir, "final.mp4"))).toBe(true);
     expect(existsSync(join(projDir, "random.txt"))).toBe(false);
@@ -145,7 +145,7 @@ describe("step 15 — cleanup", () => {
     // script/ exists with only intermediate files, no full_script.md
     writeFileSync(join(projDir, "script", "01_outline.md"), "outline");
 
-    await cleanupStep.run(videoId, makeStepContext({ projectsDir }));
+    cleanupProjectArtifacts(projectsDir, videoId);
 
     expect(existsSync(join(projDir, "final.mp4"))).toBe(true);
     expect(existsSync(join(projDir, "pipeline.log"))).toBe(true);
@@ -162,7 +162,7 @@ describe("step 15 — cleanup", () => {
     writeFileSync(join(projDir, "script", "full_script.md"), "script");
     writeFileSync(join(projDir, "script", "draft.txt"), "junk");
 
-    await cleanupStep.run(videoId, makeStepContext({ projectsDir }));
+    cleanupProjectArtifacts(projectsDir, videoId);
 
     expect(existsSync(join(projDir, "script", "full_script.md"))).toBe(true);
     expect(existsSync(join(projDir, "script", "draft.txt"))).toBe(false);

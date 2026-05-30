@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db";
 import { getImageChunkPacing, getSetting } from "@/lib/settings";
 import { listProjectFiles } from "@/lib/project-files";
 import { buildFlowSummary, type FlowSummary } from "@/lib/flow-summary";
+import { INTERMEDIATE_DIRS } from "@/lib/lifecycle/video";
 import * as gfRepo from "@/lib/repos/google-flow";
 import * as videosRepo from "@/lib/repos/videos";
 import * as stepsRepo from "@/lib/repos/steps";
@@ -80,6 +81,15 @@ export default function VideoDetailPage({
     join(projectsDir, params.id, "script", "full_script.md")
   );
 
+  // True when any of the four intermediate dirs is present in the
+  // listed artifacts. Drives the Cleanup intermediates button's
+  // disabled state. Uses the same INTERMEDIATE_DIRS list that
+  // lifecycle/video.ts:cleanupIntermediates consults, so the UI and
+  // route can never disagree about what counts as an intermediate.
+  const intermediatesPresent = artifacts.some((p) =>
+    INTERMEDIATE_DIRS.some((dir) => p.startsWith(`${dir}/`))
+  );
+
   return (
     <VideoDetailClient
       videoId={params.id}
@@ -95,6 +105,7 @@ export default function VideoDetailPage({
       initialFlowServiceOverloadUntil={initialFlowServiceOverloadUntil}
       globalPacing={globalPacing}
       scriptWordCount={scriptWordCount}
+      intermediatesPresent={intermediatesPresent}
       // Server-rendered timestamp used as the initial value of the step
       // timer clock. SSR and the first client render both read this
       // prop, so the hydrated HTML matches; `useNowTick` then snaps to
