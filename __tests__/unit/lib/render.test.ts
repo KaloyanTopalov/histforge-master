@@ -96,10 +96,16 @@ describe("computeResolution", () => {
 });
 
 describe("buildSegmentArgs", () => {
+  // motion: "ken_burns" is the historical-behavior path. Every legacy
+  // test below was written against the always-on zoom; passing it
+  // explicitly via baseOpts keeps those tests as the regression pin for
+  // the ken_burns code path. The new motion: "static" cases override
+  // baseOpts.motion explicitly.
   const baseOpts = {
     width: 1920,
     height: 1080,
     framerate: 30,
+    motion: "ken_burns" as const,
   };
 
   it("non-last segment renders dur + CROSSFADE_SECONDS", () => {
@@ -149,6 +155,27 @@ describe("buildSegmentArgs", () => {
     expect(vfValue).toContain("s=1920x1080");
     expect(vfValue).toContain("fps=30");
     expect(vfValue).toContain("format=yuv420p");
+  });
+
+  it("ken_burns regression pin: -vf byte-identical to pre-motion-param baseline (30s @ 1920x1080 @ 30fps)", () => {
+    // Captured BEFORE adding the motion param to SegmentArgsOpts so the
+    // string is the literal pre-refactor output. Any drift in this exact
+    // string means the ken_burns code path changed under us — even an
+    // innocent reorder of filter elements breaks ffmpeg compatibility
+    // in subtle ways. If this fails after a refactor, the refactor is
+    // wrong, not the test.
+    const args = buildSegmentArgs({
+      ...baseOpts,
+      imagePath: "C:/tmp/images/image_002.png",
+      chunkDuration: 30,
+      isLast: false,
+      outPath: "C:/tmp/render/segment_002.mp4",
+    });
+    const vfIdx = args.indexOf("-vf");
+    const vfValue = args[vfIdx + 1];
+    expect(vfValue).toBe(
+      "scale=8370:-1,zoompan=z='1.0+(1.275-1.0)*on/930':d=930:s=1920x1080:fps=30,format=yuv420p"
+    );
   });
 
   it("upscaleLong derivation is orientation-safe: portrait matches landscape at same N", () => {
@@ -248,6 +275,88 @@ describe("buildSegmentArgs", () => {
     const crfIdx = args.indexOf("-crf");
     expect(crfIdx).toBeGreaterThan(-1);
     expect(args[crfIdx + 1]).toBe("18");
+  });
+
+  describe("motion: static", () => {
+    it("emits a flat scale-to-W:H,format=yuv420p chain with no zoompan", () => {
+      // The static path is the new default. Filter chain collapses to a
+      // single scale + format; no upscale-buffer, no zoompan substring.
+      const args = buildSegmentArgs({
+        ...baseOpts,
+        motion: "static",
+        imagePath: "C:/tmp/images/image_002.png",
+        chunkDuration: 30,
+        isLast: false,
+        outPath: "C:/tmp/render/segment_002.mp4",
+      });
+      const vfIdx = args.indexOf("-vf");
+      const vfValue = args[vfIdx + 1];
+      expect(vfValue).toBe("scale=1920:1080,format=yuv420p");
+    });
+
+    it("does NOT emit any zoompan or scale=N:-1 token (no pre-upscale buffer)", () => {
+      // Negative-form pin: the static -vf must not contain any zoompan
+      // substring AND must not contain the `:-1` shape from
+      // deriveZoomBuffer's `scale=upscaleLong:-1` output. If either
+      // appears, the upscale buffer is being computed for no reason.
+      const args = buildSegmentArgs({
+        ...baseOpts,
+        motion: "static",
+        imagePath: "C:/tmp/images/image_003.png",
+        chunkDuration: 30,
+        isLast: false,
+        outPath: "C:/tmp/render/segment_003.mp4",
+      });
+      const vfIdx = args.indexOf("-vf");
+      const vfValue = args[vfIdx + 1];
+      expect(vfValue).not.toContain("zoompan");
+      expect(vfValue).not.toContain(":-1");
+    });
+
+    it("portrait orientation: -vf is scale=W:H with H>W, no upscale buffer", () => {
+      // Smoke-check the static chain works for portrait too — same
+      // shape, just swap dimensions.
+      const args = buildSegmentArgs({
+        ...baseOpts,
+        motion: "static",
+        width: 1080,
+        height: 1920,
+        imagePath: "C:/tmp/images/image_p.png",
+        chunkDuration: 30,
+        isLast: false,
+        outPath: "C:/tmp/render/seg_p.mp4",
+      });
+      const vfIdx = args.indexOf("-vf");
+      expect(args[vfIdx + 1]).toBe("scale=1080:1920,format=yuv420p");
+    });
+
+    it("last-segment static still has -t = chunkDuration exact (no CF extension)", () => {
+      // Confirm the CROSSFADE_SECONDS extension rule still applies on
+      // the static path — only the vf differs between motion modes.
+      const args = buildSegmentArgs({
+        ...baseOpts,
+        motion: "static",
+        imagePath: "C:/tmp/images/image_last.png",
+        chunkDuration: 28.5,
+        isLast: true,
+        outPath: "C:/tmp/render/seg_last.mp4",
+      });
+      const tIdx = args.indexOf("-t");
+      expect(args[tIdx + 1]).toBe("28.5");
+    });
+
+    it("non-last static still has -t = chunkDuration + CROSSFADE_SECONDS", () => {
+      const args = buildSegmentArgs({
+        ...baseOpts,
+        motion: "static",
+        imagePath: "C:/tmp/images/image_mid.png",
+        chunkDuration: 30,
+        isLast: false,
+        outPath: "C:/tmp/render/seg_mid.mp4",
+      });
+      const tIdx = args.indexOf("-t");
+      expect(args[tIdx + 1]).toBe("31");
+    });
   });
 });
 
@@ -526,6 +635,12 @@ describe("render() precheck", () => {
     longEdgePx: 1920,
     framerate: 30,
     videoEncoder: "libx264" as const,
+    // Existing render() integration tests were written against the
+    // always-on zoom — pin to "ken_burns" via the base opts so they keep
+    // exercising the same Stage B chain. Static-path render() coverage
+    // exists at the unit-level on buildSegmentArgs (see "motion: static"
+    // describe block above).
+    motion: "ken_burns" as const,
   };
 
   it("throws RenderPrecheckError when a single image file is missing", async () => {
@@ -720,6 +835,7 @@ describe("render() orchestration", () => {
       longEdgePx: 1920,
       framerate: 30,
       videoEncoder: "libx264",
+      motion: "ken_burns",
       exec,
       probe,
       log: () => {},
@@ -751,6 +867,7 @@ describe("render() orchestration", () => {
       longEdgePx: 1920,
       framerate: 30,
       videoEncoder: "libx264",
+      motion: "ken_burns",
       exec,
       probe,
       log: () => {},
@@ -842,6 +959,7 @@ describe("render() orchestration", () => {
       longEdgePx: 1920,
       framerate: 30,
       videoEncoder: "libx264",
+      motion: "ken_burns",
       exec,
       probe,
       log: () => {},
@@ -881,6 +999,7 @@ describe("render() orchestration", () => {
       longEdgePx: 1920,
       framerate: 30,
       videoEncoder: "libx264",
+      motion: "ken_burns",
       exec,
       probe,
       log: () => {},
@@ -920,6 +1039,7 @@ describe("render() orchestration", () => {
       longEdgePx: 1920,
       framerate: 30,
       videoEncoder: "libx264",
+      motion: "ken_burns",
       exec,
       probe,
       log: () => {},
@@ -964,6 +1084,7 @@ describe("render() orchestration", () => {
       longEdgePx: 1920,
       framerate: 30,
       videoEncoder: "libx264",
+      motion: "ken_burns",
       exec,
       probe,
       log: () => {},
@@ -993,6 +1114,7 @@ describe("render() orchestration", () => {
       longEdgePx: 1920,
       framerate: 30,
       videoEncoder: "libx264",
+      motion: "ken_burns",
       exec,
       probe,
       log: (msg: string) => logged.push(msg),
@@ -1021,6 +1143,7 @@ describe("render() orchestration", () => {
         longEdgePx: 1920,
         framerate: 30,
         videoEncoder: "libx264",
+        motion: "ken_burns",
         exec,
         probe,
         log: () => {},
@@ -1055,6 +1178,7 @@ describe("render() orchestration", () => {
       longEdgePx: 1920,
       framerate: 30,
       videoEncoder: "libx264",
+      motion: "ken_burns",
       exec,
       probe,
       log: () => {},
@@ -1139,6 +1263,7 @@ describe("render() orchestration", () => {
       longEdgePx: 1920,
       framerate: 30,
       videoEncoder: "libx264",
+      motion: "ken_burns",
       exec,
       probe,
       log: () => {},
@@ -1209,6 +1334,7 @@ describe("render() orchestration", () => {
       longEdgePx: 1920,
       framerate: 30,
       videoEncoder: "libx264",
+      motion: "ken_burns",
       exec,
       probe,
       log: () => {},
@@ -1278,6 +1404,7 @@ describe("render() orchestration", () => {
       longEdgePx: 1920,
       framerate: 30,
       videoEncoder: "libx264",
+      motion: "ken_burns",
       exec,
       probe,
       log: (m: string) => logged.push(m),
@@ -1358,6 +1485,7 @@ describe("render() Stage CD encoder branch (ADR-0004)", () => {
       longEdgePx: 1920,
       framerate: 30,
       videoEncoder: "h264_nvenc",
+      motion: "ken_burns",
       exec,
       probe,
       log: () => {},
@@ -1406,6 +1534,7 @@ describe("render() Stage CD encoder branch (ADR-0004)", () => {
       longEdgePx: 1920,
       framerate: 30,
       videoEncoder: "h264_amf",
+      motion: "ken_burns",
       exec,
       probe,
       log: () => {},
@@ -1441,6 +1570,7 @@ describe("render() Stage CD encoder branch (ADR-0004)", () => {
       longEdgePx: 1920,
       framerate: 30,
       videoEncoder: "h264_nvenc",
+      motion: "ken_burns",
       exec,
       probe,
       log: () => {},
@@ -1476,6 +1606,7 @@ describe("render() Stage CD encoder branch (ADR-0004)", () => {
       longEdgePx: 1920,
       framerate: 30,
       videoEncoder: "av1_nvenc",
+      motion: "ken_burns",
       exec,
       probe,
       log: () => {},
@@ -1508,6 +1639,7 @@ describe("render() Stage CD encoder branch (ADR-0004)", () => {
       longEdgePx: 1920,
       framerate: 30,
       videoEncoder: "h264_nvenc",
+      motion: "ken_burns",
       exec,
       probe,
       log: (m: string) => logged.push(m),
@@ -1591,6 +1723,7 @@ describe("render() Stage B concurrency (Phase 2)", () => {
       longEdgePx: 1920,
       framerate: 30,
       videoEncoder: "libx264",
+      motion: "ken_burns",
       exec,
       probe,
       log: () => {},
@@ -1663,6 +1796,7 @@ describe("render() Stage B concurrency (Phase 2)", () => {
         longEdgePx: 1920,
         framerate: 30,
         videoEncoder: "libx264",
+        motion: "ken_burns",
         exec,
         probe,
         log: () => {},
@@ -1739,6 +1873,7 @@ describe("render() Stage A/B parallelism (Phase 3)", () => {
       longEdgePx: 1920,
       framerate: 30,
       videoEncoder: "libx264",
+      motion: "ken_burns",
       exec,
       probe,
       log: () => {},
@@ -1802,6 +1937,7 @@ describe("render() images-only topology (Phase 4)", () => {
       longEdgePx: 1920,
       framerate: 30,
       videoEncoder: "libx264",
+      motion: "ken_burns",
       exec,
       probe,
       log: () => {},
@@ -1867,6 +2003,7 @@ describe("render() images-only topology (Phase 4)", () => {
       longEdgePx: 1920,
       framerate: 30,
       videoEncoder: "libx264",
+      motion: "ken_burns",
       exec,
       probe,
       log: () => {},
@@ -1946,6 +2083,7 @@ describe("render() clips-only topology (Phase 4)", () => {
       longEdgePx: 1920,
       framerate: 30,
       videoEncoder: "libx264",
+      motion: "ken_burns",
       exec,
       probe,
       log: () => {},
@@ -1990,6 +2128,7 @@ describe("render() clips-only topology (Phase 4)", () => {
       longEdgePx: 1920,
       framerate: 30,
       videoEncoder: "libx264",
+      motion: "ken_burns",
       exec,
       probe,
       log: () => {},
@@ -2019,6 +2158,7 @@ describe("render() clips-only topology (Phase 4)", () => {
       longEdgePx: 1920,
       framerate: 30,
       videoEncoder: "libx264",
+      motion: "ken_burns",
       exec,
       probe,
       log: () => {},
@@ -2062,6 +2202,7 @@ describe("render() clips-only topology (Phase 4)", () => {
       longEdgePx: 1920,
       framerate: 30,
       videoEncoder: "libx264",
+      motion: "ken_burns",
       exec,
       probe,
       log: () => {},

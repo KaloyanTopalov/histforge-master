@@ -65,7 +65,7 @@ function setupProject(projectsDir: string, videoId: string, chunks: Chunk[]) {
 }
 
 describe("render step (step 14)", () => {
-  it("reads settings from DB and passes them to the render lib", async () => {
+  it("reads settings from DB and passes them to the render lib (ken_burns path)", async () => {
     const db = freshDb();
     const projectsDir = tempDir("projects");
     const videoId = "v_step14";
@@ -74,6 +74,10 @@ describe("render step (step 14)", () => {
     setSetting("aspect_ratio", "16:9", db);
     setSetting("long_edge_px", 1920, db);
     setSetting("framerate", 30, db);
+    // Override the seeded "static" default so this test exercises the
+    // zoompan-bearing Stage B chain. The default-static case is covered
+    // by the next test.
+    setSetting("render_image_motion", "ken_burns", db);
 
     const execCalls: string[][] = [];
     const exec = vi.fn().mockImplementation((args: string[]) => {
@@ -93,6 +97,37 @@ describe("render step (step 14)", () => {
     expect(segCall).toBeDefined();
     const vfIdx = segCall!.indexOf("-vf");
     expect(segCall![vfIdx + 1]).toContain("s=1920x1080");
+  });
+
+  it("default render_image_motion=static produces a flat scale-to-W:H vf (no zoompan)", async () => {
+    // Witness that the new setting flows from DB → step 14 → render lib →
+    // buildSegmentArgs. Default seeded value is "static", so without any
+    // override the Stage B segment must NOT contain zoompan.
+    const db = freshDb();
+    const projectsDir = tempDir("projects");
+    const videoId = "v_step14_static";
+    setupProject(projectsDir, videoId, makeChunks());
+
+    setSetting("aspect_ratio", "16:9", db);
+    setSetting("long_edge_px", 1920, db);
+    setSetting("framerate", 30, db);
+    // No explicit render_image_motion set — relies on seedDefaultSettings.
+
+    const execCalls: string[][] = [];
+    const exec = vi.fn().mockImplementation((args: string[]) => {
+      execCalls.push(args);
+    });
+    const probe = vi.fn().mockResolvedValue(10);
+
+    await runRender(videoId, { db, projectsDir, exec, probe });
+
+    const segCall = execCalls.find((c) => {
+      const last = c[c.length - 1];
+      return typeof last === "string" && /segment_\d+\.mp4$/.test(last);
+    });
+    expect(segCall).toBeDefined();
+    const vfIdx = segCall!.indexOf("-vf");
+    expect(segCall![vfIdx + 1]).toBe("scale=1920:1080,format=yuv420p");
   });
 
   it("logs to pipeline.log via appendLog", async () => {

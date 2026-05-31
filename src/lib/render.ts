@@ -110,6 +110,8 @@ export function computeResolution(
   return { width: short, height: long };
 }
 
+export type RenderImageMotion = "ken_burns" | "static";
+
 export interface SegmentArgsOpts {
   imagePath: string;
   chunkDuration: number;
@@ -118,6 +120,17 @@ export interface SegmentArgsOpts {
   height: number;
   framerate: number;
   outPath: string;
+  /**
+   * Per-image motion mode. `"ken_burns"` preserves the historical
+   * pre-upscale + zoompan chain (1.0 → ZOOM_TARGET linear ramp).
+   * `"static"` emits a flat scale-to-W:H still and skips the
+   * `deriveZoomBuffer` pre-upscale entirely — its only purpose was to
+   * feed the zoompan headroom, which is wasted work when there is no
+   * zoom. Required so the choice is explicit at every call site; the
+   * Stage B caller reads `getSetting("render_image_motion")` and passes
+   * it in.
+   */
+  motion: RenderImageMotion;
 }
 
 export interface ZoomBuffer {
@@ -173,17 +186,30 @@ export function buildSegmentArgs(opts: SegmentArgsOpts): string[] {
     height,
     framerate,
     outPath,
+    motion,
   } = opts;
 
   const renderDur = isLast ? chunkDuration : chunkDuration + CROSSFADE_SECONDS;
-  const frames = Math.round(renderDur * framerate);
-  const { upscaleLong } = deriveZoomBuffer(frames, width, height);
 
-  const vf = [
-    `scale=${upscaleLong}:-1`,
-    `zoompan=z='1.0+(${ZOOM_TARGET}-1.0)*on/${frames}':d=${frames}:s=${width}x${height}:fps=${framerate}`,
-    `format=yuv420p`,
-  ].join(",");
+  let vf: string;
+  if (motion === "static") {
+    // No zoompan → no pre-upscale headroom needed; deriveZoomBuffer is
+    // intentionally NOT called on this path. The chain collapses to a
+    // direct scale-to-W:H + yuv420p, which is what `loop=1 -t renderDur`
+    // pipes into x264 to produce a still-frame segment.
+    vf = `scale=${width}:${height},format=yuv420p`;
+  } else {
+    // ken_burns: byte-identical to the pre-motion-param baseline pinned
+    // in render.test.ts ("ken_burns regression pin"). Pre-upscale buffer
+    // (deriveZoomBuffer) → zoompan linear ramp 1.0 → ZOOM_TARGET → yuv420p.
+    const frames = Math.round(renderDur * framerate);
+    const { upscaleLong } = deriveZoomBuffer(frames, width, height);
+    vf = [
+      `scale=${upscaleLong}:-1`,
+      `zoompan=z='1.0+(${ZOOM_TARGET}-1.0)*on/${frames}':d=${frames}:s=${width}x${height}:fps=${framerate}`,
+      `format=yuv420p`,
+    ].join(",");
+  }
 
   return [
     "-loop", "1",
@@ -406,6 +432,13 @@ export interface RenderDeps {
    */
   videoEncoder: VideoEncoder;
   /**
+   * Per-image motion mode for the Stage B segment build. Read once from
+   * `render_image_motion` by the worker step and passed in — keeps render
+   * pure (no DB import) and matches the dependency-injection shape of
+   * `exec` / `probe` / `log`.
+   */
+  motion: RenderImageMotion;
+  /**
    * Run one ffmpeg invocation. Async so production can use `spawn` with
    * an AbortSignal — when the orchestrator cancels mid-render, the in-flight
    * child process is killed instead of running to completion. Tests can
@@ -437,6 +470,7 @@ export async function render(
     longEdgePx,
     framerate,
     videoEncoder,
+    motion,
     exec,
     probe,
     log,
@@ -603,17 +637,23 @@ export async function render(
             [chunk.id]
           );
         }
-        const renderDur = isLast ? duration : duration + CROSSFADE_SECONDS;
-        const frames = Math.round(renderDur * framerate);
-        const { ceilingClamped, derived } = deriveZoomBuffer(
-          frames,
-          width,
-          height
-        );
-        if (ceilingClamped) {
-          log(
-            `Stage B buffer capped at 12000 for chunk ${chunk.id} (N_frames=${frames}, derived=${derived})`
+        // The Stage B buffer-cap warning is meaningful only when the
+        // zoom path actually runs — derive + log gated on motion. On the
+        // static path deriveZoomBuffer is never invoked (its sole purpose
+        // is feeding the zoompan headroom that no longer exists).
+        if (motion === "ken_burns") {
+          const renderDur = isLast ? duration : duration + CROSSFADE_SECONDS;
+          const frames = Math.round(renderDur * framerate);
+          const { ceilingClamped, derived } = deriveZoomBuffer(
+            frames,
+            width,
+            height
           );
+          if (ceilingClamped) {
+            log(
+              `Stage B buffer capped at 12000 for chunk ${chunk.id} (N_frames=${frames}, derived=${derived})`
+            );
+          }
         }
         segmentTasks.push(() =>
           exec(
@@ -625,6 +665,7 @@ export async function render(
               height,
               framerate,
               outPath: segPath,
+              motion,
             })
           )
         );

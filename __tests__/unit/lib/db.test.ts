@@ -2240,6 +2240,7 @@ describe("seedDefaultSettings", () => {
         magnific_runtime_extension_path: "extensions/magnific-ext",
         auto_cleanup_after_render: "false",
         histforge_base_url: "http://localhost:3000",
+        render_image_motion: "static",
       });
     } finally {
       db.close();
@@ -2255,6 +2256,19 @@ describe("seedDefaultSettings", () => {
     try {
       seedDefaultSettings(db);
       expect(getSetting("histforge_base_url", db)).toBe("http://localhost:3000");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("seeds render_image_motion default to static", () => {
+    // Per-image Ken Burns zoom is opt-in: default is static stills, no
+    // zoompan, no pre-upscale buffer work. Operators flip the row to
+    // "ken_burns" to restore the historical zoom behavior.
+    const db = createDb(":memory:");
+    try {
+      seedDefaultSettings(db);
+      expect(getSetting("render_image_motion", db)).toBe("static");
     } finally {
       db.close();
     }
