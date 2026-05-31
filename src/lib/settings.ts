@@ -246,6 +246,13 @@ const SETTING_SCHEMAS = {
   // dev server origin; ops override the row in prod. Free-text string so
   // any scheme://host:port shape Magnific can reach is accepted.
   histforge_base_url: z.string(),
+  // Per-image render motion. "ken_burns" reproduces the historical
+  // zoom-in (1.0 → ZOOM_TARGET over the segment duration, pre-upscale
+  // buffer in front). "static" emits a flat scale-to-W:H still and skips
+  // the deriveZoomBuffer pre-upscale entirely. Two-value string enum (no
+  // boolean transform) because both values are surface-meaningful and
+  // future motion modes may join the same enum without renaming.
+  render_image_motion: z.enum(["ken_burns", "static"]),
 } as const;
 
 export type SettingKey = keyof typeof SETTING_SCHEMAS;

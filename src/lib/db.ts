@@ -138,6 +138,11 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   // the row in prod. Keep in sync with the INSERT OR IGNORE migration
   // statement below.
   histforge_base_url: "http://localhost:3000",
+  // Per-image render motion. Default "static" — fresh installs render
+  // images as flat stills. Operators who want the historical Ken Burns
+  // zoom flip the row to "ken_burns". Keep in sync with the INSERT OR
+  // IGNORE migration statement below.
+  render_image_motion: "static",
 };
 
 export function seedDefaultSettings(db: DatabaseType): void {
@@ -1016,6 +1021,13 @@ export function createDb(path: string): DatabaseType {
   // auto_cleanup_after_render — DBs that miss db:init pick it up here.
   db.prepare(
     "INSERT OR IGNORE INTO settings (key, value) VALUES ('histforge_base_url', 'http://localhost:3000')"
+  ).run();
+
+  // render_image_motion: per-image Ken Burns gate. Default "static"
+  // intentionally changes the historical "zoom always on" behavior —
+  // upgraded DBs that miss db:init still pick up the seed here.
+  db.prepare(
+    "INSERT OR IGNORE INTO settings (key, value) VALUES ('render_image_motion', 'static')"
   ).run();
 
   // Character-lock + style-lock plan. Two free-text settings consumed

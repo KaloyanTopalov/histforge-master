@@ -274,6 +274,7 @@ describe("getAllSettings", () => {
       magnific_runtime_extension_path: "extensions/magnific-ext",
       auto_cleanup_after_render: false,
       histforge_base_url: "http://localhost:3000",
+      render_image_motion: "static",
     });
   });
 });
@@ -399,6 +400,55 @@ describe("auto_cleanup_after_render setting", () => {
       "auto_cleanup_after_render"
     );
     expect(() => getSetting("auto_cleanup_after_render", db)).toThrow();
+  });
+});
+
+describe("render_image_motion setting", () => {
+  // Per-image Ken Burns gate. Default "static" — fresh installs render
+  // images as flat stills with no zoompan. Operators flip to "ken_burns"
+  // to restore the historical zoom. Two-value string enum (no boolean
+  // transform) so future motion modes can join the same enum.
+
+  it("seeds render_image_motion=static as default", () => {
+    const db = freshDb();
+    expect(getSetting("render_image_motion", db)).toBe("static");
+    expect(typeof getSetting("render_image_motion", db)).toBe("string");
+  });
+
+  it("accepts both 'ken_burns' and 'static' through setSetting", () => {
+    const db = freshDb();
+    setSetting("render_image_motion", "ken_burns", db);
+    expect(getSetting("render_image_motion", db)).toBe("ken_burns");
+    setSetting("render_image_motion", "static", db);
+    expect(getSetting("render_image_motion", db)).toBe("static");
+  });
+
+  it("throws on a corrupted out-of-enum stored value", () => {
+    // Garbage row surfaces as a Zod parse error, not a silent fallback —
+    // an unknown motion value should fail loud at step entry rather than
+    // pick a "default" branch that may surprise the operator.
+    const db = freshDb();
+    db.prepare("UPDATE settings SET value = ? WHERE key = ?").run(
+      "wobble",
+      "render_image_motion"
+    );
+    expect(() => getSetting("render_image_motion", db)).toThrow();
+  });
+
+  it("rejects empty string via the setSetting write-time validator", () => {
+    const db = freshDb();
+    // setSetting validates the stringified value through the schema, so an
+    // empty string is caught at write time rather than landing in the DB.
+    // The "as" cast is required because the typed setter rejects the
+    // out-of-enum value at compile time — we go through the cast to test
+    // the runtime guard.
+    expect(() =>
+      setSetting(
+        "render_image_motion",
+        "" as unknown as "ken_burns" | "static",
+        db
+      )
+    ).toThrow();
   });
 });
 
