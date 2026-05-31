@@ -1,9 +1,23 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { CheckCircle2, Loader2, Sparkles, Upload } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  CheckCircle2,
+  Download,
+  Loader2,
+  Sparkles,
+  Upload,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+
+interface WhisperStatus {
+  source: "env" | "vendor" | "none";
+  installed: boolean;
+  binPath: string | null;
+  modelPath: string | null;
+  autoInstallSupported: boolean;
+}
 
 interface AlignmentUploadProps {
   videoId: string;
@@ -46,8 +60,58 @@ export function AlignmentUpload({
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
+  const [installing, setInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [whisperStatus, setWhisperStatus] = useState<WhisperStatus | null>(null);
+
+  // Fetch local-Whisper install state on mount + after any setup call.
+  // The status badge tracks reality without forcing a hard page reload.
+  useEffect(() => {
+    void refreshWhisperStatus();
+  }, []);
+
+  async function refreshWhisperStatus(): Promise<void> {
+    try {
+      const r = await fetch("/api/whisper/status");
+      if (r.ok) {
+        const data = (await r.json()) as WhisperStatus;
+        setWhisperStatus(data);
+      }
+    } catch {
+      // Non-fatal — UI just won't show the badge.
+    }
+  }
+
+  async function onInstallWhisper(): Promise<void> {
+    setInstalling(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const r = await fetch("/api/whisper/setup", { method: "POST" });
+      const data = (await r.json().catch(() => ({}))) as {
+        ok?: boolean;
+        binBytes?: number;
+        modelBytes?: number;
+        error?: string;
+        message?: string;
+      };
+      if (!r.ok) {
+        setError(data.message || data.error || `Install failed (HTTP ${r.status}).`);
+      } else {
+        const total =
+          (data.binBytes || 0) + (data.modelBytes || 0);
+        setSuccess(
+          `Local Whisper installed (${formatBytes(total)}). Click Auto-transcribe to use it.`,
+        );
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setInstalling(false);
+      await refreshWhisperStatus();
+    }
+  }
 
   async function onFileChange(e: React.ChangeEvent<HTMLInputElement>): Promise<void> {
     const file = e.target.files?.[0];
@@ -146,6 +210,12 @@ export function AlignmentUpload({
             </span>
           </p>
         )}
+        <WhisperStatusRow
+          status={whisperStatus}
+          installing={installing}
+          busy={busy || transcribing}
+          onInstall={() => void onInstallWhisper()}
+        />
         <div className="flex flex-wrap items-center gap-2">
           <input
             ref={inputRef}
@@ -196,4 +266,83 @@ export function AlignmentUpload({
       </CardContent>
     </Card>
   );
+}
+
+interface WhisperStatusRowProps {
+  status: WhisperStatus | null;
+  installing: boolean;
+  busy: boolean;
+  onInstall: () => void;
+}
+
+/**
+ * Status badge + Install button for local Whisper. The route resolves
+ * the source priority (env → vendor/ → none); this row just renders
+ * what came back. Install button only appears when source === "none"
+ * AND autoInstallSupported is true (Windows hosts).
+ */
+function WhisperStatusRow({
+  status,
+  installing,
+  busy,
+  onInstall,
+}: WhisperStatusRowProps): JSX.Element | null {
+  if (!status) return null;
+  if (status.source === "env") {
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <CheckCircle2 className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+        <span>
+          Local Whisper configured via <code>WHISPER_LOCAL_BIN</code> /
+          <code> WHISPER_LOCAL_MODEL</code>.
+        </span>
+      </p>
+    );
+  }
+  if (status.source === "vendor") {
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <CheckCircle2 className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+        <span>Local Whisper installed under <code>vendor/whisper/</code>.</span>
+      </p>
+    );
+  }
+  // source === "none"
+  if (!status.autoInstallSupported) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Local Whisper not configured. Auto-install is Windows-only; on
+        macOS/Linux install via your package manager and set the env
+        vars (see <code>.env.example</code>).
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs text-muted-foreground">
+        Local Whisper not installed. One-click install: downloads
+        whisper.cpp (~10 MB) + the base English model (~150 MB) into
+        <code> vendor/whisper/</code>. Takes 1-3 minutes on broadband.
+      </p>
+      <Button
+        type="button"
+        variant="secondary"
+        disabled={installing || busy}
+        onClick={onInstall}
+      >
+        {installing ? (
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        ) : (
+          <Download className="mr-2 h-4 w-4" />
+        )}
+        {installing ? "Installing… (downloading ~160 MB)" : "Install local Whisper"}
+      </Button>
+    </div>
+  );
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }

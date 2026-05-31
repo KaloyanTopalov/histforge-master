@@ -14,6 +14,10 @@ out/
 data/
 projects/
 
+# Auto-downloaded local Whisper binaries + models. Files land here when
+# the operator clicks "Install local Whisper" on the alignment card.
+vendor/
+
 # Environment
 .env
 .env.local
