@@ -110,6 +110,8 @@ export function computeResolution(
   return { width: short, height: long };
 }
 
+export type RenderImageMotion = "ken_burns" | "static";
+
 export interface SegmentArgsOpts {
   imagePath: string;
   chunkDuration: number;
@@ -118,6 +120,17 @@ export interface SegmentArgsOpts {
   height: number;
   framerate: number;
   outPath: string;
+  /**
+   * Per-image motion mode. `"ken_burns"` preserves the historical
+   * pre-upscale + zoompan chain (1.0 → ZOOM_TARGET linear ramp).
+   * `"static"` emits a flat scale-to-W:H still and skips the
+   * `deriveZoomBuffer` pre-upscale entirely — its only purpose was to
+   * feed the zoompan headroom, which is wasted work when there is no
+   * zoom. Required so the choice is explicit at every call site; the
+   * Stage B caller reads `getSetting("render_image_motion")` and passes
+   * it in.
+   */
+  motion: RenderImageMotion;
 }
 
 export interface ZoomBuffer {
@@ -173,17 +186,30 @@ export function buildSegmentArgs(opts: SegmentArgsOpts): string[] {
     height,
     framerate,
     outPath,
+    motion,
   } = opts;
 
   const renderDur = isLast ? chunkDuration : chunkDuration + CROSSFADE_SECONDS;
-  const frames = Math.round(renderDur * framerate);
-  const { upscaleLong } = deriveZoomBuffer(frames, width, height);
 
-  const vf = [
-    `scale=${upscaleLong}:-1`,
-    `zoompan=z='1.0+(${ZOOM_TARGET}-1.0)*on/${frames}':d=${frames}:s=${width}x${height}:fps=${framerate}`,
-    `format=yuv420p`,
-  ].join(",");
+  let vf: string;
+  if (motion === "static") {
+    // No zoompan → no pre-upscale headroom needed; deriveZoomBuffer is
+    // intentionally NOT called on this path. The chain collapses to a
+    // direct scale-to-W:H + yuv420p, which is what `loop=1 -t renderDur`
+    // pipes into x264 to produce a still-frame segment.
+    vf = `scale=${width}:${height},format=yuv420p`;
+  } else {
+    // ken_burns: byte-identical to the pre-motion-param baseline pinned
+    // in render.test.ts ("ken_burns regression pin"). Pre-upscale buffer
+    // (deriveZoomBuffer) → zoompan linear ramp 1.0 → ZOOM_TARGET → yuv420p.
+    const frames = Math.round(renderDur * framerate);
+    const { upscaleLong } = deriveZoomBuffer(frames, width, height);
+    vf = [
+      `scale=${upscaleLong}:-1`,
+      `zoompan=z='1.0+(${ZOOM_TARGET}-1.0)*on/${frames}':d=${frames}:s=${width}x${height}:fps=${framerate}`,
+      `format=yuv420p`,
+    ].join(",");
+  }
 
   return [
     "-loop", "1",
@@ -625,6 +651,11 @@ export async function render(
               height,
               framerate,
               outPath: segPath,
+              // Pinned to "ken_burns" in this commit to preserve byte-
+              // identical existing behavior alongside the API extension.
+              // The next commit replaces this literal with a single
+              // getSetting("render_image_motion") read above the loop.
+              motion: "ken_burns",
             })
           )
         );
