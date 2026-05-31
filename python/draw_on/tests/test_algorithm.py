@@ -71,3 +71,26 @@ def test_traversal_nn_order_differs_from_row_major():
         "If this fails, the walk is row-major, not NN."
     )
     assert pos_D == 3, "Farthest cell should be last in the NN walk"
+
+
+from draw_on.algorithm import compute_skip_rate
+
+
+def test_skip_rate_one_when_cells_fit_frames():
+    # 100 cells, 4 sec, 25 fps → target_frames=100 → skip=1
+    assert compute_skip_rate(100, 4.0, 25) == 1
+
+
+def test_skip_rate_skips_when_more_cells_than_frames():
+    # 1000 cells, 4 sec, 25 fps → target_frames=100 → skip=10
+    assert compute_skip_rate(1000, 4.0, 25) == 10
+
+
+def test_skip_rate_minimum_one():
+    assert compute_skip_rate(1, 100.0, 30) == 1
+    assert compute_skip_rate(0, 1.0, 30) == 1
+
+
+def test_skip_rate_ceiling_not_floor():
+    # 105 cells, 100 target frames → ceiling = 2 (so all cells get drawn)
+    assert compute_skip_rate(105, 100 / 30, 30) == 2
