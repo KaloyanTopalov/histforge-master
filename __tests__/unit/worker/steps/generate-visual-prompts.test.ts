@@ -122,6 +122,15 @@ function seedPrompts(promptsDir: string): void {
     join(promptsDir, "09_generate_visual_prompts.md"),
     "STYLE={{style_prompt}}\nBATCH={{batch_json}}\n---END---"
   );
+  // Doodle variants in step 09 read this skill file at step entry —
+  // copy the real runtime artifact (from the repo's `prompts/`) into
+  // the test's tmp promptsDir so tests exercising doodle behavior find
+  // it. Cinematic / null branches don't read it, so this is a no-op
+  // for cinematic tests.
+  writeFileSync(
+    join(promptsDir, "09_doodle_visual_metaphor_skill.md"),
+    readFileSync("prompts/09_doodle_visual_metaphor_skill.md", "utf-8")
+  );
 }
 
 /**
@@ -1758,5 +1767,221 @@ describe("generate_visual_prompts — assembler (phase 2b)", () => {
         })
       )
     ).rejects.toThrow(/missing non-empty 'scene'/);
+  });
+});
+
+describe("generate_visual_prompts — per-style lock resolution (image_styles PR)", () => {
+  // Helper: build a snapshot carrying a given image_style. All other
+  // fields are fixed at the comfyui-shaped defaults — only the
+  // image_style and visual_style_snapshot path are exercised here.
+  function snapshotWith(image_style: string | null) {
+    return {
+      workflow_id: "comfyui",
+      version: 1,
+      kind: "narrative" as const,
+      script_llm_provider: "openrouter",
+      tts_provider: null,
+      image_provider: "comfyui",
+      video_provider: "comfyui",
+      music_provider: null,
+      upscaler_provider: null,
+      chunker_step: "chunk_clips_then_images",
+      image_style,
+      steps: [],
+    };
+  }
+
+  async function runWithImageStyle(opts: {
+    image_style: string | null;
+    galleryPrompt?: string;
+    globalStyleLock?: string;
+    globalNegativeLock?: string;
+  }): Promise<{ prompt: string }> {
+    const db = freshDb();
+    if (opts.globalStyleLock !== undefined) {
+      setSetting("style_lock_description", opts.globalStyleLock, db);
+    }
+    if (opts.globalNegativeLock !== undefined) {
+      setSetting("character_lock_negative", opts.globalNegativeLock, db);
+    }
+    const videoId = seedVideo(db, { stylePrompt: opts.galleryPrompt ?? "" });
+    const projectsDir = tempDir("projects");
+    const promptsDir = tempDir("prompts");
+    seedPrompts(promptsDir);
+    const chunksPath = seedChunksFile(projectsDir, videoId, makeChunks(1));
+
+    const chat = vi.fn(async (messages: { content: string }[]) => {
+      const batch = extractBatch(messages[1].content);
+      return envelopeReply(batch, () => "a scene");
+    });
+
+    await generateVisualPromptsStep.run(
+      videoId,
+      makeStepContext({
+        db,
+        projectsDir,
+        promptsDir,
+        visualPromptsConcurrency: 1,
+        visualPromptChat: chat,
+        snapshot: snapshotWith(opts.image_style),
+      })
+    );
+
+    const chunks: Chunk[] = JSON.parse(readFileSync(chunksPath, "utf-8"));
+    return { prompt: chunks[0].prompt ?? "" };
+  }
+
+  it("doodle_polished uses its own style_lock + negative_lock (global sentinel ABSENT, doodle locks PRESENT)", async () => {
+    // Sentinels make the absence test load-bearing: if the global lock
+    // leaks through the per-style branch, this string appears in the
+    // output and the assertion fails immediately.
+    const { prompt } = await runWithImageStyle({
+      image_style: "doodle_polished",
+      globalStyleLock: "GLOBAL_BW_LOCK_SENTINEL",
+      globalNegativeLock: "GLOBAL_NEG_SENTINEL",
+    });
+
+    expect(prompt).not.toContain("GLOBAL_BW_LOCK_SENTINEL");
+    expect(prompt).not.toContain("GLOBAL_NEG_SENTINEL");
+    // From doodle_polished.style_lock (lib/image/styles.ts):
+    expect(prompt).toMatch(/whiteboard-marker doodle/i);
+    // From doodle_polished.negative_lock:
+    expect(prompt).toMatch(/photorealistic/i);
+  });
+
+  it("doodle_rough carries the anti-polish negative_lock (drop shadow / polished present)", async () => {
+    // Anti-polish negatives are load-bearing on Nano Banana 2 — without
+    // them the model drifts to polished output. If this test ever loses
+    // one of these tokens, the rough variant silently degrades to
+    // doodle_polished output.
+    const { prompt } = await runWithImageStyle({
+      image_style: "doodle_rough",
+      globalStyleLock: "GLOBAL_BW_LOCK_SENTINEL",
+      globalNegativeLock: "GLOBAL_NEG_SENTINEL",
+    });
+
+    expect(prompt).not.toContain("GLOBAL_BW_LOCK_SENTINEL");
+    expect(prompt).not.toContain("GLOBAL_NEG_SENTINEL");
+    expect(prompt).toMatch(/drop shadow/i);
+    expect(prompt).toMatch(/polished/i);
+  });
+
+  it("cinematic / null image_style falls back to the global locks (backwards-compat anchor)", async () => {
+    // The load-bearing backwards-compat contract: every pre-doodle
+    // video continues to receive the global style_lock_description +
+    // character_lock_negative byte-for-byte. If this flips, every
+    // already-queued and every cinematic future video changes output.
+    const { prompt } = await runWithImageStyle({
+      image_style: null,
+      galleryPrompt: "cinematic dark",
+      globalStyleLock: "GLOBAL_BW_LOCK_SENTINEL",
+      globalNegativeLock: "GLOBAL_NEG_SENTINEL",
+    });
+
+    expect(prompt).toContain("GLOBAL_BW_LOCK_SENTINEL");
+    expect(prompt).toContain("GLOBAL_NEG_SENTINEL");
+    // Per-video gallery prompt is preserved on the cinematic path.
+    expect(prompt).toContain("cinematic dark");
+    // None of the doodle text leaks into cinematic output.
+    expect(prompt).not.toMatch(/whiteboard-marker doodle/i);
+  });
+
+  it("doodle + per-video gallery stylePrompt → the gallery is IGNORED (silent-stacking guard)", async () => {
+    // The reason: doodle workflows declare a workflow-authoritative
+    // style via prompt_prefix; if the per-video gallery ALSO stacks
+    // onto the output, the operator gets gallery wording inside what
+    // should be a clean doodle prompt — a silent, hard-to-debug
+    // degradation. This test pins that doodle drops the gallery.
+    const GALLERY_SENTINEL = "GALLERY_PROMPT_SENTINEL_XYZ";
+    const { prompt } = await runWithImageStyle({
+      image_style: "doodle_polished",
+      galleryPrompt: GALLERY_SENTINEL,
+      globalStyleLock: "GLOBAL_BW_LOCK_SENTINEL",
+      globalNegativeLock: "GLOBAL_NEG_SENTINEL",
+    });
+
+    expect(prompt).not.toContain(GALLERY_SENTINEL);
+    // Doodle prompt_prefix still present (whole pipeline functions):
+    expect(prompt).toMatch(/whiteboard doodle/i);
+  });
+});
+
+describe("generate_visual_prompts — metaphor skill injection (image_styles PR)", () => {
+  // Helper: capture the system prompt content sent to the LLM. The skill
+  // is injected at step entry (load-once), and the SAME system content
+  // is sent on every batch within that step run, so call[0] is
+  // representative.
+  async function captureSystemPrompt(
+    image_style: string | null
+  ): Promise<string> {
+    const db = freshDb();
+    const videoId = seedVideo(db);
+    const projectsDir = tempDir("projects");
+    const promptsDir = tempDir("prompts");
+    seedPrompts(promptsDir);
+    seedChunksFile(projectsDir, videoId, makeChunks(1));
+
+    const chat = vi.fn(async (messages: { content: string }[]) => {
+      const batch = extractBatch(messages[1].content);
+      return envelopeReply(batch, () => "a scene");
+    });
+
+    await generateVisualPromptsStep.run(
+      videoId,
+      makeStepContext({
+        db,
+        projectsDir,
+        promptsDir,
+        visualPromptsConcurrency: 1,
+        visualPromptChat: chat,
+        snapshot: {
+          workflow_id: "comfyui",
+          version: 1,
+          kind: "narrative",
+          script_llm_provider: "openrouter",
+          tts_provider: null,
+          image_provider: "comfyui",
+          video_provider: "comfyui",
+          music_provider: null,
+          upscaler_provider: null,
+          chunker_step: "chunk_clips_then_images",
+          image_style,
+          steps: [],
+        },
+      })
+    );
+
+    const systemMessage = (chat.mock.calls[0][0] as Array<{
+      role: string;
+      content: string;
+    }>)[0];
+    expect(systemMessage.role).toBe("system");
+    return systemMessage.content;
+  }
+
+  it("doodle variants inject the metaphor skill into the system prompt", async () => {
+    const polished = await captureSystemPrompt("doodle_polished");
+    expect(polished).toMatch(/metaphor/i);
+    expect(polished).toMatch(/concrete.*abstract/i);
+
+    const rough = await captureSystemPrompt("doodle_rough");
+    expect(rough).toMatch(/metaphor/i);
+    expect(rough).toMatch(/concrete.*abstract/i);
+  });
+
+  it("cinematic / null image_style does NOT inject the skill — cinematic system prompt is byte-identical to pre-PR", async () => {
+    // The load-bearing cinematic invariant: nothing in the cinematic
+    // LLM call changes from pre-PR. If this flips, every cinematic
+    // video's prompts subtly drift.
+    const cinematic = await captureSystemPrompt(null);
+    expect(cinematic).not.toMatch(/metaphor/i);
+    expect(cinematic).not.toMatch(/concrete.*abstract/i);
+    // Confirm the pre-PR baseline string is still the entire system prompt:
+    expect(cinematic).toBe(
+      "Do not describe the character's appearance or art style. Only describe " +
+        "the environment, the character's posture and action, and what is around " +
+        "the character. The character is locked by a reference ingredient and the " +
+        "style is appended by code."
+    );
   });
 });

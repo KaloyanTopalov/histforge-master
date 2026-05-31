@@ -13,6 +13,7 @@ const VALID_ROW = {
   script_llm_provider: "openrouter",
   tts_provider: "ai33",
   image_provider: "comfyui",
+  image_style: null,
   video_provider: "comfyui",
   steps: [{ step_name: "research_outline" }, { step_name: "write_hook" }],
 };
@@ -120,6 +121,45 @@ describe("WorkflowRowSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("accepts every documented image_style value (incl. null)", () => {
+    for (const v of [
+      "cinematic",
+      "doodle_polished",
+      "doodle_rough",
+      null,
+    ]) {
+      const result = WorkflowRowSchema.safeParse({
+        ...VALID_ROW,
+        image_style: v,
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect((result.data as { image_style: unknown }).image_style).toBe(v);
+      }
+    }
+  });
+
+  it("accepts a narrative row that omits image_style entirely (legacy AI-skill drafts)", () => {
+    // image_style deviates from image_provider's chain by also being
+    // `.optional()` — it's an additive field, so pre-PR import payloads
+    // and legacy AI-skill drafts (which don't carry the key at all)
+    // round-trip cleanly. Undefined and null both mean "no per-workflow
+    // style override"; step 09 resolves either to "cinematic" at runtime.
+    // If we later enforce explicit-null on imports, this test flips to
+    // expect(false) and every legacy fixture grows a "image_style": null.
+    const { image_style: _omit, ...withoutImageStyle } = VALID_ROW;
+    const result = WorkflowRowSchema.safeParse(withoutImageStyle);
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects unknown image_style values", () => {
+    const result = WorkflowRowSchema.safeParse({
+      ...VALID_ROW,
+      image_style: "watercolor",
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("WorkflowPatchSchema", () => {
@@ -147,6 +187,37 @@ describe("WorkflowPatchSchema", () => {
     if (result.success) {
       expect((result.data as { id?: unknown }).id).toBeUndefined();
     }
+  });
+
+  it("accepts an empty body (just expected_version) after image_style added — image_style must NOT be required", () => {
+    // Regression anchor for the auto-pickup contract: adding image_style
+    // to NarrativeRowSchema must NOT make it required on PATCH. The
+    // .partial() on the omit-id-kind base makes every narrative field
+    // optional, including the new one. If this flips, every existing
+    // PATCH client breaks at once.
+    const result = WorkflowPatchSchema.safeParse({ expected_version: 1 });
+    expect(result.success).toBe(true);
+  });
+
+  it("auto-picks up image_style via .partial() — body with image_style is accepted", () => {
+    const result = WorkflowPatchSchema.safeParse({
+      expected_version: 1,
+      image_style: "doodle_polished",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(
+        (result.data as { image_style?: string | null }).image_style
+      ).toBe("doodle_polished");
+    }
+  });
+
+  it("rejects PATCH bodies with unknown image_style values", () => {
+    const result = WorkflowPatchSchema.safeParse({
+      expected_version: 1,
+      image_style: "watercolor",
+    });
+    expect(result.success).toBe(false);
   });
 });
 

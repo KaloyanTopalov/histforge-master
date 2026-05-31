@@ -48,6 +48,7 @@ const VALID_PAYLOAD = {
   script_llm_provider: "openrouter",
   tts_provider: "ai33",
   image_provider: "comfyui",
+  image_style: null,
   video_provider: "comfyui",
   enabled: true,
   steps: [

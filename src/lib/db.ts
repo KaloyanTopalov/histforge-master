@@ -172,7 +172,7 @@ export type SeedWorkflow = {
   description: string;
   kind: "narrative" | "music_video";
   script_llm_provider: LlmProviderName | null;
-  tts_provider: "ai33" | null;
+  tts_provider: "ai33" | "chatterbox-fast" | null;
   image_provider: "comfyui" | "google_flow" | "magnific" | null;
   video_provider: "comfyui" | "google_flow" | "magnific" | null;
   music_provider: "suno" | null;
@@ -184,6 +184,12 @@ export type SeedWorkflow = {
     | null;
   /** Optional seed override of the `enabled` flag; omitted entries default to 1 (enabled). */
   enabled?: 0 | 1;
+  /**
+   * Per-workflow image style id (see `lib/image/styles.ts`). NULL
+   * resolves to "cinematic" at runtime — every pre-doodle seed leaves
+   * this null so existing pipelines stay byte-identical.
+   */
+  image_style: "cinematic" | "doodle_polished" | "doodle_rough" | null;
   steps: { step_name: string }[];
 };
 
@@ -202,6 +208,7 @@ export const BUILTIN_WORKFLOWS: readonly SeedWorkflow[] = [
     music_provider: null,
     upscaler_provider: null,
     chunker_step: "chunk_clips_then_images",
+    image_style: null,
     steps: [
       { step_name: "research_outline" },
       { step_name: "write_hook" },
@@ -222,6 +229,7 @@ export const BUILTIN_WORKFLOWS: readonly SeedWorkflow[] = [
     music_provider: null,
     upscaler_provider: null,
     chunker_step: "chunk_clips_then_images",
+    image_style: null,
     steps: [
       { step_name: "research_outline" },
       { step_name: "write_hook" },
@@ -242,6 +250,7 @@ export const BUILTIN_WORKFLOWS: readonly SeedWorkflow[] = [
     music_provider: null,
     upscaler_provider: null,
     chunker_step: "chunk_images_only",
+    image_style: null,
     steps: [
       { step_name: "research_outline" },
       { step_name: "write_hook" },
@@ -262,6 +271,7 @@ export const BUILTIN_WORKFLOWS: readonly SeedWorkflow[] = [
     music_provider: null,
     upscaler_provider: null,
     chunker_step: "chunk_clips_only",
+    image_style: null,
     steps: [
       { step_name: "research_outline" },
       { step_name: "write_hook" },
@@ -282,6 +292,7 @@ export const BUILTIN_WORKFLOWS: readonly SeedWorkflow[] = [
     music_provider: "suno",
     upscaler_provider: null,
     chunker_step: null,
+    image_style: null,
     steps: [],
   },
   {
@@ -302,6 +313,62 @@ export const BUILTIN_WORKFLOWS: readonly SeedWorkflow[] = [
     // image-batch rows and awaits the queue, replacing the throwing stub —
     // see the magnific-narrative spec.
     enabled: 1,
+    image_style: null,
+    steps: [
+      { step_name: "research_outline" },
+      { step_name: "write_hook" },
+      { step_name: "write_chapters" },
+    ],
+  },
+  // The two doodle workflows are byte-for-byte copies of cinematic
+  // narrative-magnific-nano-banana above, differing ONLY in:
+  //   - id / label / short_label / description (operator-facing names)
+  //   - tts_provider: "chatterbox-fast" (matches the doodle voiceover the
+  //     reference channel uses; switched per the design session)
+  //   - image_style: "doodle_polished" / "doodle_rough" (the new field)
+  // Pipeline shape (kind, providers, chunker_step, steps[]) is IDENTICAL —
+  // doodle is a STYLE variant, not a pipeline variant. If any of those
+  // fields ever diverges from cinematic, doodle has silently grown into a
+  // different pipeline — guarded by the steps-identity test in
+  // __tests__/unit/lib/db.test.ts.
+  {
+    id: "narrative-magnific-nano-banana-doodle-polished",
+    label: "Narrative — Magnific (NB2) Doodle Polished",
+    short_label: "Magnific NB2 Doodle (polished)",
+    description:
+      "Colored whiteboard doodle, clean linework. White background, pixel-dissolve reveal. Friendly/positive mood.",
+    kind: "narrative",
+    script_llm_provider: "openrouter",
+    tts_provider: "chatterbox-fast",
+    image_provider: "magnific",
+    video_provider: null,
+    music_provider: null,
+    upscaler_provider: null,
+    chunker_step: "chunk_images_only",
+    enabled: 1,
+    image_style: "doodle_polished",
+    steps: [
+      { step_name: "research_outline" },
+      { step_name: "write_hook" },
+      { step_name: "write_chapters" },
+    ],
+  },
+  {
+    id: "narrative-magnific-nano-banana-doodle-rough",
+    label: "Narrative — Magnific (NB2) Doodle Rough",
+    short_label: "Magnific NB2 Doodle (rough)",
+    description:
+      "Colored whiteboard doodle, rough marker texture. White background, pixel-dissolve reveal. Urgent/warning mood.",
+    kind: "narrative",
+    script_llm_provider: "openrouter",
+    tts_provider: "chatterbox-fast",
+    image_provider: "magnific",
+    video_provider: null,
+    music_provider: null,
+    upscaler_provider: null,
+    chunker_step: "chunk_images_only",
+    enabled: 1,
+    image_style: "doodle_rough",
     steps: [
       { step_name: "research_outline" },
       { step_name: "write_hook" },
@@ -331,8 +398,8 @@ export function seedDefaultWorkflows(db: DatabaseType): void {
         tts_provider, image_provider, video_provider,
         music_provider, upscaler_provider,
         is_builtin, enabled, version, created_at, updated_at,
-        chunker_step)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 1, ?, ?, ?)`
+        chunker_step, image_style)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 1, ?, ?, ?, ?)`
   );
   const insertStep = db.prepare(
     "INSERT OR IGNORE INTO workflow_steps (workflow_id, position, step_name) VALUES (?, ?, ?)"
@@ -355,7 +422,8 @@ export function seedDefaultWorkflows(db: DatabaseType): void {
         wf.enabled ?? 1,
         now,
         now,
-        wf.chunker_step
+        wf.chunker_step,
+        wf.image_style
       );
       wf.steps.forEach((step, position) => {
         insertStep.run(wf.id, position, step.step_name);
@@ -413,7 +481,8 @@ export function createDb(path: string): DatabaseType {
       version             INTEGER NOT NULL DEFAULT 1,
       created_at          INTEGER NOT NULL,
       updated_at          INTEGER NOT NULL,
-      chunker_step        TEXT
+      chunker_step        TEXT,
+      image_style         TEXT
     );
     CREATE TABLE IF NOT EXISTS workflow_steps (
       workflow_id  TEXT NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
@@ -677,6 +746,22 @@ export function createDb(path: string): DatabaseType {
       DROP TABLE workflows;
       ALTER TABLE workflows_new RENAME TO workflows;
     `);
+  }
+
+  // image_style picks the per-workflow image style bundle (cinematic |
+  // doodle_polished | doodle_rough) — see `lib/image/styles.ts`. Nullable
+  // because legacy rows pre-date the column; step 09 resolves NULL to
+  // "cinematic" at runtime so today's output is preserved byte-for-byte.
+  // ADDed after the table-rebuild above so a legacy DB that needed the
+  // relaxed-nullable rebuild gets the column on the rebuilt table, not on
+  // the soon-to-be-dropped original.
+  try {
+    db.exec("ALTER TABLE workflows ADD COLUMN image_style TEXT");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/duplicate column name/i.test(msg)) {
+      throw err;
+    }
   }
 
   // Same additive-migration pattern for workflow_snapshot (per-video

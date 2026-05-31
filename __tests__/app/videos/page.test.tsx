@@ -56,6 +56,8 @@ describe("listEnabledWorkflowsForClient", () => {
       "google-flow-images-only",
       "music-video-magnific-suno",
       "narrative-magnific-nano-banana",
+      "narrative-magnific-nano-banana-doodle-polished",
+      "narrative-magnific-nano-banana-doodle-rough",
     ]);
   });
 
@@ -100,6 +102,18 @@ describe("listEnabledWorkflowsForClient", () => {
         id: "narrative-magnific-nano-banana",
         shortLabel: "Magnific NB2",
         label: "Narrative — Magnific (Nano Banana 2)",
+        kind: "narrative",
+      },
+      {
+        id: "narrative-magnific-nano-banana-doodle-polished",
+        shortLabel: "Magnific NB2 Doodle (polished)",
+        label: "Narrative — Magnific (NB2) Doodle Polished",
+        kind: "narrative",
+      },
+      {
+        id: "narrative-magnific-nano-banana-doodle-rough",
+        shortLabel: "Magnific NB2 Doodle (rough)",
+        label: "Narrative — Magnific (NB2) Doodle Rough",
         kind: "narrative",
       },
     ]);

@@ -115,6 +115,8 @@ describe("listWorkflows", () => {
       "google-flow-images-only",
       "music-video-magnific-suno",
       "narrative-magnific-nano-banana",
+      "narrative-magnific-nano-banana-doodle-polished",
+      "narrative-magnific-nano-banana-doodle-rough",
     ]);
   });
 });
@@ -134,6 +136,7 @@ describe("resolveSnapshot", () => {
       music_provider: null,
       upscaler_provider: null,
       chunker_step: "chunk_clips_then_images",
+      image_style: null,
       steps: [
         { step_name: "research_outline" },
         { step_name: "write_hook" },
@@ -156,6 +159,7 @@ describe("resolveSnapshot", () => {
       music_provider: "suno",
       upscaler_provider: null,
       chunker_step: null,
+      image_style: null,
       steps: [],
     });
   });
@@ -163,6 +167,64 @@ describe("resolveSnapshot", () => {
   it("throws on an unknown workflow id", () => {
     const db = freshDb();
     expect(() => resolveSnapshot(db, "ghost")).toThrow(/ghost/);
+  });
+
+  it("propagates image_style from the workflow row when set (greenfield doodle workflow)", () => {
+    const db = freshDb();
+    // Seed Task 7 ships two doodle workflows; until then, force the
+    // value onto an existing seeded workflow to prove the snapshot
+    // builder reads the column. After Task 7 this test can switch to
+    // resolveSnapshot("narrative-magnific-nano-banana-doodle-polished").
+    db.prepare("UPDATE workflows SET image_style = ? WHERE id = ?")
+      .run("doodle_polished", "narrative-magnific-nano-banana");
+    const snap = resolveSnapshot(db, "narrative-magnific-nano-banana");
+    expect(snap.image_style).toBe("doodle_polished");
+  });
+});
+
+describe("WorkflowSnapshot — pinning lifecycle backwards-compat (load-bearing)", () => {
+  // The snapshot blob is written ONCE to videos.workflow_snapshot at
+  // queue time and never mutated afterward. An already-queued video's
+  // blob does NOT contain image_style — the column didn't exist when
+  // the blob was written. The pinning contract requires that
+  // already-queued videos continue to run identically. This test pins
+  // the contract: an old blob without image_style parses to a snapshot
+  // where image_style is `undefined` (NOT throws, NOT auto-populated).
+  // Step 09 then resolves `snapshot.image_style ?? "cinematic"` →
+  // "cinematic" → global locks → byte-identical pre-doodle output.
+  //
+  // If this test ever flips to expect a non-undefined value, an
+  // in-place db.ts JSON scrub is required (see chunker_step backfill
+  // at db.ts:~1188 for the pattern). Until then the absence is benign.
+
+  it("parses an old pinned blob (no image_style key) without throwing — image_style is undefined", () => {
+    const oldBlob = JSON.stringify({
+      workflow_id: "comfyui",
+      version: 1,
+      kind: "narrative",
+      script_llm_provider: "openrouter",
+      tts_provider: "ai33",
+      image_provider: "comfyui",
+      video_provider: "comfyui",
+      music_provider: null,
+      upscaler_provider: null,
+      chunker_step: "chunk_clips_then_images",
+      steps: [{ step_name: "research_outline" }],
+      // image_style intentionally absent — this is the pre-PR shape.
+    });
+    const parsed = JSON.parse(oldBlob) as WorkflowSnapshot;
+    expect(parsed.image_style).toBeUndefined();
+    // Confirm the cinematic-fallback resolution that step 09 will run:
+    expect(parsed.image_style ?? "cinematic").toBe("cinematic");
+  });
+
+  it("a new blob carrying image_style preserves it across JSON.stringify → JSON.parse", () => {
+    const db = freshDb();
+    db.prepare("UPDATE workflows SET image_style = ? WHERE id = ?")
+      .run("doodle_rough", "narrative-magnific-nano-banana");
+    const json = computeSnapshot(db, "narrative-magnific-nano-banana");
+    const parsed = JSON.parse(json) as WorkflowSnapshot;
+    expect(parsed.image_style).toBe("doodle_rough");
   });
 });
 
@@ -221,6 +283,7 @@ describe("narrative-magnific-nano-banana built-in (S2: enabled)", () => {
       music_provider: null,
       upscaler_provider: null,
       chunker_step: "chunk_images_only",
+      image_style: null,
       steps: [
         { step_name: "research_outline" },
         { step_name: "write_hook" },

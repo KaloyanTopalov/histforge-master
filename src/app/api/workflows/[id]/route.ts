@@ -107,6 +107,7 @@ export async function PATCH(
     music_provider: merged.music_provider,
     upscaler_provider: merged.upscaler_provider,
     chunker_step: merged.chunker_step,
+    image_style: merged.image_style ?? null,
     steps: steps ?? preStepNames!,
   };
   const inputs = validateInputAvailability(snapshot);

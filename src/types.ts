@@ -249,6 +249,11 @@ export interface WorkflowRow {
   created_at: number;
   updated_at: number;
   chunker_step: string | null;
+  // Per-workflow image style bundle id (see `lib/image/styles.ts`).
+  // NULL → resolves to "cinematic" at runtime (step 09), preserving the
+  // pre-doodle pipeline's behavior. Doodle workflows carry
+  // "doodle_polished" or "doodle_rough".
+  image_style: string | null;
 }
 
 /**
@@ -287,6 +292,29 @@ export interface WorkflowSnapshot {
   music_provider: string | null;
   upscaler_provider: string | null;
   chunker_step: string | null;
+  // Per-workflow image style bundle id pinned at queue time (see
+  // `lib/image/styles.ts`).
+  //
+  // `?:` (optional) on the interface, not just `string | null`, because
+  // image_style is an additive field on snapshots — videos that were
+  // queued before this column existed have JSON blobs in
+  // `videos.workflow_snapshot` that don't carry the key at all. Optional
+  // is the honest schema for that — undefined is a real value coming out
+  // of `JSON.parse` on those old blobs, and the type must permit it so
+  // the pinning lifecycle stays stable. New snapshots written by the
+  // five constructor sites always set image_style explicitly (null when
+  // the workflow row carries null), so the absent case is bounded to
+  // pre-PR pinned blobs.
+  //
+  // No in-place JSON scrub of existing pinned blobs is needed — image_style
+  // is consumed only at step 09 runtime, where `snapshot.image_style ??
+  // "cinematic"` resolves both `undefined` (old blobs) and `null` (new
+  // blobs on cinematic workflows) to the global-locks path, byte-identical
+  // to pre-doodle output. This is the load-bearing difference from
+  // `chunker_step`, whose backfill scrub at db.ts ~1188 IS required
+  // because chunker_step is materialization-required (absent = broken
+  // step-list expansion), while image_style is not.
+  image_style?: string | null;
   steps: { step_name: string }[];
 }
 

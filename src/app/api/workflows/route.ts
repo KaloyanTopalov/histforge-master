@@ -102,6 +102,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     music_provider: row.music_provider,
     upscaler_provider: row.upscaler_provider,
     chunker_step: row.chunker_step,
+    image_style: row.image_style ?? null,
     steps: data.steps,
   };
   const inputs = validateInputAvailability(snapshot);

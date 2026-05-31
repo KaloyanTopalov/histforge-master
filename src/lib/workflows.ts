@@ -64,6 +64,7 @@ export function resolveSnapshot(
     music_provider: row.music_provider,
     upscaler_provider: row.upscaler_provider,
     chunker_step: row.chunker_step,
+    image_style: row.image_style ?? null,
     steps: stepRows.map((s) => ({ step_name: s.step_name })),
   };
 }
