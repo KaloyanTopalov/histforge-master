@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+smoke_output/
+*.mp4
+!tests/fixtures/*.mp4
