@@ -26,3 +26,43 @@ def preprocess_image(img_bgr: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         15, 10,  # block_size, C — matched to daslearning's defaults
     )
     return gray, thresh
+
+
+def build_traversal(
+    thresh: np.ndarray,
+    split_len: int,
+    black_pixel_threshold: int = 10,
+) -> List[Tuple[int, int]]:
+    """Cut threshold into split_len x split_len grid cells. Return cells that
+    contain >=1 black pixel, ordered by nearest-neighbor walk from the first
+    such cell (top-left-most). This is the per-frame writing order during
+    the draw-on.
+    """
+    H, W = thresh.shape
+    n_v = H // split_len
+    n_h = W // split_len
+    cells_with_ink: List[Tuple[int, int]] = []
+    for gy in range(n_v):
+        for gx in range(n_h):
+            block = thresh[
+                gy * split_len:(gy + 1) * split_len,
+                gx * split_len:(gx + 1) * split_len,
+            ]
+            if (block < black_pixel_threshold).any():
+                cells_with_ink.append((gy, gx))
+    if not cells_with_ink:
+        return []
+    # Nearest-neighbor walk starting from the first found cell
+    ordered = [cells_with_ink[0]]
+    remaining = list(cells_with_ink[1:])
+    while remaining:
+        last = ordered[-1]
+        idx_best = 0
+        d_best = float("inf")
+        for i, c in enumerate(remaining):
+            d = (c[0] - last[0]) ** 2 + (c[1] - last[1]) ** 2
+            if d < d_best:
+                d_best = d
+                idx_best = i
+        ordered.append(remaining.pop(idx_best))
+    return ordered
