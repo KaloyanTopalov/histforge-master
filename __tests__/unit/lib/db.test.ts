@@ -2026,6 +2026,8 @@ describe("seedDefaultWorkflows", () => {
         "google-flow-images-only",
         "music-video-magnific-suno",
         "narrative-magnific-nano-banana",
+        "narrative-magnific-nano-banana-doodle-polished",
+        "narrative-magnific-nano-banana-doodle-rough",
       ]);
 
       // Lifecycle columns are stamped uniformly across all builtins
@@ -2041,18 +2043,36 @@ describe("seedDefaultWorkflows", () => {
         expect(row.created_at).toBeGreaterThanOrEqual(before);
         expect(row.created_at).toBeLessThanOrEqual(after);
         expect(row.updated_at).toBe(row.created_at);
-        // image_style is NULL on every seeded cinematic/legacy workflow —
-        // step 09 resolves NULL → "cinematic" → global locks, preserving
-        // today's output byte-for-byte. The two doodle workflows (Task 7)
-        // will be the first rows to ship with a non-null image_style.
-        expect(row.image_style).toBeNull();
       }
 
-      // Narrative builtins share script_llm_provider='openrouter' and
-      // tts_provider='ai33'; the music-video builtin leaves both null.
+      // image_style: pre-doodle baseline keeps NULL on 6/8 (step 09
+      // resolves NULL → "cinematic" → global locks, preserving today's
+      // output byte-for-byte). The two doodle workflows declare their
+      // variant. If a row that should be NULL flips to a doodle value
+      // here, every cinematic video on that workflow silently flips
+      // style — pinned explicitly per-id below.
+      const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+      expect(byId["comfyui"].image_style).toBeNull();
+      expect(byId["google-flow"].image_style).toBeNull();
+      expect(byId["google-flow-images-only"].image_style).toBeNull();
+      expect(byId["google-flow-clips-only"].image_style).toBeNull();
+      expect(byId["music-video-magnific-suno"].image_style).toBeNull();
+      expect(byId["narrative-magnific-nano-banana"].image_style).toBeNull();
+      expect(
+        byId["narrative-magnific-nano-banana-doodle-polished"].image_style
+      ).toBe("doodle_polished");
+      expect(
+        byId["narrative-magnific-nano-banana-doodle-rough"].image_style
+      ).toBe("doodle_rough");
+
+      // Narrative builtins share script_llm_provider='openrouter'; the
+      // music-video builtin leaves it null. tts_provider is ai33 on
+      // cinematic narrative rows and chatterbox-fast on the two doodle
+      // narrative rows (matches the reference channel's voice for the
+      // doodle aesthetic).
       for (const row of rows.filter((r) => r.kind === "narrative")) {
         expect(row.script_llm_provider).toBe("openrouter");
-        expect(row.tts_provider).toBe("ai33");
+        expect(["ai33", "chatterbox-fast"]).toContain(row.tts_provider);
       }
 
       const comfy = rows.find((r) => r.id === "comfyui")!;
@@ -2095,6 +2115,9 @@ describe("seedDefaultWorkflows", () => {
         "google-flow",
         "google-flow-images-only",
         "google-flow-clips-only",
+        "narrative-magnific-nano-banana",
+        "narrative-magnific-nano-banana-doodle-polished",
+        "narrative-magnific-nano-banana-doodle-rough",
       ]) {
         const steps = db
           .prepare(
@@ -2148,6 +2171,8 @@ describe("seedDefaultWorkflows", () => {
         "google-flow-images-only",
         "music-video-magnific-suno",
         "narrative-magnific-nano-banana",
+        "narrative-magnific-nano-banana-doodle-polished",
+        "narrative-magnific-nano-banana-doodle-rough",
       ]);
     } finally {
       db.close();
@@ -2171,6 +2196,8 @@ describe("seedDefaultWorkflows", () => {
         "google-flow-clips-only",
         "google-flow-images-only",
         "narrative-magnific-nano-banana",
+        "narrative-magnific-nano-banana-doodle-polished",
+        "narrative-magnific-nano-banana-doodle-rough",
       ]);
       for (const row of rows) {
         expect(row.kind).toBe("narrative");
@@ -2246,6 +2273,106 @@ describe("seedDefaultWorkflows", () => {
         )
         .all("music-video-magnific-suno") as Array<{ step_name: string }>;
       expect(steps).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("seeds narrative-magnific-nano-banana-doodle-polished — copy of cinematic + image_style + chatterbox-fast TTS", () => {
+    const db = createDb(":memory:");
+    try {
+      const row = db
+        .prepare("SELECT * FROM workflows WHERE id = ?")
+        .get("narrative-magnific-nano-banana-doodle-polished") as {
+        kind: string;
+        image_provider: string;
+        video_provider: string | null;
+        tts_provider: string;
+        image_style: string;
+        chunker_step: string;
+        is_builtin: number;
+        enabled: number;
+      };
+      expect(row).toBeDefined();
+      // Style + TTS — the only fields that differ from cinematic:
+      expect(row.image_style).toBe("doodle_polished");
+      expect(row.tts_provider).toBe("chatterbox-fast");
+      // Pipeline shape — IDENTICAL to cinematic (kind, image provider,
+      // no video provider, chunker variant). If any of these flips,
+      // doodle has silently diverged from cinematic's pipeline.
+      expect(row.kind).toBe("narrative");
+      expect(row.image_provider).toBe("magnific");
+      expect(row.video_provider).toBeNull();
+      expect(row.chunker_step).toBe("chunk_images_only");
+      // Lifecycle:
+      expect(row.is_builtin).toBe(1);
+      expect(row.enabled).toBe(1);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("seeds narrative-magnific-nano-banana-doodle-rough — copy of cinematic + image_style + chatterbox-fast TTS", () => {
+    const db = createDb(":memory:");
+    try {
+      const row = db
+        .prepare("SELECT * FROM workflows WHERE id = ?")
+        .get("narrative-magnific-nano-banana-doodle-rough") as {
+        kind: string;
+        image_provider: string;
+        video_provider: string | null;
+        tts_provider: string;
+        image_style: string;
+        chunker_step: string;
+      };
+      expect(row).toBeDefined();
+      expect(row.image_style).toBe("doodle_rough");
+      expect(row.tts_provider).toBe("chatterbox-fast");
+      expect(row.kind).toBe("narrative");
+      expect(row.image_provider).toBe("magnific");
+      expect(row.video_provider).toBeNull();
+      expect(row.chunker_step).toBe("chunk_images_only");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("doodle workflows have IDENTICAL workflow_steps to cinematic narrative-magnific-nano-banana (no pipeline divergence)", () => {
+    // The critical contract: doodle workflows differ from cinematic
+    // ONLY in style + TTS. The pipeline shape (steps + ordering) must
+    // match exactly. If any step appears in cinematic but not doodle
+    // (or vice versa), an unintended divergence has slipped in — a
+    // doodle render could silently skip a step that cinematic relies
+    // on, or vice versa. This test catches that at seed time.
+    const db = createDb(":memory:");
+    try {
+      const fetchSteps = (id: string) =>
+        (
+          db
+            .prepare(
+              "SELECT step_name FROM workflow_steps WHERE workflow_id = ? ORDER BY position"
+            )
+            .all(id) as Array<{ step_name: string }>
+        ).map((r) => r.step_name);
+
+      const cinematic = fetchSteps("narrative-magnific-nano-banana");
+      const polished = fetchSteps("narrative-magnific-nano-banana-doodle-polished");
+      const rough = fetchSteps("narrative-magnific-nano-banana-doodle-rough");
+
+      expect(polished).toEqual(cinematic);
+      expect(rough).toEqual(cinematic);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("existing narrative-magnific-nano-banana keeps image_style NULL (backwards-compat anchor; pre-doodle videos resolve to cinematic)", () => {
+    const db = createDb(":memory:");
+    try {
+      const row = db
+        .prepare("SELECT image_style FROM workflows WHERE id = ?")
+        .get("narrative-magnific-nano-banana") as { image_style: string | null };
+      expect(row.image_style).toBeNull();
     } finally {
       db.close();
     }
