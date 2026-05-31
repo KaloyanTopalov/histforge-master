@@ -122,6 +122,15 @@ function seedPrompts(promptsDir: string): void {
     join(promptsDir, "09_generate_visual_prompts.md"),
     "STYLE={{style_prompt}}\nBATCH={{batch_json}}\n---END---"
   );
+  // Doodle variants in step 09 read this skill file at step entry —
+  // copy the real runtime artifact (from the repo's `prompts/`) into
+  // the test's tmp promptsDir so tests exercising doodle behavior find
+  // it. Cinematic / null branches don't read it, so this is a no-op
+  // for cinematic tests.
+  writeFileSync(
+    join(promptsDir, "09_doodle_visual_metaphor_skill.md"),
+    readFileSync("prompts/09_doodle_visual_metaphor_skill.md", "utf-8")
+  );
 }
 
 /**
@@ -1894,5 +1903,85 @@ describe("generate_visual_prompts — per-style lock resolution (image_styles PR
     expect(prompt).not.toContain(GALLERY_SENTINEL);
     // Doodle prompt_prefix still present (whole pipeline functions):
     expect(prompt).toMatch(/whiteboard doodle/i);
+  });
+});
+
+describe("generate_visual_prompts — metaphor skill injection (image_styles PR)", () => {
+  // Helper: capture the system prompt content sent to the LLM. The skill
+  // is injected at step entry (load-once), and the SAME system content
+  // is sent on every batch within that step run, so call[0] is
+  // representative.
+  async function captureSystemPrompt(
+    image_style: string | null
+  ): Promise<string> {
+    const db = freshDb();
+    const videoId = seedVideo(db);
+    const projectsDir = tempDir("projects");
+    const promptsDir = tempDir("prompts");
+    seedPrompts(promptsDir);
+    seedChunksFile(projectsDir, videoId, makeChunks(1));
+
+    const chat = vi.fn(async (messages: { content: string }[]) => {
+      const batch = extractBatch(messages[1].content);
+      return envelopeReply(batch, () => "a scene");
+    });
+
+    await generateVisualPromptsStep.run(
+      videoId,
+      makeStepContext({
+        db,
+        projectsDir,
+        promptsDir,
+        visualPromptsConcurrency: 1,
+        visualPromptChat: chat,
+        snapshot: {
+          workflow_id: "comfyui",
+          version: 1,
+          kind: "narrative",
+          script_llm_provider: "openrouter",
+          tts_provider: null,
+          image_provider: "comfyui",
+          video_provider: "comfyui",
+          music_provider: null,
+          upscaler_provider: null,
+          chunker_step: "chunk_clips_then_images",
+          image_style,
+          steps: [],
+        },
+      })
+    );
+
+    const systemMessage = (chat.mock.calls[0][0] as Array<{
+      role: string;
+      content: string;
+    }>)[0];
+    expect(systemMessage.role).toBe("system");
+    return systemMessage.content;
+  }
+
+  it("doodle variants inject the metaphor skill into the system prompt", async () => {
+    const polished = await captureSystemPrompt("doodle_polished");
+    expect(polished).toMatch(/metaphor/i);
+    expect(polished).toMatch(/concrete.*abstract/i);
+
+    const rough = await captureSystemPrompt("doodle_rough");
+    expect(rough).toMatch(/metaphor/i);
+    expect(rough).toMatch(/concrete.*abstract/i);
+  });
+
+  it("cinematic / null image_style does NOT inject the skill — cinematic system prompt is byte-identical to pre-PR", async () => {
+    // The load-bearing cinematic invariant: nothing in the cinematic
+    // LLM call changes from pre-PR. If this flips, every cinematic
+    // video's prompts subtly drift.
+    const cinematic = await captureSystemPrompt(null);
+    expect(cinematic).not.toMatch(/metaphor/i);
+    expect(cinematic).not.toMatch(/concrete.*abstract/i);
+    // Confirm the pre-PR baseline string is still the entire system prompt:
+    expect(cinematic).toBe(
+      "Do not describe the character's appearance or art style. Only describe " +
+        "the environment, the character's posture and action, and what is around " +
+        "the character. The character is locked by a reference ingredient and the " +
+        "style is appended by code."
+    );
   });
 });

@@ -262,6 +262,27 @@ export const step: Step = {
       : galleryStylePrompt;
     const styleLock = styleDef.style_lock ?? globalStyleLock;
     const negativeLock = styleDef.negative_lock ?? globalNegativeLock;
+
+    // Doodle variants get the narration-to-visual-metaphor skill
+    // appended to the LLM system prompt — the intelligence layer that
+    // steers the LLM toward concrete visual metaphors for abstract
+    // narration beats (the channel-quality output the doodle prompts
+    // need). Cinematic / null keeps the bare SYSTEM_INSTRUCTION
+    // byte-for-byte (regression-net contract).
+    //
+    // Load-once at step entry: the file read is paid one time per step
+    // run, not per LLM batch call. The composed string is then sent on
+    // every batch's system message. See `docs/perf-notes.md` for the
+    // per-call / per-video token accounting.
+    let systemInstruction = SYSTEM_INSTRUCTION;
+    if (isDoodleVariant) {
+      const skillPath = resolve(
+        ctx.promptsDir,
+        "09_doodle_visual_metaphor_skill.md"
+      );
+      const skill = readFileSync(skillPath, "utf-8");
+      systemInstruction = `${SYSTEM_INSTRUCTION}\n\n${skill}`;
+    }
     // Few-shot examples slot: resolve once at step entry so every batch
     // sees the same block. Always supplied (defaults to "") because the
     // render dialect strict-throws on unresolved {{good_examples}}.
@@ -361,6 +382,7 @@ export const step: Step = {
           promptsDir: ctx.promptsDir,
           stylePrompt,
           goodExamples,
+          systemInstruction,
         });
         await persistBatch(enrich(results));
       } catch (err) {
@@ -379,6 +401,7 @@ export const step: Step = {
             promptsDir: ctx.promptsDir,
             stylePrompt,
             goodExamples,
+            systemInstruction,
           });
           await persistBatch(enrich(results));
         }
@@ -438,6 +461,7 @@ async function callBatchWithRetry(
     promptsDir: string;
     stylePrompt: string;
     goodExamples: string;
+    systemInstruction: string;
   }
 ): Promise<Map<string, ShotExtras>> {
   const expectedIds = new Set(batch.map((b) => b.id));
@@ -463,7 +487,7 @@ async function callBatchWithRetry(
     const content = attempt === 0 ? userPrompt : `${userPrompt}${retryReminder}`;
     const reply = await deps.chat(
       [
-        { role: "system", content: SYSTEM_INSTRUCTION },
+        { role: "system", content: deps.systemInstruction },
         { role: "user", content },
       ],
       { db: deps.db }
