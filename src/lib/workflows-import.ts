@@ -136,6 +136,7 @@ export function importWorkflowJson(
     music_provider: data.music_provider ?? null,
     upscaler_provider: data.upscaler_provider ?? null,
     chunker_step: data.chunker_step,
+    image_style: data.image_style ?? null,
     steps: data.steps,
   };
   const inputs = validateInputAvailability(snapshot);

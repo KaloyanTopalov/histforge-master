@@ -26,6 +26,7 @@ const ValidateBodySchema = NarrativeRowSchema.pick({
   script_llm_provider: true,
   tts_provider: true,
   image_provider: true,
+  image_style: true,
   video_provider: true,
   chunker_step: true,
   steps: true,
@@ -51,6 +52,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     music_provider: null,
     upscaler_provider: null,
     chunker_step: data.chunker_step,
+    image_style: data.image_style ?? null,
     steps: data.steps,
   };
   const inputs = validateInputAvailability(snapshot);
