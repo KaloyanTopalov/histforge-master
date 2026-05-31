@@ -35,6 +35,10 @@ import {
   IMAGE_PROVIDER_NAMES,
   IMAGE_PROVIDER_LABELS,
 } from "@/lib/image/names";
+import {
+  IMAGE_STYLE_NAMES,
+  IMAGE_STYLE_LABELS,
+} from "@/lib/image/styles";
 
 // ─── Public types (also imported by the server page shell) ─────────────
 
@@ -50,6 +54,7 @@ export interface WorkflowEditRow {
   script_llm_provider: string | null;
   tts_provider: string | null;
   image_provider: string | null;
+  image_style: string | null;
   video_provider: string | null;
   chunker_step: string | null;
   enabled: boolean;
@@ -84,6 +89,7 @@ type ColumnKey =
   | "script_llm_provider"
   | "tts_provider"
   | "image_provider"
+  | "image_style"
   | "video_provider"
   | "chunker_step"
   | "enabled";
@@ -95,6 +101,7 @@ const COLUMN_KEYS: readonly ColumnKey[] = [
   "script_llm_provider",
   "tts_provider",
   "image_provider",
+  "image_style",
   "video_provider",
   "chunker_step",
   "enabled",
@@ -125,6 +132,7 @@ interface PatchBody {
   script_llm_provider?: string;
   tts_provider?: string | null;
   image_provider?: string | null;
+  image_style?: string | null;
   video_provider?: string | null;
   chunker_step?: string;
   enabled?: boolean;
@@ -138,6 +146,7 @@ interface FormValues {
   script_llm_provider: string | null;
   tts_provider: string | null;
   image_provider: string | null;
+  image_style: string | null;
   video_provider: string | null;
   chunker_step: string | null;
   enabled: boolean;
@@ -151,6 +160,7 @@ function valuesFromRow(row: WorkflowEditRow): FormValues {
     script_llm_provider: row.script_llm_provider,
     tts_provider: row.tts_provider,
     image_provider: row.image_provider,
+    image_style: row.image_style,
     video_provider: row.video_provider,
     chunker_step: row.chunker_step,
     enabled: row.enabled,
@@ -454,6 +464,33 @@ export function EditForm({
                 update("image_provider", v === NONE ? null : v)
               }
             />
+            {/*
+              image_style is the per-workflow visual aesthetic for the
+              generated images (cinematic | doodle_polished | doodle_rough).
+              Only rendered when image_provider is set — picking a style
+              when no images are generated is meaningless. The NONE
+              sentinel maps to null, which resolves to "cinematic" at
+              runtime (step 09) so the default UX is "the cinematic
+              pipeline I had before."
+            */}
+            {values.image_provider !== null &&
+              values.image_provider !== NONE && (
+                <SelectField
+                  id="image_style"
+                  label="Image style"
+                  value={values.image_style ?? NONE}
+                  options={[
+                    ...IMAGE_STYLE_NAMES.map((value) => ({
+                      value,
+                      label: IMAGE_STYLE_LABELS[value],
+                    })),
+                    { value: NONE, label: "(default — cinematic)" },
+                  ]}
+                  onChange={(v) =>
+                    update("image_style", v === NONE ? null : v)
+                  }
+                />
+              )}
             {/*
               video_provider is intentionally hardcoded — NOT derived from a
               provider-names module like image_provider above. This editor is

@@ -47,6 +47,7 @@ const baseRow: WorkflowEditRow = {
   script_llm_provider: "openrouter",
   tts_provider: "ai33",
   image_provider: "comfyui",
+  image_style: null,
   video_provider: "comfyui",
   enabled: true,
   version: 3,
@@ -238,6 +239,70 @@ describe("EditForm image_provider Select", () => {
     const body = JSON.parse(init.body as string);
     expect(body.image_provider).toBe("magnific");
     expect(body.expected_version).toBe(3);
+  });
+});
+
+describe("EditForm image_style Select", () => {
+  it("reflects image_style='doodle_polished' in the initial selector value (the seeded doodle-polished workflow case)", async () => {
+    await renderForm({ row: { image_style: "doodle_polished" } });
+
+    const trigger = screen.getByRole("combobox", { name: /image_style/i });
+    expect(trigger.textContent).toMatch(/doodle.*polished/i);
+  });
+
+  it("offers all three image styles — Cinematic, Doodle (polished), Doodle (rough)", async () => {
+    await renderForm();
+
+    const trigger = screen.getByRole("combobox", { name: /image_style/i });
+    await act(async () => {
+      trigger.focus();
+      fireEvent.keyDown(trigger, { key: "Enter", code: "Enter" });
+    });
+
+    expect(
+      await screen.findByRole("option", { name: /^Cinematic$/ })
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("option", { name: /Doodle.*polished/i })
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("option", { name: /Doodle.*rough/i })
+    ).toBeTruthy();
+  });
+
+  it("selecting Doodle (polished) includes image_style in the PATCH body", async () => {
+    mockFetchOnce({ workflow: { version: 4 }, warnings: [] });
+
+    await renderForm(); // baseRow image_style = null
+
+    const trigger = screen.getByRole("combobox", { name: /image_style/i });
+    await act(async () => {
+      trigger.focus();
+      fireEvent.keyDown(trigger, { key: "Enter", code: "Enter" });
+    });
+    const option = await screen.findByRole("option", {
+      name: /Doodle.*polished/i,
+    });
+    await act(async () => {
+      fireEvent.click(option);
+    });
+
+    await clickSave();
+
+    const fetchMock = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.image_style).toBe("doodle_polished");
+    expect(body.expected_version).toBe(3);
+  });
+
+  it("does NOT render the image_style dropdown when image_provider is (none) — no point picking a style when no images are generated", async () => {
+    await renderForm({ row: { image_provider: null } });
+
+    expect(
+      screen.queryByRole("combobox", { name: /image_style/i })
+    ).toBeNull();
   });
 });
 

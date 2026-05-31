@@ -36,6 +36,7 @@ export default function EditWorkflowPage({
     script_llm_provider: row.script_llm_provider,
     tts_provider: row.tts_provider,
     image_provider: row.image_provider,
+    image_style: row.image_style,
     video_provider: row.video_provider,
     chunker_step: row.chunker_step,
     enabled: row.enabled === 1,
