@@ -158,6 +158,7 @@ export async function runRender(
   const longEdgePx = getSetting("long_edge_px", db) as number;
   const framerate = getSetting("framerate", db) as number;
   const videoEncoder = getSetting("video_encoder", db);
+  const motion = getSetting("render_image_motion", db);
 
   const exec = deps.exec ?? buildFfmpegExec(deps.signal);
   const probe = deps.probe ?? buildFfprobeExec(deps.signal);
@@ -168,6 +169,7 @@ export async function runRender(
     longEdgePx,
     framerate,
     videoEncoder,
+    motion,
     exec,
     probe,
     log: (message) => appendLog(videoId, "render", message, projectsDir),

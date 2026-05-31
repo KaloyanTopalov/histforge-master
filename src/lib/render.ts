@@ -432,6 +432,13 @@ export interface RenderDeps {
    */
   videoEncoder: VideoEncoder;
   /**
+   * Per-image motion mode for the Stage B segment build. Read once from
+   * `render_image_motion` by the worker step and passed in — keeps render
+   * pure (no DB import) and matches the dependency-injection shape of
+   * `exec` / `probe` / `log`.
+   */
+  motion: RenderImageMotion;
+  /**
    * Run one ffmpeg invocation. Async so production can use `spawn` with
    * an AbortSignal — when the orchestrator cancels mid-render, the in-flight
    * child process is killed instead of running to completion. Tests can
@@ -463,6 +470,7 @@ export async function render(
     longEdgePx,
     framerate,
     videoEncoder,
+    motion,
     exec,
     probe,
     log,
@@ -629,17 +637,23 @@ export async function render(
             [chunk.id]
           );
         }
-        const renderDur = isLast ? duration : duration + CROSSFADE_SECONDS;
-        const frames = Math.round(renderDur * framerate);
-        const { ceilingClamped, derived } = deriveZoomBuffer(
-          frames,
-          width,
-          height
-        );
-        if (ceilingClamped) {
-          log(
-            `Stage B buffer capped at 12000 for chunk ${chunk.id} (N_frames=${frames}, derived=${derived})`
+        // The Stage B buffer-cap warning is meaningful only when the
+        // zoom path actually runs — derive + log gated on motion. On the
+        // static path deriveZoomBuffer is never invoked (its sole purpose
+        // is feeding the zoompan headroom that no longer exists).
+        if (motion === "ken_burns") {
+          const renderDur = isLast ? duration : duration + CROSSFADE_SECONDS;
+          const frames = Math.round(renderDur * framerate);
+          const { ceilingClamped, derived } = deriveZoomBuffer(
+            frames,
+            width,
+            height
           );
+          if (ceilingClamped) {
+            log(
+              `Stage B buffer capped at 12000 for chunk ${chunk.id} (N_frames=${frames}, derived=${derived})`
+            );
+          }
         }
         segmentTasks.push(() =>
           exec(
@@ -651,11 +665,7 @@ export async function render(
               height,
               framerate,
               outPath: segPath,
-              // Pinned to "ken_burns" in this commit to preserve byte-
-              // identical existing behavior alongside the API extension.
-              // The next commit replaces this literal with a single
-              // getSetting("render_image_motion") read above the loop.
-              motion: "ken_burns",
+              motion,
             })
           )
         );
