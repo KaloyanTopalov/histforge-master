@@ -5,6 +5,10 @@ import {
   IMAGE_PROVIDER_NAMES,
   type ImageProviderName,
 } from "@/lib/image/names";
+import {
+  IMAGE_STYLE_NAMES,
+  type ImageStyleName,
+} from "@/lib/image/styles";
 
 /**
  * Per-row Zod schemas for the `workflows` table. These validate the
@@ -61,6 +65,28 @@ export const NarrativeRowSchema = z.object({
       ]
     )
     .nullable(),
+  // Per-workflow image style bundle (see `lib/image/styles.ts`).
+  // Derived from IMAGE_STYLE_NAMES — same anti-drift pattern PR #13
+  // established for image_provider. `.nullable()` with no `.default()`
+  // matches the lock-style image_provider carries; `.optional()` is the
+  // one deviation — image_style is a NEW additive field, so legacy
+  // imports + AI-skill drafts that pre-date this column (no `image_style`
+  // key at all) round-trip cleanly without a one-line "image_style": null
+  // sprinkled through every fixture in the repo. Undefined and null both
+  // mean "no per-workflow style override"; step 09 resolves either to
+  // "cinematic" at runtime so pre-doodle behavior is preserved
+  // byte-for-byte. If we later want to enforce explicit-null on imports
+  // (mirroring image_provider strictly), drop the `.optional()` and
+  // add `"image_style": null` to the affected fixtures.
+  image_style: z
+    .enum(
+      IMAGE_STYLE_NAMES as unknown as [
+        ImageStyleName,
+        ...ImageStyleName[],
+      ]
+    )
+    .nullable()
+    .optional(),
   video_provider: z.enum(["comfyui", "google_flow"]).nullable(),
   // Narrative rows always carry null for the music-video-only columns;
   // accepting absent or null keeps round-trip parity with legacy export
