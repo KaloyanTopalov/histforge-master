@@ -1426,6 +1426,14 @@ describe("createDb — workflows + workflow_steps schema", () => {
         type: "TEXT",
         notnull: 0,
       });
+      // image_style picks the per-workflow image style bundle (cinematic |
+      // doodle_polished | doodle_rough). Nullable; NULL resolves to
+      // cinematic at runtime so legacy and cinematic workflows keep
+      // today's behavior.
+      expect(byName.image_style).toMatchObject({
+        type: "TEXT",
+        notnull: 0,
+      });
     } finally {
       db.close();
     }
@@ -1712,6 +1720,92 @@ describe("createDb — workflows + workflow_steps schema", () => {
     db2.close();
   });
 
+  it("adds image_style to an existing workflows table that predates it", () => {
+    // Simulates an on-disk DB created before image_style existed: createDb
+    // must ALTER on next open, leave legacy rows at NULL (the cinematic
+    // fallback contract), and a second open must not throw.
+    const path = tempDbPath();
+
+    const raw = new (require("better-sqlite3"))(path);
+    try {
+      raw.exec(`
+        CREATE TABLE workflows (
+          id                  TEXT PRIMARY KEY,
+          label               TEXT NOT NULL,
+          short_label         TEXT NOT NULL,
+          description         TEXT,
+          script_llm_provider TEXT,
+          tts_provider        TEXT,
+          image_provider      TEXT,
+          video_provider      TEXT,
+          music_provider      TEXT,
+          upscaler_provider   TEXT,
+          kind                TEXT NOT NULL DEFAULT 'narrative',
+          is_builtin          INTEGER NOT NULL DEFAULT 0,
+          enabled             INTEGER NOT NULL DEFAULT 1,
+          version             INTEGER NOT NULL DEFAULT 1,
+          created_at          INTEGER NOT NULL,
+          updated_at          INTEGER NOT NULL,
+          chunker_step        TEXT
+        );
+      `);
+      raw
+        .prepare(
+          "INSERT INTO workflows (id, label, short_label, description, script_llm_provider, tts_provider, image_provider, video_provider, is_builtin, enabled, version, created_at, updated_at, chunker_step) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .run(
+          "legacy-wf",
+          "Legacy",
+          "L",
+          null,
+          "openrouter",
+          "ai33",
+          "comfyui",
+          "comfyui",
+          1,
+          1,
+          1,
+          1,
+          1,
+          "chunk_clips_then_images"
+        );
+    } finally {
+      raw.close();
+    }
+
+    const db = createDb(path);
+    try {
+      const cols = db
+        .prepare("PRAGMA table_info(workflows)")
+        .all() as Array<{
+        name: string;
+        type: string;
+        notnull: number;
+        dflt_value: string | null;
+      }>;
+      const byName = Object.fromEntries(cols.map((c) => [c.name, c]));
+      expect(byName.image_style).toMatchObject({
+        type: "TEXT",
+        notnull: 0,
+      });
+
+      const row = db
+        .prepare("SELECT image_style FROM workflows WHERE id = ?")
+        .get("legacy-wf") as { image_style: string | null };
+      // Backwards-compat anchor: legacy rows come back NULL → step 09
+      // resolves to cinematic + global locks → output is identical to
+      // pre-PR behavior. If this flips to a non-null default, doodle
+      // styles will silently apply to every legacy workflow.
+      expect(row.image_style).toBeNull();
+    } finally {
+      db.close();
+    }
+
+    // Second open must not throw (duplicate-column narrowly swallowed).
+    const db2 = createDb(path);
+    db2.close();
+  });
+
   it("adds the workflow_snapshot column to an existing videos table that predates it", () => {
     // Simulates an on-disk DB created before the column existed: createDb
     // must ALTER on next open and a second open must not throw.
@@ -1923,6 +2017,7 @@ describe("seedDefaultWorkflows", () => {
         created_at: number;
         updated_at: number;
         chunker_step: string | null;
+        image_style: string | null;
       }>;
       expect(rows.map((r) => r.id)).toEqual([
         "comfyui",
@@ -1946,6 +2041,11 @@ describe("seedDefaultWorkflows", () => {
         expect(row.created_at).toBeGreaterThanOrEqual(before);
         expect(row.created_at).toBeLessThanOrEqual(after);
         expect(row.updated_at).toBe(row.created_at);
+        // image_style is NULL on every seeded cinematic/legacy workflow —
+        // step 09 resolves NULL → "cinematic" → global locks, preserving
+        // today's output byte-for-byte. The two doodle workflows (Task 7)
+        // will be the first rows to ship with a non-null image_style.
+        expect(row.image_style).toBeNull();
       }
 
       // Narrative builtins share script_llm_provider='openrouter' and

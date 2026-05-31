@@ -413,7 +413,8 @@ export function createDb(path: string): DatabaseType {
       version             INTEGER NOT NULL DEFAULT 1,
       created_at          INTEGER NOT NULL,
       updated_at          INTEGER NOT NULL,
-      chunker_step        TEXT
+      chunker_step        TEXT,
+      image_style         TEXT
     );
     CREATE TABLE IF NOT EXISTS workflow_steps (
       workflow_id  TEXT NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
@@ -677,6 +678,22 @@ export function createDb(path: string): DatabaseType {
       DROP TABLE workflows;
       ALTER TABLE workflows_new RENAME TO workflows;
     `);
+  }
+
+  // image_style picks the per-workflow image style bundle (cinematic |
+  // doodle_polished | doodle_rough) — see `lib/image/styles.ts`. Nullable
+  // because legacy rows pre-date the column; step 09 resolves NULL to
+  // "cinematic" at runtime so today's output is preserved byte-for-byte.
+  // ADDed after the table-rebuild above so a legacy DB that needed the
+  // relaxed-nullable rebuild gets the column on the rebuilt table, not on
+  // the soon-to-be-dropped original.
+  try {
+    db.exec("ALTER TABLE workflows ADD COLUMN image_style TEXT");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/duplicate column name/i.test(msg)) {
+      throw err;
+    }
   }
 
   // Same additive-migration pattern for workflow_snapshot (per-video

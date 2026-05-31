@@ -249,6 +249,11 @@ export interface WorkflowRow {
   created_at: number;
   updated_at: number;
   chunker_step: string | null;
+  // Per-workflow image style bundle id (see `lib/image/styles.ts`).
+  // NULL → resolves to "cinematic" at runtime (step 09), preserving the
+  // pre-doodle pipeline's behavior. Doodle workflows carry
+  // "doodle_polished" or "doodle_rough".
+  image_style: string | null;
 }
 
 /**
