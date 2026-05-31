@@ -13,6 +13,7 @@ import { getSetting } from "@/lib/settings";
 import { render } from "@/lib/prompts";
 import * as videosRepo from "@/lib/repos/videos";
 import { parseVisualStyleSnapshot } from "@/lib/visual-styles";
+import { IMAGE_STYLE_DEFINITIONS } from "@/lib/image/styles";
 import type { ChatMessage } from "@/lib/llm/types";
 
 /**
@@ -220,16 +221,47 @@ export const step: Step = {
 
     // Per-video style snapshot pinned at create/queue time. NULL =
     // "Default (no style)" — empty string into the `style_prompt`
-    // template variable.
+    // template variable. The image-styles PR routes this through the
+    // doodle-vs-cinematic branch below: cinematic keeps the gallery
+    // prompt (pre-doodle behavior); doodle drops it because the
+    // workflow's prompt_prefix is the authoritative style.
     const video = videosRepo.findById(ctx.db, videoId);
-    const snapshot = parseVisualStyleSnapshot(video?.visual_style_snapshot);
-    const stylePrompt = snapshot?.prompt ?? "";
+    const gallerySnapshot = parseVisualStyleSnapshot(
+      video?.visual_style_snapshot
+    );
+    const galleryStylePrompt = gallerySnapshot?.prompt ?? "";
     const K = getSetting("visual_prompts_batch_size", ctx.db);
-    // Lock settings: read once at step entry, applied as a post-process
-    // on every persisted prompt. Empty = skip that segment. See
-    // applyLocks() above for the exact format.
-    const styleLock = getSetting("style_lock_description", ctx.db);
-    const negativeLock = getSetting("character_lock_negative", ctx.db);
+    // Global lock settings — the cinematic-path fallback. Per-style
+    // locks (lib/image/styles.ts) replace these for non-cinematic
+    // styles whose registry entry declares a non-null lock. Cinematic's
+    // entry carries null for both locks, so the assembler picks the
+    // globals here verbatim — backwards-compat anchor.
+    const globalStyleLock = getSetting("style_lock_description", ctx.db);
+    const globalNegativeLock = getSetting("character_lock_negative", ctx.db);
+
+    // Resolve per-workflow image style. NULL/absent on the workflow
+    // snapshot → "cinematic" (the pre-doodle baseline). Doodle variants
+    // are workflow-authoritative: their `prompt_prefix` REPLACES the
+    // per-video gallery prompt, and their locks REPLACE the globals.
+    // The branch is on the variant name so a future style designer
+    // makes an explicit decision about gallery behavior — there's no
+    // hidden "empty prompt_prefix = use gallery" coupling.
+    const imageStyleName = (ctx.snapshot.image_style ?? "cinematic") as
+      | "cinematic"
+      | "doodle_polished"
+      | "doodle_rough";
+    const styleDef =
+      IMAGE_STYLE_DEFINITIONS[imageStyleName] ??
+      IMAGE_STYLE_DEFINITIONS.cinematic;
+    const isDoodleVariant =
+      imageStyleName === "doodle_polished" ||
+      imageStyleName === "doodle_rough";
+
+    const stylePrompt = isDoodleVariant
+      ? styleDef.prompt_prefix
+      : galleryStylePrompt;
+    const styleLock = styleDef.style_lock ?? globalStyleLock;
+    const negativeLock = styleDef.negative_lock ?? globalNegativeLock;
     // Few-shot examples slot: resolve once at step entry so every batch
     // sees the same block. Always supplied (defaults to "") because the
     // render dialect strict-throws on unresolved {{good_examples}}.
