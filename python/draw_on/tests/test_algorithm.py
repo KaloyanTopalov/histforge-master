@@ -94,3 +94,51 @@ def test_skip_rate_minimum_one():
 def test_skip_rate_ceiling_not_floor():
     # 105 cells, 100 target frames → ceiling = 2 (so all cells get drawn)
     assert compute_skip_rate(105, 100 / 30, 30) == 2
+
+
+import cv2
+
+from draw_on.algorithm import progressive_frame
+
+
+@pytest.fixture
+def small_kernel():
+    return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+
+
+def test_progressive_frame_all_drawn_is_colored(small_kernel):
+    colored = np.full((50, 50, 3), [128, 64, 32], dtype=np.uint8)
+    mask = np.full((50, 50), 255, dtype=np.uint8)
+    frame = progressive_frame(colored, mask, small_kernel)
+    assert (frame == colored).all()
+
+
+def test_progressive_frame_nothing_drawn_is_white(small_kernel):
+    colored = np.full((50, 50, 3), [128, 64, 32], dtype=np.uint8)
+    mask = np.zeros((50, 50), dtype=np.uint8)
+    frame = progressive_frame(colored, mask, small_kernel)
+    assert (frame == 255).all()
+
+
+def test_progressive_frame_partial_mixes_colored_and_white(small_kernel):
+    colored = np.full((50, 50, 3), [128, 64, 32], dtype=np.uint8)
+    mask = np.zeros((50, 50), dtype=np.uint8)
+    mask[20:30, 20:30] = 255
+    frame = progressive_frame(colored, mask, small_kernel)
+    # Drawn center is colored
+    assert (frame[25, 25] == [128, 64, 32]).all()
+    # Untouched corner is white
+    assert (frame[0, 0] == 255).all()
+
+
+def test_progressive_frame_dilation_expands_colored_region(small_kernel):
+    """A larger kernel reveals more pixels around the drawn area."""
+    colored = np.full((50, 50, 3), [128, 64, 32], dtype=np.uint8)
+    mask = np.zeros((50, 50), dtype=np.uint8)
+    mask[24:26, 24:26] = 255  # 2x2 region
+    small_frame = progressive_frame(colored, mask, small_kernel)
+    big_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+    big_frame = progressive_frame(colored, mask, big_kernel)
+    small_count = (small_frame == colored).all(axis=-1).sum()
+    big_count = (big_frame == colored).all(axis=-1).sum()
+    assert big_count > small_count

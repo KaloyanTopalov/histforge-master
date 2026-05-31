@@ -78,3 +78,21 @@ def compute_skip_rate(n_cells: int, duration_sec: float, fps: int) -> int:
     if n_cells <= 0:
         return 1
     return max(1, (n_cells + target_frames - 1) // target_frames)
+
+
+def progressive_frame(
+    colored_bgr: np.ndarray,
+    drawn_mask: np.ndarray,
+    dilation_kernel: np.ndarray,
+) -> np.ndarray:
+    """Composite the current draw-on frame.
+
+    Pixels where the dilated `drawn_mask` is positive show the colored image;
+    everywhere else shows pure white. Dilating the mask makes color "leak"
+    slightly past the drawn strokes — this is what makes color emerge WITH
+    the lines, not after them.
+    """
+    dilated = cv2.dilate(drawn_mask, dilation_kernel)
+    mask_3 = np.stack([dilated, dilated, dilated], axis=-1)
+    white = np.full_like(colored_bgr, 255)
+    return np.where(mask_3 > 0, colored_bgr, white).astype(np.uint8)
