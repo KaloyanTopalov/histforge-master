@@ -8,6 +8,13 @@ from . import algorithm
 DEFAULT_SPLIT_LEN = 4
 DEFAULT_FPS = 60
 DEFAULT_DILATION_PX = 12
+# Phase 9: the draw-on completes hold_sec before the chunk ends, then the
+# fully-drawn image holds static for those final seconds. The operator
+# validated this rhythm in Phase 8 watching — drawing then a pause before
+# the hard cut to the next image (Phase 10 removes the crossfade so the
+# cut is hard). 2.0s is the default; clamps to duration_sec * 0.5 on
+# chunks too short to afford a full 2s hold.
+DEFAULT_HOLD_SEC = 2.0
 
 
 def _ceil_even_multiple(n: int, m: int) -> int:
@@ -25,11 +32,19 @@ def render_draw_on(
     fps: int = DEFAULT_FPS,
     split_len: int = DEFAULT_SPLIT_LEN,
     dilation_px: int = DEFAULT_DILATION_PX,
+    hold_sec: float = DEFAULT_HOLD_SEC,
 ) -> None:
     """Read a static image, write a draw-on mp4 of duration_sec.
 
     Output dims are PADDED (with white) up to a multiple of split_len and to
     even values (mp4v requirement). Source content is never trimmed.
+
+    `hold_sec`: the drawing animation completes `hold_sec` seconds before
+    the clip ends; the trailing `hold_sec` seconds hold the fully-drawn
+    image static. Clamps to `duration_sec * 0.5` so drawing always gets
+    at least half the chunk on short chunks. Total output length is
+    always exactly `duration_sec * fps` frames — the hold is INSIDE the
+    duration, not added on top.
     """
     img_bgr = cv2.imread(image_path)
     if img_bgr is None:
@@ -47,6 +62,14 @@ def render_draw_on(
     traversal = algorithm.build_traversal(thresh, split_len)
     n_cells = len(traversal)
     target_frames = max(1, int(duration_sec * fps))
+
+    # Hold-aware skip-rate: drawing animates over `drawing_sec`, then the
+    # existing pad loop at the end of this function fills the remaining
+    # `target_frames - frames_written` slots with the final static frame —
+    # which is exactly the hold portion. compute_skip_rate paces the
+    # traversal so the draw fits in drawing_sec, not the full duration.
+    effective_hold_sec = min(max(0.0, hold_sec), duration_sec * 0.5)
+    drawing_sec = duration_sec - effective_hold_sec
 
     # Detect flat color regions and compute per-region OUTLINE cells —
     # the grid cells that contain ink pixels near the region's boundary.
@@ -99,7 +122,7 @@ def render_draw_on(
                 writer.write(white)
             return
 
-        skip_rate = algorithm.compute_skip_rate(n_cells, duration_sec, fps)
+        skip_rate = algorithm.compute_skip_rate(n_cells, drawing_sec, fps)
         mask = np.zeros((H, W), dtype=np.uint8)        # grid-traversal cells — DILATED
         fill_mask = np.zeros((H, W), dtype=np.uint8)   # flood-fill regions — EXACT (no dilation)
         kernel = cv2.getStructuringElement(
