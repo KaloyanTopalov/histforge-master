@@ -39,7 +39,7 @@ export interface ImageStyleDefinition {
   // cinematic / unmigrated styles).
   style_lock: string | null;
   negative_lock: string | null;
-  reveal_effect: "none" | "pixel_dissolve";
+  reveal_effect: "none" | "draw_on";
   // CSS color; null = no background composite (full-bleed).
   background_color: string | null;
   // Operator-facing note about recommended image durations.
@@ -76,7 +76,7 @@ export const IMAGE_STYLE_DEFINITIONS: Record<
     negative_lock:
       "photorealistic, 3D render, photograph, dark background, complex background, " +
       "realistic textures, dramatic lighting, gradient background",
-    reveal_effect: "pixel_dissolve",
+    reveal_effect: "draw_on",
     background_color: "#FFFFFF",
     pacing_hint: "3-5 seconds per image works well",
   },
@@ -101,7 +101,7 @@ export const IMAGE_STYLE_DEFINITIONS: Record<
     negative_lock:
       "smooth shading, gradient, drop shadow, 3D render, polished, clean vector lines, " +
       "professional illustration, soft lighting, depth of field, photorealistic, photograph",
-    reveal_effect: "pixel_dissolve",
+    reveal_effect: "draw_on",
     background_color: "#FFFFFF",
     pacing_hint: "3-5 seconds per image works well",
   },

@@ -42,7 +42,7 @@ describe("image styles registry", () => {
     expect(def.style_lock).toMatch(/whiteboard-marker doodle/i);
     expect(def.negative_lock).not.toBeNull();
     expect(def.negative_lock).toMatch(/photorealistic/i);
-    expect(def.reveal_effect).toBe("pixel_dissolve");
+    expect(def.reveal_effect).toBe("draw_on");
     expect(def.background_color).toBe("#FFFFFF");
   });
 
