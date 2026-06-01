@@ -577,8 +577,11 @@ describe("PATCH /api/videos/:id", () => {
     });
   });
 
-  it("catches the partial-patch trap: PATCH {min:10} against NULL target column + global target=8 returns 400 with source labels", async () => {
-    // Defaults: global target=8, min=4, max=12. Row has all three columns NULL.
+  it("catches the partial-patch trap: PATCH {min:10} against NULL target column + global target=6 returns 400 with source labels", async () => {
+    // Defaults: global target=6, min=4, max=8. Row has all three columns NULL.
+    // (Updated from target=8/max=12 by PR #21 — this assertion was the
+    // straggler PR #21's sweep missed; bundled into Task #26 to get the
+    // suite green.)
     await seedVideo("v1", { status: "new" });
     const { PATCH } = await import("@/app/api/videos/[id]/route");
     const res = await PATCH(
@@ -594,10 +597,10 @@ describe("PATCH /api/videos/:id", () => {
     expect(body.error).toBe("image_chunk_pacing_invariant");
     // Patched value comes from the request body.
     expect(body.sources.min).toEqual({ source: "request", value: 10 });
-    // Target column is NULL → resolver falls through to global (8).
-    expect(body.sources.target).toEqual({ source: "global", value: 8 });
-    // Max column also NULL → global (12).
-    expect(body.sources.max).toEqual({ source: "global", value: 12 });
+    // Target column is NULL → resolver falls through to global (6).
+    expect(body.sources.target).toEqual({ source: "global", value: 6 });
+    // Max column also NULL → global (8).
+    expect(body.sources.max).toEqual({ source: "global", value: 8 });
   });
 
   it("PATCH {image_chunk_target_seconds: null} clears the column", async () => {
