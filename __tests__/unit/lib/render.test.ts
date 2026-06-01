@@ -1064,6 +1064,104 @@ describe("render() precheck", () => {
       }
     });
 
+    it("Stage CD ≥2-image doodle path: concat-demuxer stream copy, NO xfade, NO -filter_complex", async () => {
+      const projectsDir = tempDir("projects");
+      const videoId = "v_drawon_concat";
+      const chunks = makeImageChunks(["image_001", "image_002", "image_003"]);
+      setupDoodleProject(projectsDir, videoId, chunks, [
+        "image_001",
+        "image_002",
+        "image_003",
+      ]);
+
+      const execCalls: string[][] = [];
+      const exec = vi.fn().mockImplementation((args: string[]) => {
+        execCalls.push(args);
+      });
+      const probe = vi.fn().mockResolvedValue(10);
+
+      await render(videoId, {
+        projectsDir,
+        ...baseRenderOpts,
+        revealEffect: "draw_on",
+        drawOnHealthCheck: vi.fn().mockResolvedValue(undefined),
+        exec,
+        probe,
+        log: () => {},
+      });
+
+      // The Stage CD call writes video_only.mp4. Identify it.
+      const stageCD = execCalls.find((c) => {
+        const last = c[c.length - 1];
+        return typeof last === "string" && last.endsWith("video_only.mp4");
+      });
+      expect(stageCD).toBeDefined();
+
+      // Doodle concat shape: -f concat -safe 0 -i <list> -an -c:v copy <out>
+      expect(stageCD!).toContain("-f");
+      const fIdx = stageCD!.indexOf("-f");
+      expect(stageCD![fIdx + 1]).toBe("concat");
+      const cvIdx = stageCD!.indexOf("-c:v");
+      expect(stageCD![cvIdx + 1]).toBe("copy");
+      // Negative pin: no xfade filter graph.
+      expect(stageCD!).not.toContain("-filter_complex");
+
+      // The concat-list file was written to render/.
+      const renderDir = join(projectsDir, videoId, "render");
+      const listPath = join(renderDir, "draw_on_concat_list.txt");
+      expect(existsSync(listPath)).toBe(true);
+      const listContent = readFileSync(listPath, "utf-8");
+      // Each line points at a segment_NNN.mp4 in order.
+      expect(listContent).toMatch(/segment_001\.mp4/);
+      expect(listContent).toMatch(/segment_002\.mp4/);
+      expect(listContent).toMatch(/segment_003\.mp4/);
+    });
+
+    it("Stage CD ≥2-image cinematic path: -filter_complex xfade, NO concat demuxer (cinematic UNCHANGED)", async () => {
+      const projectsDir = tempDir("projects");
+      const videoId = "v_cinematic_xfade";
+      const chunks = makeImageChunks(["image_001", "image_002", "image_003"]);
+      // Cinematic project — images/ populated, clips_drawn/ deliberately absent.
+      setupImagesOnlyProject(projectsDir, videoId, chunks, [
+        "image_001",
+        "image_002",
+        "image_003",
+      ]);
+
+      const execCalls: string[][] = [];
+      const exec = vi.fn().mockImplementation((args: string[]) => {
+        execCalls.push(args);
+      });
+      const probe = vi.fn().mockResolvedValue(10);
+
+      await render(videoId, {
+        projectsDir,
+        ...baseRenderOpts,
+        revealEffect: "none",
+        exec,
+        probe,
+        log: () => {},
+      });
+
+      const stageCD = execCalls.find((c) => {
+        const last = c[c.length - 1];
+        return typeof last === "string" && last.endsWith("video_only.mp4");
+      });
+      expect(stageCD).toBeDefined();
+
+      // Cinematic shape: -i <seg1> -i <seg2> -i <seg3> -filter_complex "<graph>" -map [vout] <encoder> <out>
+      expect(stageCD!).toContain("-filter_complex");
+      const fcIdx = stageCD!.indexOf("-filter_complex");
+      const fcValue = stageCD![fcIdx + 1];
+      expect(fcValue).toContain("xfade");
+      expect(fcValue).toContain("[vout]");
+      // Negative pin: NOT the doodle concat path.
+      expect(stageCD!).not.toContain("concat");
+      // Negative pin: cinematic Stage CD does NOT write a draw-on concat list.
+      const listPath = join(projectsDir, videoId, "render", "draw_on_concat_list.txt");
+      expect(existsSync(listPath)).toBe(false);
+    });
+
     it("revealEffect='none' (cinematic) does NOT consult clips_drawn or call drawOnHealthCheck", async () => {
       const projectsDir = tempDir("projects");
       const videoId = "v_cinema_skips_drawon";

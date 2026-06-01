@@ -827,7 +827,27 @@ export async function render(
 
   if (!hasClips && segPaths.length === 1) {
     // Sub-case: 1 image + 0 clip — no filter graph, stream copy.
+    // Hard-cut by definition (nothing to crossfade), so draw_on and none
+    // share this path.
     await exec(["-i", segPaths[0], "-c", "copy", videoOnlyPath]);
+  } else if (!hasClips && revealEffect === "draw_on") {
+    // Sub-case: ≥2 image + 0 clip, doodle — hard-cut concat. Segments
+    // are already W×H/framerate/yuv420p/libx264 from buildSegmentArgs'
+    // draw-on branch, so stream-copy through ffmpeg's concat demuxer:
+    // no re-encode, no xfade overlap, no filter graph. Same precedent
+    // as sub-case 1 (1-image stream copy) which also bypasses the
+    // videoEncoder setting because no transform is needed.
+    const concatListPath = join(renderDir, "draw_on_concat_list.txt");
+    const concatLines = segPaths.map(
+      (p) => `file '${p.replace(/\\/g, "/")}'`
+    );
+    writeFileSync(concatListPath, concatLines.join("\n") + "\n");
+    await exec([
+      "-f", "concat", "-safe", "0",
+      "-i", concatListPath,
+      "-an", "-c:v", "copy",
+      videoOnlyPath,
+    ]);
   } else if (!hasClips) {
     // Sub-case: ≥2 image + 0 clip — image xfade chain only, encode
     // directly to video_only.mp4 (no image_concat intermediate).
@@ -868,6 +888,15 @@ export async function render(
     // built to be.
     const xfadeOffset = clipDuration - CROSSFADE_SECONDS;
 
+    // NOTE on revealEffect === "draw_on" for sub-cases 4 + 5 below:
+    // doodle workflows seed with `video_provider: null` today, so a
+    // doodle render NEVER has clipChunks — this branch is unreachable
+    // for the canonical doodle path. If a future workflow combines
+    // doodle image styles with hook clips, the image→image xfade chain
+    // here would need a doodle-concat variant (and the clip→image
+    // xfade-into-doodle transition would need its own decision). Left
+    // deferred until that workflow exists; current behavior keeps the
+    // xfade path even if the field is somehow set.
     if (segPaths.length === 1) {
       // Sub-case: 1 image + ≥1 clip — segment_001 is the image stream
       // directly at [1:v]; no image xfade chain. settb=AVTB on the
