@@ -143,6 +143,12 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   // zoom flip the row to "ken_burns". Keep in sync with the INSERT OR
   // IGNORE migration statement below.
   render_image_motion: "static",
+  // Operator override for the draw-on Python interpreter. Empty = the
+  // resolver probes python/draw_on/.venv/{Scripts,bin}/python and falls
+  // back to `python` on PATH. Operators with multiple Python installs
+  // or a non-standard venv layout pin an explicit path here. See
+  // src/lib/draw-on-python.ts.
+  draw_on_python_path: "",
 };
 
 export function seedDefaultSettings(db: DatabaseType): void {
@@ -1113,6 +1119,15 @@ export function createDb(path: string): DatabaseType {
   // upgraded DBs that miss db:init still pick up the seed here.
   db.prepare(
     "INSERT OR IGNORE INTO settings (key, value) VALUES ('render_image_motion', 'static')"
+  ).run();
+
+  // draw_on_python_path: operator-pinned Python interpreter for the
+  // doodle draw-on stage. Empty default falls through to the
+  // python/draw_on/.venv probe in resolveDrawOnPythonPath. Seed here so
+  // upgraded DBs that miss db:init don't trip getSetting at draw-on step
+  // entry; INSERT OR IGNORE preserves a non-empty operator override.
+  db.prepare(
+    "INSERT OR IGNORE INTO settings (key, value) VALUES ('draw_on_python_path', '')"
   ).run();
 
   // Character-lock + style-lock plan. Two free-text settings consumed

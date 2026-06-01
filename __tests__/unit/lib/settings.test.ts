@@ -275,6 +275,7 @@ describe("getAllSettings", () => {
       auto_cleanup_after_render: false,
       histforge_base_url: "http://localhost:3000",
       render_image_motion: "static",
+      draw_on_python_path: "",
     });
   });
 });

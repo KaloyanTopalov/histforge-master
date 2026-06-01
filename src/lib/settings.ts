@@ -253,6 +253,14 @@ const SETTING_SCHEMAS = {
   // boolean transform) because both values are surface-meaningful and
   // future motion modes may join the same enum without renaming.
   render_image_motion: z.enum(["ken_burns", "static"]),
+  // Path to the Python interpreter the doodle draw-on stage spawns. Free-
+  // text string; empty = let `resolveDrawOnPythonPath` probe the Session-1
+  // .venv (`python/draw_on/.venv/Scripts/python.exe` on Windows,
+  // `.venv/bin/python` on POSIX) and fall back to `python` on PATH. The
+  // render precheck (Phase 7) verifies the resolved path actually launches
+  // `python -m draw_on --help`, so an operator misconfiguration surfaces
+  // loudly there rather than silently in the per-image step.
+  draw_on_python_path: z.string(),
 } as const;
 
 export type SettingKey = keyof typeof SETTING_SCHEMAS;
