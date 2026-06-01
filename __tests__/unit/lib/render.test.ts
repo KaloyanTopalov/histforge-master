@@ -374,11 +374,15 @@ describe("buildSegmentArgs", () => {
       drawOnClipPath: "C:/tmp/clips_drawn/image_007.mp4",
     };
 
-    it("non-last segment: -vf EXACTLY pins the tpad+scale chain (crossfade-overlap contract)", () => {
-      // The tpad's stop_duration is CROSSFADE_SECONDS (currently 1.0 →
-      // stringifies to "1"); the scale matches the configured output
-      // resolution; the format=yuv420p tail matches the cinematic chain
-      // so x264 sees the same pixel layout regardless of path.
+    it("non-last segment: -vf EXACTLY pins scale+format (NO tpad — Phase 10 removed the crossfade)", () => {
+      // REQUIREMENT-CHANGE update (Phase 11): pre-Phase-10, Stage CD
+      // crossfaded consecutive doodle segments, so this branch added a
+      // tpad to clone the last frame across the overlap. Phase 10
+      // switched Stage CD to a hard-cut concat for draw_on — there is
+      // no overlap to pad, so the tpad is gone and the -vf collapses
+      // to the same scale+format chain as isLast (and the static
+      // cinematic path, byte-identically). NOT a regression: the design
+      // changed because the operator validated hard cuts in Phase 8.
       const args = buildSegmentArgs({
         ...drawOpts,
         imagePath: "C:/tmp/images/image_007.png",
@@ -388,18 +392,15 @@ describe("buildSegmentArgs", () => {
       });
       const vfIdx = args.indexOf("-vf");
       const vfValue = args[vfIdx + 1];
-      // Verbatim expected string: tpad=stop_mode=clone:stop_duration=1,scale=1920:1080,format=yuv420p
-      expect(vfValue).toBe(
-        `tpad=stop_mode=clone:stop_duration=${CROSSFADE_SECONDS},scale=1920:1080,format=yuv420p`
-      );
+      expect(vfValue).toBe("scale=1920:1080,format=yuv420p");
     });
 
-    it("isLast segment: -vf EXACTLY pins scale+format with NO tpad prefix (padDuration === 0)", () => {
-      // On isLast, renderDur === chunkDuration so padDuration is 0 and
-      // tpad collapses out entirely. The resulting -vf is byte-equal to
-      // the static cinematic chain, but reached via the draw-on branch —
-      // a property pinned by the input-shape assertions below (no -loop,
-      // -i drawOnClipPath).
+    it("isLast segment: -vf is scale+format (UNCHANGED from Phase 6 — was always tpad-free)", () => {
+      // Phase 6 had isLast omit tpad because padDuration was 0; Phase 11
+      // makes non-last identical. The byte-equality between draw-on and
+      // static cinematic -vf doesn't mean the branches merged — the
+      // input-shape / -t / encoder pins below witness that the draw-on
+      // path is reached, not the cinematic one.
       const args = buildSegmentArgs({
         ...drawOpts,
         imagePath: "C:/tmp/images/image_last.png",
@@ -426,7 +427,14 @@ describe("buildSegmentArgs", () => {
       expect(args[iIdx + 1]).not.toBe("C:/tmp/images/image_007.png");
     });
 
-    it("-t is chunkDuration + CROSSFADE_SECONDS on non-last (matches cinematic renderDur)", () => {
+    it("-t is chunkDuration on non-last (REQUIREMENT CHANGE: no CROSSFADE extension — hard cut concat)", () => {
+      // REQUIREMENT-CHANGE update (Phase 11): pre-Phase-10, non-last
+      // doodle segments were extended by CROSSFADE_SECONDS to feed
+      // Stage CD's xfade overlap; Phase 10 replaced that with a hard-cut
+      // concat, so -t collapses to plain chunkDuration. The hard-cut
+      // boundary lines up exactly with the next chunk's audio start
+      // (chunks come from the chunker's alignment-based boundaries).
+      // NOT a regression: the design changed.
       const args = buildSegmentArgs({
         ...drawOpts,
         imagePath: "C:/tmp/images/image_007.png",
@@ -435,10 +443,10 @@ describe("buildSegmentArgs", () => {
         outPath: "C:/tmp/render/segment_007.mp4",
       });
       const tIdx = args.indexOf("-t");
-      expect(args[tIdx + 1]).toBe(String(5 + CROSSFADE_SECONDS));
+      expect(args[tIdx + 1]).toBe("5");
     });
 
-    it("-t is chunkDuration on isLast (no crossfade tail)", () => {
+    it("-t is chunkDuration on isLast (UNCHANGED — was always chunkDuration)", () => {
       const args = buildSegmentArgs({
         ...drawOpts,
         imagePath: "C:/tmp/images/image_last.png",

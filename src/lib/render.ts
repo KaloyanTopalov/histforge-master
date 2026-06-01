@@ -215,25 +215,21 @@ export function buildSegmentArgs(opts: SegmentArgsOpts): string[] {
   //
   // Inputs differ from the cinematic path: no `-loop 1` because the
   // draw-on clip is already a video, and the clip is the only `-i`.
-  // The `tpad=stop_mode=clone:stop_duration=<CROSSFADE_SECONDS>` prefix
-  // clones the clip's last frame to cover the Stage CD crossfade overlap
-  // on non-last segments — Session-1's CLI guarantees a "complete final
-  // frame" so the clone is the fully-revealed image, not a partial draw.
-  // For isLast=true the renderDur equals chunkDuration (no crossfade
-  // tail), so tpad is omitted entirely.
+  // `-t` is exactly `chunkDuration` (NOT `renderDur`) and the `-vf`
+  // chain is just `scale + format=yuv420p` — no `tpad`. Phase 10's
+  // Stage CD concat-demuxer hard-cuts segments together with no
+  // crossfade overlap, so there is no last-frame tail to pad. The
+  // CLI's `hold_sec` (Phase 9) keeps the fully-drawn image visible for
+  // the last ~2s of each clip; the hard cut to the next clip's first
+  // frame happens at exactly `chunkDuration`.
   if (drawOnClipPath !== undefined) {
-    const padDuration = renderDur - chunkDuration;
-    const tpad =
-      padDuration > 0
-        ? `tpad=stop_mode=clone:stop_duration=${padDuration},`
-        : "";
     return [
       "-i",
       drawOnClipPath,
       "-t",
-      String(renderDur),
+      String(chunkDuration),
       "-vf",
-      `${tpad}scale=${width}:${height},format=yuv420p`,
+      `scale=${width}:${height},format=yuv420p`,
       "-c:v",
       "libx264",
       "-preset",
