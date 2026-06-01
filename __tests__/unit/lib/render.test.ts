@@ -358,6 +358,133 @@ describe("buildSegmentArgs", () => {
       expect(args[tIdx + 1]).toBe("31");
     });
   });
+
+  describe("drawOnClipPath branch (doodle pre-render)", () => {
+    // When drawOnClipPath is set, the cinematic motion branches below MUST
+    // NOT be reached — Phase 6's gate is the literal absence of this field,
+    // and the ken_burns + static `-vf` regression pins above (:160-179,
+    // :280-294) must stay byte-identical. These tests pin the new branch
+    // and the omission complementarily.
+    const drawOpts = {
+      ...baseOpts,
+      // motion is required on the type but ignored when drawOnClipPath is
+      // set — left at the ken_burns default so a regression where the
+      // draw-on branch accidentally falls through to motion shows up as a
+      // zoompan substring in -vf (it would never be `tpad=...,scale=...`).
+      drawOnClipPath: "C:/tmp/clips_drawn/image_007.mp4",
+    };
+
+    it("non-last segment: -vf EXACTLY pins the tpad+scale chain (crossfade-overlap contract)", () => {
+      // The tpad's stop_duration is CROSSFADE_SECONDS (currently 1.0 →
+      // stringifies to "1"); the scale matches the configured output
+      // resolution; the format=yuv420p tail matches the cinematic chain
+      // so x264 sees the same pixel layout regardless of path.
+      const args = buildSegmentArgs({
+        ...drawOpts,
+        imagePath: "C:/tmp/images/image_007.png",
+        chunkDuration: 5,
+        isLast: false,
+        outPath: "C:/tmp/render/segment_007.mp4",
+      });
+      const vfIdx = args.indexOf("-vf");
+      const vfValue = args[vfIdx + 1];
+      // Verbatim expected string: tpad=stop_mode=clone:stop_duration=1,scale=1920:1080,format=yuv420p
+      expect(vfValue).toBe(
+        `tpad=stop_mode=clone:stop_duration=${CROSSFADE_SECONDS},scale=1920:1080,format=yuv420p`
+      );
+    });
+
+    it("isLast segment: -vf EXACTLY pins scale+format with NO tpad prefix (padDuration === 0)", () => {
+      // On isLast, renderDur === chunkDuration so padDuration is 0 and
+      // tpad collapses out entirely. The resulting -vf is byte-equal to
+      // the static cinematic chain, but reached via the draw-on branch —
+      // a property pinned by the input-shape assertions below (no -loop,
+      // -i drawOnClipPath).
+      const args = buildSegmentArgs({
+        ...drawOpts,
+        imagePath: "C:/tmp/images/image_last.png",
+        chunkDuration: 5,
+        isLast: true,
+        outPath: "C:/tmp/render/segment_last.mp4",
+      });
+      const vfIdx = args.indexOf("-vf");
+      const vfValue = args[vfIdx + 1];
+      expect(vfValue).toBe("scale=1920:1080,format=yuv420p");
+    });
+
+    it("input shape: no `-loop`, -i is the drawOnClipPath (not the still PNG)", () => {
+      const args = buildSegmentArgs({
+        ...drawOpts,
+        imagePath: "C:/tmp/images/image_007.png",
+        chunkDuration: 5,
+        isLast: false,
+        outPath: "C:/tmp/render/segment_007.mp4",
+      });
+      expect(args).not.toContain("-loop");
+      const iIdx = args.indexOf("-i");
+      expect(args[iIdx + 1]).toBe(drawOpts.drawOnClipPath);
+      expect(args[iIdx + 1]).not.toBe("C:/tmp/images/image_007.png");
+    });
+
+    it("-t is chunkDuration + CROSSFADE_SECONDS on non-last (matches cinematic renderDur)", () => {
+      const args = buildSegmentArgs({
+        ...drawOpts,
+        imagePath: "C:/tmp/images/image_007.png",
+        chunkDuration: 5,
+        isLast: false,
+        outPath: "C:/tmp/render/segment_007.mp4",
+      });
+      const tIdx = args.indexOf("-t");
+      expect(args[tIdx + 1]).toBe(String(5 + CROSSFADE_SECONDS));
+    });
+
+    it("-t is chunkDuration on isLast (no crossfade tail)", () => {
+      const args = buildSegmentArgs({
+        ...drawOpts,
+        imagePath: "C:/tmp/images/image_last.png",
+        chunkDuration: 5,
+        isLast: true,
+        outPath: "C:/tmp/render/segment_last.mp4",
+      });
+      const tIdx = args.indexOf("-t");
+      expect(args[tIdx + 1]).toBe("5");
+    });
+
+    it("encoder settings stay byte-identical to cinematic: -c:v libx264 -preset ultrafast -crf 18", () => {
+      // Stage CD re-encodes; this segment is a throwaway intermediate
+      // (ADR-0002). Keeping the same preset/crf as cinematic so visual
+      // banding / x264 trade-offs are identical regardless of style.
+      const args = buildSegmentArgs({
+        ...drawOpts,
+        imagePath: "C:/tmp/images/image_007.png",
+        chunkDuration: 5,
+        isLast: false,
+        outPath: "C:/tmp/render/segment_007.mp4",
+      });
+      const cvIdx = args.indexOf("-c:v");
+      expect(args[cvIdx + 1]).toBe("libx264");
+      const presetIdx = args.indexOf("-preset");
+      expect(args[presetIdx + 1]).toBe("ultrafast");
+      const crfIdx = args.indexOf("-crf");
+      expect(args[crfIdx + 1]).toBe("18");
+      expect(args[args.length - 1]).toBe("C:/tmp/render/segment_007.mp4");
+    });
+
+    it("outputs zero zoompan and zero deriveZoomBuffer artifacts (the cinematic motion code is unreachable on this branch)", () => {
+      // Negative-form pin: if a future edit accidentally falls through
+      // to the motion branches, zoompan or scale=N:-1 would leak in.
+      const args = buildSegmentArgs({
+        ...drawOpts,
+        imagePath: "C:/tmp/images/image_007.png",
+        chunkDuration: 5,
+        isLast: false,
+        outPath: "C:/tmp/render/segment_007.mp4",
+      });
+      const vfValue = args[args.indexOf("-vf") + 1];
+      expect(vfValue).not.toContain("zoompan");
+      expect(vfValue).not.toMatch(/scale=\d+:-1/);
+    });
+  });
 });
 
 describe("buildXfadeFilterGraph", () => {

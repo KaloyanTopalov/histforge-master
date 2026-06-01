@@ -131,6 +131,22 @@ export interface SegmentArgsOpts {
    * it in.
    */
   motion: RenderImageMotion;
+  /**
+   * Pre-rendered draw-on reveal clip for this image chunk (produced by
+   * the `draw_on_images` step). When set, `buildSegmentArgs` emits a
+   * draw-on segment chain — no `-loop`, no zoompan, the clip itself is
+   * the input — with a `tpad=stop_mode=clone` extending the last frame
+   * to cover the Stage CD crossfade overlap on non-last segments.
+   *
+   * When `undefined`, the function is byte-identical to its pre-Phase-6
+   * shape — the cinematic ken_burns and static `-vf` strings are pinned
+   * by `render.test.ts:160-179` and `:280-294`. The gate is the literal
+   * absence of this field; the field's optionality is load-bearing.
+   * Phase 5 (`materializeStepList`) decides whether the upstream
+   * `draw_on_images` step ran; Phase 7 wires Stage B to pass this path
+   * in only for chunks belonging to a draw-on-style workflow.
+   */
+  drawOnClipPath?: string;
 }
 
 export interface ZoomBuffer {
@@ -187,9 +203,46 @@ export function buildSegmentArgs(opts: SegmentArgsOpts): string[] {
     framerate,
     outPath,
     motion,
+    drawOnClipPath,
   } = opts;
 
   const renderDur = isLast ? chunkDuration : chunkDuration + CROSSFADE_SECONDS;
+
+  // Draw-on branch — FIRST so the cinematic motion code below is only
+  // reachable when drawOnClipPath is undefined. This keeps the
+  // ken_burns + static `-vf` regression pins byte-identical: the gate
+  // is the literal absence of this field, not a value check.
+  //
+  // Inputs differ from the cinematic path: no `-loop 1` because the
+  // draw-on clip is already a video, and the clip is the only `-i`.
+  // The `tpad=stop_mode=clone:stop_duration=<CROSSFADE_SECONDS>` prefix
+  // clones the clip's last frame to cover the Stage CD crossfade overlap
+  // on non-last segments — Session-1's CLI guarantees a "complete final
+  // frame" so the clone is the fully-revealed image, not a partial draw.
+  // For isLast=true the renderDur equals chunkDuration (no crossfade
+  // tail), so tpad is omitted entirely.
+  if (drawOnClipPath !== undefined) {
+    const padDuration = renderDur - chunkDuration;
+    const tpad =
+      padDuration > 0
+        ? `tpad=stop_mode=clone:stop_duration=${padDuration},`
+        : "";
+    return [
+      "-i",
+      drawOnClipPath,
+      "-t",
+      String(renderDur),
+      "-vf",
+      `${tpad}scale=${width}:${height},format=yuv420p`,
+      "-c:v",
+      "libx264",
+      "-preset",
+      "ultrafast",
+      "-crf",
+      "18",
+      outPath,
+    ];
+  }
 
   let vf: string;
   if (motion === "static") {
