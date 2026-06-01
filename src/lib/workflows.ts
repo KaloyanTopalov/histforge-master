@@ -1,6 +1,10 @@
 import type { Database as DatabaseType } from "better-sqlite3";
 import type { WorkflowRow, WorkflowSnapshot } from "@/types";
 import * as workflowsRepo from "@/lib/repos/workflows";
+import {
+  IMAGE_STYLE_DEFINITIONS,
+  type ImageStyleDefinition,
+} from "@/lib/image/styles";
 
 // Re-export the seed table so callers (e.g., the reset endpoint) consume
 // it via the lib boundary rather than reaching into `lib/db.ts`. The
@@ -143,7 +147,36 @@ export function materializeStepList(snapshot: WorkflowSnapshot): string[] {
   if (snapshot.image_provider !== null) out.push("generate_images");
   if (snapshot.video_provider !== null) out.push("generate_clips");
 
+  // Pre-render reveal stage. Inserted only when the workflow's
+  // `image_style` resolves to a definition with `reveal_effect === "draw_on"`
+  // — the cinematic / null / unknown / pre-PR-snapshot cases all fall
+  // through to omission, keeping the historical step list byte-identical
+  // for every workflow that hasn't opted into draw-on. The lookup is a
+  // pure read from the styles registry (no side effects, no DB) and
+  // tolerates unknown names by returning `undefined` instead of throwing
+  // — same forgiving spirit as `resolveDrawOnPythonPath`.
+  const styleDef = lookupImageStyleDefinition(snapshot.image_style);
+  if (styleDef?.reveal_effect === "draw_on") {
+    out.push("draw_on_images");
+  }
+
   out.push("render", "cleanup");
 
   return out;
+}
+
+/**
+ * Type-narrowed lookup into `IMAGE_STYLE_DEFINITIONS`. Returns the
+ * definition when the name is registered, `undefined` otherwise (including
+ * the null / undefined / unknown-string cases). Centralizing the cast
+ * here keeps the materializer free of `as` and pins the "unknown styles
+ * are silently absent, not exceptions" contract.
+ */
+function lookupImageStyleDefinition(
+  name: string | null | undefined
+): ImageStyleDefinition | undefined {
+  if (name == null) return undefined;
+  return (IMAGE_STYLE_DEFINITIONS as Record<string, ImageStyleDefinition | undefined>)[
+    name
+  ];
 }

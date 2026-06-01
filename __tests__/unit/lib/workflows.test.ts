@@ -382,6 +382,108 @@ describe("materializeStepList — null providers skip their slot", () => {
   });
 });
 
+describe("materializeStepList — draw_on reveal injection", () => {
+  // Doodle-shaped fixture: image-only narrative pipeline with the
+  // draw-on-bearing style. Tests override fields to flip the gate.
+  function doodleSnapshot(
+    overrides: Partial<WorkflowSnapshot>
+  ): WorkflowSnapshot {
+    return {
+      workflow_id: "test-doodle",
+      version: 1,
+      kind: "narrative",
+      script_llm_provider: "openrouter",
+      tts_provider: "ai33",
+      image_provider: "magnific",
+      video_provider: null,
+      music_provider: null,
+      upscaler_provider: null,
+      chunker_step: "chunk_images_only",
+      image_style: "doodle_polished",
+      steps: [{ step_name: "research_outline" }],
+      ...overrides,
+    };
+  }
+
+  it("inserts draw_on_images immediately before `render` when image_style.reveal_effect === 'draw_on' (doodle_polished)", () => {
+    const list = materializeStepList(doodleSnapshot({}));
+    expect(list).toContain("draw_on_images");
+    const drawIdx = list.indexOf("draw_on_images");
+    const imagesIdx = list.indexOf("generate_images");
+    const renderIdx = list.indexOf("render");
+    expect(drawIdx).toBeGreaterThan(imagesIdx);
+    expect(drawIdx).toBe(renderIdx - 1);
+  });
+
+  it("inserts for doodle_rough as well (the other draw_on-bearing built-in style)", () => {
+    const list = materializeStepList(
+      doodleSnapshot({ image_style: "doodle_rough" })
+    );
+    expect(list).toContain("draw_on_images");
+  });
+
+  it("does NOT insert when image_style is null (cinematic fallback path) — pinned even though the pre-Phase-5 behavior already omitted, so a future change can't silently start inserting", () => {
+    const list = materializeStepList(doodleSnapshot({ image_style: null }));
+    expect(list).not.toContain("draw_on_images");
+  });
+
+  it("does NOT insert when image_style is undefined (legacy pre-image_style snapshot blob)", () => {
+    // Pre-image_style pinned blobs roundtrip with image_style === undefined
+    // (see the WorkflowSnapshot type's optional `?` and the
+    // pinning-lifecycle test above). Must not crash, must not insert.
+    const list = materializeStepList(
+      doodleSnapshot({ image_style: undefined })
+    );
+    expect(list).not.toContain("draw_on_images");
+  });
+
+  it("does NOT insert when image_style is 'cinematic' (reveal_effect === 'none')", () => {
+    const list = materializeStepList(
+      doodleSnapshot({ image_style: "cinematic" })
+    );
+    expect(list).not.toContain("draw_on_images");
+  });
+
+  it("does NOT insert when image_style is unknown / unregistered (graceful — no throw)", () => {
+    // A future style designer might drop a style from the registry while
+    // an older pinned snapshot still names it. The materializer must
+    // fall back to not-inserting rather than throwing — same forgiving
+    // spirit as the resolver in draw-on-python.ts.
+    expect(() =>
+      materializeStepList(doodleSnapshot({ image_style: "phantom_xyz" }))
+    ).not.toThrow();
+    const list = materializeStepList(
+      doodleSnapshot({ image_style: "phantom_xyz" })
+    );
+    expect(list).not.toContain("draw_on_images");
+  });
+
+  it("the two doodle seeded workflows materialize with draw_on_images in the canonical position", () => {
+    const db = freshDb();
+    const expected = [
+      "research_outline",
+      "write_hook",
+      "write_chapters",
+      "assemble_script",
+      "voiceover",
+      "align",
+      "chunk_images_only",
+      "generate_visual_prompts",
+      "generate_images",
+      "draw_on_images",
+      "render",
+      "cleanup",
+    ];
+    for (const id of [
+      "narrative-magnific-nano-banana-doodle-polished",
+      "narrative-magnific-nano-banana-doodle-rough",
+    ]) {
+      const snap = resolveSnapshot(db, id);
+      expect(materializeStepList(snap)).toEqual(expected);
+    }
+  });
+});
+
 describe("materializeStepList — kind switch", () => {
   it("emits the six-step music-video backbone for kind='music_video' (seeded builtin)", () => {
     const db = freshDb();
