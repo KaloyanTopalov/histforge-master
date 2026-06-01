@@ -97,12 +97,30 @@ export function ScriptTab({ values, update }: ScriptTabProps): JSX.Element {
         />
         <NumberField
           id="image_chunk_target_seconds"
-          label="Image Chunk Seconds"
+          label="Image Chunk Target Seconds"
           value={values.image_chunk_target_seconds}
           onChange={(v) => update("image_chunk_target_seconds", v)}
           step={1}
           min={2}
-          hint="Per-chunk target duration for the images-only chunker. Lower = faster cuts (more images per minute); higher = each image dwells longer. Range 2-60s. Default 8s ≈ 7-8 images per minute."
+          hint="Per-chunk target duration for the images-only chunker. The chunker aims for this length and clamps to min/max if scene boundaries drift. Lower = faster cuts (more images per minute); higher = each image dwells longer. Range 2-60s."
+        />
+        <NumberField
+          id="image_chunk_min_seconds"
+          label="Image Chunk Min Seconds"
+          value={values.image_chunk_min_seconds}
+          onChange={(v) => update("image_chunk_min_seconds", v)}
+          step={1}
+          min={2}
+          hint="Hard floor — the chunker forward-merges short chunks until each is at least this many seconds. Range 2-20s. Must be ≤ target."
+        />
+        <NumberField
+          id="image_chunk_max_seconds"
+          label="Image Chunk Max Seconds"
+          value={values.image_chunk_max_seconds}
+          onChange={(v) => update("image_chunk_max_seconds", v)}
+          step={1}
+          min={4}
+          hint="Soft ceiling — chunks longer than this get a logged warning (a single oversized sentence's VO can't be subdivided). Range 4-60s. Must be ≥ target."
         />
         <div className="space-y-1.5">
           <TextArea
