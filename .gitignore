@@ -45,3 +45,7 @@ extensions/**/*.private.pem
 # Playwright MCP scratch output (snapshots / screenshots from agent runs)
 .playwright-mcp/
 
+# Smoke-script outputs (scripts/smoke-*.ts). Real .mp4s on every run,
+# user-facing review artifacts — not source of truth, not for commit.
+smoke-output/
+
