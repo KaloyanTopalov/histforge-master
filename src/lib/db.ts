@@ -65,12 +65,12 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   claude_cli_visual_prompts_concurrency: "2",
   openrouter_visual_prompts_concurrency: "8",
   // Target chunk duration (seconds) for the chunk_images_only chunker.
-  // Default 8s gives ~7-8 chunks per minute of narration — close to typical
-  // YouTube-narrative pacing. Lower for faster cuts, higher to dwell on
-  // each image. The chunk-clips-then-images chunker keeps the legacy
-  // MAIN_TARGET_SECONDS=30 in chunk-utils.ts because its image segments
-  // are paired with hook clips and don't drive visual pacing alone.
-  image_chunk_target_seconds: "8",
+  // Default 6s gives ~10 chunks per minute of narration — faster-cut pacing
+  // tuned for the operator's house style. Lower for faster cuts, higher to
+  // dwell on each image. The chunk-clips-then-images chunker keeps the
+  // legacy MAIN_TARGET_SECONDS=30 in chunk-utils.ts because its image
+  // segments are paired with hook clips and don't drive visual pacing alone.
+  image_chunk_target_seconds: "6",
   // Hard floor + soft ceiling for chunk_images_only durations. The chunker
   // forward-merges short chunks until min is satisfied; oversized single
   // sentences exceed max with a logged warning (can't subdivide a single
@@ -78,7 +78,7 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   // target, max] envelope the per-video `videos.image_chunk_*_seconds`
   // override columns can shadow on a per-field basis.
   image_chunk_min_seconds: "4",
-  image_chunk_max_seconds: "12",
+  image_chunk_max_seconds: "8",
   // Few-shot example block for step 09's prompt template. JSON-encoded
   // array of exemplar scene objects; empty = no block. Operators paste
   // 2-3 hand-picked entries from their best video to lock house style.
