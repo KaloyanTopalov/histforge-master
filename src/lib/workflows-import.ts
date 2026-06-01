@@ -105,6 +105,13 @@ export function importWorkflowJson(
         created_at: now,
         updated_at: now,
         chunker_step: data.chunker_step,
+        // Phase 5 added `image_style` to `WorkflowRow`. Narrative imports
+        // may carry one; music_video imports have no `image_style` field on
+        // the discriminated union at all. The narrative-branch fallback to
+        // null preserves the legacy cinematic behavior for pre-image_style
+        // payloads (step 09's lookup resolves null → "cinematic").
+        image_style:
+          data.kind === "narrative" ? (data.image_style ?? null) : null,
       };
       workflowsRepo.insert(db, newRow);
       workflowsRepo.replaceSteps(db, data.id, data.steps);
@@ -136,7 +143,12 @@ export function importWorkflowJson(
     music_provider: data.music_provider ?? null,
     upscaler_provider: data.upscaler_provider ?? null,
     chunker_step: data.chunker_step,
-    image_style: data.image_style ?? null,
+    // Same discriminated-union narrowing as the row construction above —
+    // image_style is narrative-branch-only on `data`. Music-video
+    // snapshots carry null here per ADR-0011 §Decision 2 (no narrative
+    // image style on music_video pipelines).
+    image_style:
+      data.kind === "narrative" ? (data.image_style ?? null) : null,
     steps: data.steps,
   };
   const inputs = validateInputAvailability(snapshot);
