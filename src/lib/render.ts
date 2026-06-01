@@ -229,7 +229,15 @@ export function buildSegmentArgs(opts: SegmentArgsOpts): string[] {
       "-t",
       String(chunkDuration),
       "-vf",
-      `scale=${width}:${height},format=yuv420p`,
+      // flags=lanczos — Magnific Nano Banana 2 Flash emits 800×447 PNGs,
+      // and the draw-on stage renders the clip at source dims, so this
+      // scale is a ~2.4× linear / ~5.8× area upscale of high-contrast
+      // doodle linework. Default ffmpeg scaling (bilinear/bicubic) softens
+      // edges; lanczos preserves them visibly. The cinematic branch (line
+      // 257 below) already uses lanczos per ADR-0005; this aligns the
+      // draw-on branch with the same quality contract. Helps every existing
+      // 800×447 source video that's re-rendered (no Magnific re-gen needed).
+      `scale=${width}:${height}:flags=lanczos,format=yuv420p`,
       "-c:v",
       "libx264",
       "-preset",

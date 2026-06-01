@@ -392,7 +392,10 @@ describe("buildSegmentArgs", () => {
       });
       const vfIdx = args.indexOf("-vf");
       const vfValue = args[vfIdx + 1];
-      expect(vfValue).toBe("scale=1920:1080,format=yuv420p");
+      // Task #28: draw-on branch upgraded to lanczos scaling so the
+      // ~2.4× linear upscale of 800×447 Magnific source preserves doodle
+      // line edges. Matches the cinematic branch's lanczos contract.
+      expect(vfValue).toBe("scale=1920:1080:flags=lanczos,format=yuv420p");
     });
 
     it("isLast segment: -vf is scale+format (UNCHANGED from Phase 6 — was always tpad-free)", () => {
@@ -410,7 +413,8 @@ describe("buildSegmentArgs", () => {
       });
       const vfIdx = args.indexOf("-vf");
       const vfValue = args[vfIdx + 1];
-      expect(vfValue).toBe("scale=1920:1080,format=yuv420p");
+      // Task #28: lanczos applied symmetrically to last and non-last.
+      expect(vfValue).toBe("scale=1920:1080:flags=lanczos,format=yuv420p");
     });
 
     it("input shape: no `-loop`, -i is the drawOnClipPath (not the still PNG)", () => {
