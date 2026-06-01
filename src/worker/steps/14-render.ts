@@ -5,6 +5,15 @@ import { getDb } from "@/lib/db";
 import { getSetting } from "@/lib/settings";
 import { appendLog } from "@/lib/logger";
 import { render } from "@/lib/render";
+import {
+  IMAGE_STYLE_DEFINITIONS,
+  type ImageStyleDefinition,
+} from "@/lib/image/styles";
+import {
+  resolveDrawOnPythonPath,
+  verifyDrawOnPython,
+} from "@/lib/draw-on-python";
+import type { WorkflowSnapshot } from "@/types";
 
 /**
  * Deliberate exception to the {@link makeStepContext} convention used by
@@ -36,6 +45,37 @@ export interface RenderStepDeps {
    * (Windows) via Node's built-in signal-aware spawn.
    */
   signal?: AbortSignal;
+  /**
+   * Snapshot override for tests that need to drive a specific
+   * `image_style` without seeding a workflow row. Production loads it
+   * from `ctx.snapshot` via the orchestrator. When omitted (no snapshot
+   * available at all), revealEffect defaults to "none" — preserving the
+   * pre-Phase-7 cinematic-only behavior.
+   */
+  snapshot?: WorkflowSnapshot;
+  /**
+   * Optional health-check override for tests. Production builds a
+   * `verifyDrawOnPython(...)` closure over the resolved python path.
+   * Tests can pass `vi.fn().mockResolvedValue(undefined)` to skip the
+   * real spawn.
+   */
+  drawOnHealthCheck?: () => Promise<void>;
+}
+
+/**
+ * Resolve the reveal-effect carried by the snapshot's image_style. Forgiving
+ * — null / undefined / unknown / cinematic all collapse to "none" so a
+ * pinned snapshot with a removed style name doesn't crash render. Mirrors
+ * the materializer's lookup in `lib/workflows.ts`.
+ */
+function resolveRevealEffect(
+  imageStyle: string | null | undefined
+): "none" | "draw_on" {
+  if (imageStyle == null) return "none";
+  const def = (
+    IMAGE_STYLE_DEFINITIONS as Record<string, ImageStyleDefinition | undefined>
+  )[imageStyle];
+  return def?.reveal_effect === "draw_on" ? "draw_on" : "none";
 }
 
 /**
@@ -163,6 +203,23 @@ export async function runRender(
   const exec = deps.exec ?? buildFfmpegExec(deps.signal);
   const probe = deps.probe ?? buildFfprobeExec(deps.signal);
 
+  // Reveal-effect resolution: snapshot.image_style → styles registry →
+  // reveal_effect. Defaults to "none" when the snapshot is absent (tests
+  // that don't pass one) or carries an unknown / null style name — same
+  // forgiving spirit as the materializer's lookup.
+  const revealEffect = resolveRevealEffect(deps.snapshot?.image_style);
+  let drawOnHealthCheck: (() => Promise<void>) | undefined;
+  if (revealEffect === "draw_on") {
+    drawOnHealthCheck =
+      deps.drawOnHealthCheck ??
+      (() => {
+        const pythonPath = resolveDrawOnPythonPath({
+          setting: getSetting("draw_on_python_path", db),
+        });
+        return verifyDrawOnPython({ pythonPath });
+      });
+  }
+
   await render(videoId, {
     projectsDir,
     aspectRatio,
@@ -170,6 +227,8 @@ export async function runRender(
     framerate,
     videoEncoder,
     motion,
+    revealEffect,
+    drawOnHealthCheck,
     exec,
     probe,
     log: (message) => appendLog(videoId, "render", message, projectsDir),
@@ -196,6 +255,7 @@ export const step: Step = {
       db: ctx.db,
       projectsDir: ctx.projectsDir,
       signal: ctx.signal,
+      snapshot: ctx.snapshot,
     });
   },
 };

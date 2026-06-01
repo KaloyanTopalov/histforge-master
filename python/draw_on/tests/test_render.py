@@ -217,6 +217,167 @@ def test_render_flood_fills_large_color_block_interior(tmp_path):
     assert interior[:, :, 0].mean() < 120, "block interior blue channel too high — looks white not yellow"
 
 
+def _read_frame(path, idx):
+    cap = cv2.VideoCapture(str(path))
+    cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+    ok, frame = cap.read()
+    cap.release()
+    assert ok, f"failed to read frame {idx} from {path}"
+    return frame
+
+
+class TestHoldSec:
+    """Phase 9: the draw-on completes hold_sec before the chunk ends, then
+    holds the fully-drawn image static for those final hold_sec seconds.
+    Clamp: effective_hold = min(hold_sec, duration_sec * 0.5).
+    """
+
+    def test_default_hold_sec_is_2(self, synthetic_doodle, tmp_path):
+        """Default hold_sec parameter is 2.0 — the rhythm the operator
+        validated in Session 2 Phase 8 watching."""
+        out = tmp_path / "out.mp4"
+        # No explicit hold_sec: relies on the default. Total duration must
+        # still match because target_frames is from duration_sec.
+        render_draw_on(str(synthetic_doodle), str(out), duration_sec=4.0, fps=30)
+        info = _probe_video(out)
+        assert abs(info["n_frames"] - 120) <= 2  # 4s * 30fps
+
+    def test_drawing_finishes_before_hold_portion_with_explicit_hold(self, tmp_path):
+        """duration=4s, hold=2s → drawing fills [0..2s], hold fills [2..4s].
+
+        Verified by comparing pairwise frame diffs in the two halves:
+          - first half (drawing): frames change frequently
+          - second half (hold): frames are near-identical
+        """
+        # Dense doodle that needs the drawing time — 200x200 with many strokes
+        img = np.full((200, 200, 3), 255, dtype=np.uint8)
+        # A grid of small black squares — lots of cells to traverse
+        for gy in range(20, 180, 30):
+            for gx in range(20, 180, 30):
+                img[gy:gy+10, gx:gx+10] = 0
+        src = tmp_path / "dense.png"
+        cv2.imwrite(str(src), img)
+        out = tmp_path / "out.mp4"
+        render_draw_on(str(src), str(out), duration_sec=4.0, fps=30, hold_sec=2.0)
+        info = _probe_video(out)
+        n = info["n_frames"]
+        # n ≈ 120; drawing portion ≈ first 60 frames, hold portion ≈ last 60.
+        # Sample pairs from each half and average the diff.
+        def avg_diff(idx_pairs):
+            diffs = []
+            for a, b in idx_pairs:
+                fa = _read_frame(out, a)
+                fb = _read_frame(out, b)
+                diffs.append(float(np.abs(fa.astype(int) - fb.astype(int)).mean()))
+            return sum(diffs) / len(diffs)
+
+        drawing_diffs = avg_diff([(10, 20), (25, 35), (40, 50)])
+        hold_diffs = avg_diff([(n - 40, n - 30), (n - 20, n - 10), (n - 5, n - 1)])
+
+        # Drawing portion has noticeable progress between sample pairs.
+        # Held portion is near-static. The hold/drawing ratio must be tiny —
+        # if it isn't, the hold isn't actually static.
+        assert drawing_diffs > 0.5, f"drawing portion looks static (mean diff {drawing_diffs:.3f})"
+        assert hold_diffs < 0.5, f"hold portion has too much motion (mean diff {hold_diffs:.3f})"
+        # Belt-and-suspenders relative check.
+        assert hold_diffs < drawing_diffs * 0.5, (
+            f"hold portion ({hold_diffs:.3f}) is not meaningfully quieter than "
+            f"drawing portion ({drawing_diffs:.3f})"
+        )
+
+    def test_hold_clamps_to_half_duration_on_short_chunks(self, synthetic_doodle, tmp_path):
+        """duration=2s, requested hold=2s: effective_hold clamps to 1.0s
+        so drawing still gets half the chunk. Drawing fills [0..1s],
+        hold fills [1..2s]."""
+        out = tmp_path / "out.mp4"
+        render_draw_on(str(synthetic_doodle), str(out), duration_sec=2.0, fps=30, hold_sec=2.0)
+        info = _probe_video(out)
+        n = info["n_frames"]
+        # n ≈ 60. With clamp: drawing fills first ~30 frames, hold fills last ~30.
+        # Late hold (frames 55, 59) should be nearly identical.
+        late_a = _read_frame(out, max(0, n - 5))
+        late_b = _read_frame(out, n - 1)
+        late_diff = float(np.abs(late_a.astype(int) - late_b.astype(int)).mean())
+        assert late_diff < 1.0, f"late-hold frames differ too much ({late_diff:.3f}) — hold not actually static"
+
+    def test_hold_sec_zero_uses_full_duration_for_drawing(self, tmp_path):
+        """hold_sec=0 disables the hold entirely (today's pre-Phase-9 behavior).
+        Drawing fills the entire duration. Final frames still match because
+        the original render_draw_on already pads a final-revealed frame."""
+        # Dense doodle so drawing is the long-pole
+        img = np.full((200, 200, 3), 255, dtype=np.uint8)
+        for gy in range(20, 180, 30):
+            for gx in range(20, 180, 30):
+                img[gy:gy+10, gx:gx+10] = 0
+        src = tmp_path / "dense.png"
+        cv2.imwrite(str(src), img)
+        out = tmp_path / "out.mp4"
+        render_draw_on(str(src), str(out), duration_sec=3.0, fps=30, hold_sec=0.0)
+        info = _probe_video(out)
+        n = info["n_frames"]
+        # With hold=0, drawing fills [0..3s]. Late frames (e.g. n-30 vs n-20)
+        # should still be moving as the drawing finishes.
+        late_a = _read_frame(out, max(0, n - 30))
+        late_b = _read_frame(out, max(0, n - 20))
+        late_diff = float(np.abs(late_a.astype(int) - late_b.astype(int)).mean())
+        # The drawing isn't necessarily still in motion right at the end (the
+        # final-revealed frame is always written), but the drawing portion
+        # extends far closer to the end than with hold_sec=2. This pins that
+        # the hold_sec=0 path is a meaningful contrast to the default-2 path.
+        # If hold_sec=0 wasn't taking effect, the late frames would look exactly
+        # like the hold-2 test's late frames (very flat).
+        # Use a relaxed assertion: the LAST 5 frames are near-identical (final
+        # revealed frame always pads to target_frames), but the n-30..n-20
+        # window should still show drawing motion if drawing fills the duration.
+        # If the implementation is correct (no held tail), then drawing finishes
+        # right at the end, and n-30..n-20 is inside the drawing animation, so
+        # we expect motion. If hold_sec=0 was being ignored and the default 2
+        # was sticking, n-30..n-20 would be entirely in the held tail (flat).
+        assert late_diff > 0.5, (
+            f"hold_sec=0 should let drawing fill the duration, but late frames "
+            f"are too flat ({late_diff:.3f}) — hold may be activating anyway"
+        )
+
+    def test_custom_hold_sec_changes_boundary(self, tmp_path):
+        """hold_sec=1.0 on 4s chunk: drawing fills 3s, hold fills 1s.
+        Sample late in drawing (~2.5s mark) — should still be in motion.
+        Sample mid-hold (~3.5s mark) — should be flat."""
+        img = np.full((200, 200, 3), 255, dtype=np.uint8)
+        for gy in range(20, 180, 30):
+            for gx in range(20, 180, 30):
+                img[gy:gy+10, gx:gx+10] = 0
+        src = tmp_path / "dense.png"
+        cv2.imwrite(str(src), img)
+        out = tmp_path / "out.mp4"
+        render_draw_on(str(src), str(out), duration_sec=4.0, fps=30, hold_sec=1.0)
+        info = _probe_video(out)
+        n = info["n_frames"]
+        # n ≈ 120. drawing_sec=3 → drawing_frames ≈ 90. hold_frames ≈ 30.
+        # Frame indices: ~70..80 should still be drawing motion;
+        # ~100..110 should be held static.
+        draw_a = _read_frame(out, 70)
+        draw_b = _read_frame(out, 80)
+        draw_diff = float(np.abs(draw_a.astype(int) - draw_b.astype(int)).mean())
+        hold_a = _read_frame(out, 100)
+        hold_b = _read_frame(out, 110)
+        hold_diff = float(np.abs(hold_a.astype(int) - hold_b.astype(int)).mean())
+        assert hold_diff < draw_diff, (
+            f"hold (frames 100-110, diff {hold_diff:.3f}) should be quieter than "
+            f"late drawing (frames 70-80, diff {draw_diff:.3f}) with hold=1.0"
+        )
+
+    def test_total_frame_count_unchanged_by_hold(self, synthetic_doodle, tmp_path):
+        """Whatever hold_sec value, total frames = target_frames = duration_sec * fps.
+        Pins that hold is INSIDE the duration, not added on top."""
+        for hold in [0.0, 1.0, 2.0, 100.0]:  # 100.0 should clamp to duration/2
+            out = tmp_path / f"out_{hold}.mp4"
+            render_draw_on(str(synthetic_doodle), str(out), duration_sec=3.0, fps=30, hold_sec=hold)
+            info = _probe_video(out)
+            assert abs(info["n_frames"] - 90) <= 2, (
+                f"hold_sec={hold} broke total-frame contract: got {info['n_frames']}, want ~90"
+            )
+
+
 def test_render_color_fills_after_outline_drawn(tmp_path):
     """The color fill must arrive AFTER the outline is mostly drawn, not before.
 

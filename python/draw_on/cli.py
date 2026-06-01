@@ -16,6 +16,16 @@ def main(argv=None) -> int:
     parser.add_argument("--fps", type=int, default=60)
     parser.add_argument("--split-len", type=int, default=4)
     parser.add_argument("--dilation-px", type=int, default=12)
+    parser.add_argument(
+        "--hold-sec",
+        type=float,
+        default=2.0,
+        help=(
+            "Seconds to hold the fully-drawn image at the end of the clip "
+            "before the next chunk takes over. Default 2.0; clamps to "
+            "duration_sec * 0.5 so drawing gets >=half the chunk."
+        ),
+    )
     args = parser.parse_args(argv)
 
     # Early-fail import check — give a clear message if the env isn't set up
@@ -46,6 +56,7 @@ def main(argv=None) -> int:
             fps=args.fps,
             split_len=args.split_len,
             dilation_px=args.dilation_px,
+            hold_sec=args.hold_sec,
         )
     except Exception as e:
         print(f"ERROR: render failed: {e}", file=sys.stderr)

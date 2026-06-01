@@ -358,6 +358,141 @@ describe("buildSegmentArgs", () => {
       expect(args[tIdx + 1]).toBe("31");
     });
   });
+
+  describe("drawOnClipPath branch (doodle pre-render)", () => {
+    // When drawOnClipPath is set, the cinematic motion branches below MUST
+    // NOT be reached — Phase 6's gate is the literal absence of this field,
+    // and the ken_burns + static `-vf` regression pins above (:160-179,
+    // :280-294) must stay byte-identical. These tests pin the new branch
+    // and the omission complementarily.
+    const drawOpts = {
+      ...baseOpts,
+      // motion is required on the type but ignored when drawOnClipPath is
+      // set — left at the ken_burns default so a regression where the
+      // draw-on branch accidentally falls through to motion shows up as a
+      // zoompan substring in -vf (it would never be `tpad=...,scale=...`).
+      drawOnClipPath: "C:/tmp/clips_drawn/image_007.mp4",
+    };
+
+    it("non-last segment: -vf EXACTLY pins scale+format (NO tpad — Phase 10 removed the crossfade)", () => {
+      // REQUIREMENT-CHANGE update (Phase 11): pre-Phase-10, Stage CD
+      // crossfaded consecutive doodle segments, so this branch added a
+      // tpad to clone the last frame across the overlap. Phase 10
+      // switched Stage CD to a hard-cut concat for draw_on — there is
+      // no overlap to pad, so the tpad is gone and the -vf collapses
+      // to the same scale+format chain as isLast (and the static
+      // cinematic path, byte-identically). NOT a regression: the design
+      // changed because the operator validated hard cuts in Phase 8.
+      const args = buildSegmentArgs({
+        ...drawOpts,
+        imagePath: "C:/tmp/images/image_007.png",
+        chunkDuration: 5,
+        isLast: false,
+        outPath: "C:/tmp/render/segment_007.mp4",
+      });
+      const vfIdx = args.indexOf("-vf");
+      const vfValue = args[vfIdx + 1];
+      expect(vfValue).toBe("scale=1920:1080,format=yuv420p");
+    });
+
+    it("isLast segment: -vf is scale+format (UNCHANGED from Phase 6 — was always tpad-free)", () => {
+      // Phase 6 had isLast omit tpad because padDuration was 0; Phase 11
+      // makes non-last identical. The byte-equality between draw-on and
+      // static cinematic -vf doesn't mean the branches merged — the
+      // input-shape / -t / encoder pins below witness that the draw-on
+      // path is reached, not the cinematic one.
+      const args = buildSegmentArgs({
+        ...drawOpts,
+        imagePath: "C:/tmp/images/image_last.png",
+        chunkDuration: 5,
+        isLast: true,
+        outPath: "C:/tmp/render/segment_last.mp4",
+      });
+      const vfIdx = args.indexOf("-vf");
+      const vfValue = args[vfIdx + 1];
+      expect(vfValue).toBe("scale=1920:1080,format=yuv420p");
+    });
+
+    it("input shape: no `-loop`, -i is the drawOnClipPath (not the still PNG)", () => {
+      const args = buildSegmentArgs({
+        ...drawOpts,
+        imagePath: "C:/tmp/images/image_007.png",
+        chunkDuration: 5,
+        isLast: false,
+        outPath: "C:/tmp/render/segment_007.mp4",
+      });
+      expect(args).not.toContain("-loop");
+      const iIdx = args.indexOf("-i");
+      expect(args[iIdx + 1]).toBe(drawOpts.drawOnClipPath);
+      expect(args[iIdx + 1]).not.toBe("C:/tmp/images/image_007.png");
+    });
+
+    it("-t is chunkDuration on non-last (REQUIREMENT CHANGE: no CROSSFADE extension — hard cut concat)", () => {
+      // REQUIREMENT-CHANGE update (Phase 11): pre-Phase-10, non-last
+      // doodle segments were extended by CROSSFADE_SECONDS to feed
+      // Stage CD's xfade overlap; Phase 10 replaced that with a hard-cut
+      // concat, so -t collapses to plain chunkDuration. The hard-cut
+      // boundary lines up exactly with the next chunk's audio start
+      // (chunks come from the chunker's alignment-based boundaries).
+      // NOT a regression: the design changed.
+      const args = buildSegmentArgs({
+        ...drawOpts,
+        imagePath: "C:/tmp/images/image_007.png",
+        chunkDuration: 5,
+        isLast: false,
+        outPath: "C:/tmp/render/segment_007.mp4",
+      });
+      const tIdx = args.indexOf("-t");
+      expect(args[tIdx + 1]).toBe("5");
+    });
+
+    it("-t is chunkDuration on isLast (UNCHANGED — was always chunkDuration)", () => {
+      const args = buildSegmentArgs({
+        ...drawOpts,
+        imagePath: "C:/tmp/images/image_last.png",
+        chunkDuration: 5,
+        isLast: true,
+        outPath: "C:/tmp/render/segment_last.mp4",
+      });
+      const tIdx = args.indexOf("-t");
+      expect(args[tIdx + 1]).toBe("5");
+    });
+
+    it("encoder settings stay byte-identical to cinematic: -c:v libx264 -preset ultrafast -crf 18", () => {
+      // Stage CD re-encodes; this segment is a throwaway intermediate
+      // (ADR-0002). Keeping the same preset/crf as cinematic so visual
+      // banding / x264 trade-offs are identical regardless of style.
+      const args = buildSegmentArgs({
+        ...drawOpts,
+        imagePath: "C:/tmp/images/image_007.png",
+        chunkDuration: 5,
+        isLast: false,
+        outPath: "C:/tmp/render/segment_007.mp4",
+      });
+      const cvIdx = args.indexOf("-c:v");
+      expect(args[cvIdx + 1]).toBe("libx264");
+      const presetIdx = args.indexOf("-preset");
+      expect(args[presetIdx + 1]).toBe("ultrafast");
+      const crfIdx = args.indexOf("-crf");
+      expect(args[crfIdx + 1]).toBe("18");
+      expect(args[args.length - 1]).toBe("C:/tmp/render/segment_007.mp4");
+    });
+
+    it("outputs zero zoompan and zero deriveZoomBuffer artifacts (the cinematic motion code is unreachable on this branch)", () => {
+      // Negative-form pin: if a future edit accidentally falls through
+      // to the motion branches, zoompan or scale=N:-1 would leak in.
+      const args = buildSegmentArgs({
+        ...drawOpts,
+        imagePath: "C:/tmp/images/image_007.png",
+        chunkDuration: 5,
+        isLast: false,
+        outPath: "C:/tmp/render/segment_007.mp4",
+      });
+      const vfValue = args[args.indexOf("-vf") + 1];
+      expect(vfValue).not.toContain("zoompan");
+      expect(vfValue).not.toMatch(/scale=\d+:-1/);
+    });
+  });
 });
 
 describe("buildXfadeFilterGraph", () => {
@@ -641,6 +776,11 @@ describe("render() precheck", () => {
     // exists at the unit-level on buildSegmentArgs (see "motion: static"
     // describe block above).
     motion: "ken_burns" as const,
+    // Phase 7 added revealEffect. Default cinematic so every legacy test
+    // here keeps its prior shape — clips_drawn/ is never consulted and
+    // the python health check is never called. The draw-on cases live
+    // in their own describe block below.
+    revealEffect: "none" as const,
   };
 
   it("throws RenderPrecheckError when a single image file is missing", async () => {
@@ -737,6 +877,325 @@ describe("render() precheck", () => {
     }
     expect(err).toBeInstanceOf(RenderPrecheckError);
     expect(exec).not.toHaveBeenCalled();
+  });
+
+  describe("draw-on precheck (revealEffect: 'draw_on')", () => {
+    // Project layout helper for the doodle path: chunks.json + clips_drawn/
+    // entries instead of images/. The audio stub is still required (Stage E
+    // never reaches it but the render orchestrator reads chunks before any
+    // gating; the audio dir keeps fs operations consistent with the cinematic
+    // setup helper above).
+    function setupDoodleProject(
+      projectsDir: string,
+      videoId: string,
+      chunks: Chunk[],
+      presentClipIds: string[]
+    ): string {
+      const projDir = join(projectsDir, videoId);
+      mkdirSync(join(projDir, "chunks"), { recursive: true });
+      mkdirSync(join(projDir, "clips_drawn"), { recursive: true });
+      mkdirSync(join(projDir, "audio"), { recursive: true });
+      writeFileSync(
+        join(projDir, "chunks", "chunks.json"),
+        JSON.stringify(chunks)
+      );
+      for (const id of presentClipIds) {
+        writeFileSync(join(projDir, "clips_drawn", `${id}.mp4`), "");
+      }
+      writeFileSync(join(projDir, "audio", "narration.mp3"), "");
+      return projDir;
+    }
+
+    it("throws RenderPrecheckError when a single clips_drawn/<id>.mp4 is missing", async () => {
+      const projectsDir = tempDir("projects");
+      const videoId = "v_drawon_one_missing";
+      const chunks = makeImageChunks(["image_001", "image_002", "image_003"]);
+      setupDoodleProject(projectsDir, videoId, chunks, [
+        "image_001",
+        "image_003",
+      ]); // image_002 missing
+
+      const exec = vi.fn();
+      const probe = vi.fn();
+      let err: unknown;
+      try {
+        await render(videoId, {
+          projectsDir,
+          ...baseRenderOpts,
+          revealEffect: "draw_on",
+          drawOnHealthCheck: vi.fn().mockResolvedValue(undefined),
+          exec,
+          probe,
+          log: () => {},
+        });
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(RenderPrecheckError);
+      expect((err as RenderPrecheckError).missingChunkIds).toEqual([
+        "image_002",
+      ]);
+      expect((err as Error).message).toMatch(/draw-on/i);
+    });
+
+    it("RenderPrecheckError lists every missing clips_drawn entry (multiple missing)", async () => {
+      const projectsDir = tempDir("projects");
+      const videoId = "v_drawon_multi_missing";
+      const chunks = makeImageChunks([
+        "image_001",
+        "image_002",
+        "image_003",
+        "image_004",
+      ]);
+      setupDoodleProject(projectsDir, videoId, chunks, [
+        "image_002",
+        "image_004",
+      ]); // 001 + 003 missing
+
+      const exec = vi.fn();
+      const probe = vi.fn();
+      let err: unknown;
+      try {
+        await render(videoId, {
+          projectsDir,
+          ...baseRenderOpts,
+          revealEffect: "draw_on",
+          drawOnHealthCheck: vi.fn().mockResolvedValue(undefined),
+          exec,
+          probe,
+          log: () => {},
+        });
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(RenderPrecheckError);
+      expect((err as RenderPrecheckError).missingChunkIds).toEqual([
+        "image_001",
+        "image_003",
+      ]);
+    });
+
+    it("calls drawOnHealthCheck once when revealEffect='draw_on' and clips are present", async () => {
+      const projectsDir = tempDir("projects");
+      const videoId = "v_drawon_health";
+      const chunks = makeImageChunks(["image_001", "image_002"]);
+      setupDoodleProject(projectsDir, videoId, chunks, [
+        "image_001",
+        "image_002",
+      ]);
+
+      const exec = vi.fn().mockResolvedValue(undefined);
+      const probe = vi.fn().mockResolvedValue(10);
+      const drawOnHealthCheck = vi.fn().mockResolvedValue(undefined);
+
+      await render(videoId, {
+        projectsDir,
+        ...baseRenderOpts,
+        revealEffect: "draw_on",
+        drawOnHealthCheck,
+        exec,
+        probe,
+        log: () => {},
+      });
+
+      expect(drawOnHealthCheck).toHaveBeenCalledTimes(1);
+    });
+
+    it("propagates drawOnHealthCheck failure as the precheck error (no ffmpeg work runs)", async () => {
+      const projectsDir = tempDir("projects");
+      const videoId = "v_drawon_health_fail";
+      const chunks = makeImageChunks(["image_001"]);
+      setupDoodleProject(projectsDir, videoId, chunks, ["image_001"]);
+
+      const exec = vi.fn();
+      const probe = vi.fn();
+      const drawOnHealthCheck = vi
+        .fn()
+        .mockRejectedValue(new Error("python -m draw_on --help exited with code 1"));
+
+      let err: unknown;
+      try {
+        await render(videoId, {
+          projectsDir,
+          ...baseRenderOpts,
+          revealEffect: "draw_on",
+          drawOnHealthCheck,
+          exec,
+          probe,
+          log: () => {},
+        });
+      } catch (e) {
+        err = e;
+      }
+      expect((err as Error).message).toMatch(/exited with code 1/);
+      expect(exec).not.toHaveBeenCalled();
+    });
+
+    it("Stage B passes drawOnClipPath = clips_drawn/<id>.mp4 into buildSegmentArgs for every image chunk", async () => {
+      const projectsDir = tempDir("projects");
+      const videoId = "v_drawon_stageB";
+      const chunks = makeImageChunks(["image_001", "image_002"]);
+      setupDoodleProject(projectsDir, videoId, chunks, [
+        "image_001",
+        "image_002",
+      ]);
+
+      const execCalls: string[][] = [];
+      const exec = vi.fn().mockImplementation((args: string[]) => {
+        execCalls.push(args);
+      });
+      const probe = vi.fn().mockResolvedValue(10);
+
+      await render(videoId, {
+        projectsDir,
+        ...baseRenderOpts,
+        revealEffect: "draw_on",
+        drawOnHealthCheck: vi.fn().mockResolvedValue(undefined),
+        exec,
+        probe,
+        log: () => {},
+      });
+
+      // Every segment_NNN.mp4 call must -i the matching clips_drawn entry
+      // (NOT a still PNG). Two image chunks → two segment calls.
+      const segCalls = execCalls.filter((c) => {
+        const last = c[c.length - 1];
+        return typeof last === "string" && /segment_\d+\.mp4$/.test(last);
+      });
+      expect(segCalls).toHaveLength(2);
+      for (const call of segCalls) {
+        const iIdx = call.indexOf("-i");
+        const inputPath = call[iIdx + 1];
+        expect(inputPath).toMatch(/clips_drawn[\\/]image_\d+\.mp4$/);
+        expect(inputPath).not.toMatch(/\.png$/);
+        expect(call).not.toContain("-loop"); // draw-on shape, not -loop 1
+      }
+    });
+
+    it("Stage CD ≥2-image doodle path: concat-demuxer stream copy, NO xfade, NO -filter_complex", async () => {
+      const projectsDir = tempDir("projects");
+      const videoId = "v_drawon_concat";
+      const chunks = makeImageChunks(["image_001", "image_002", "image_003"]);
+      setupDoodleProject(projectsDir, videoId, chunks, [
+        "image_001",
+        "image_002",
+        "image_003",
+      ]);
+
+      const execCalls: string[][] = [];
+      const exec = vi.fn().mockImplementation((args: string[]) => {
+        execCalls.push(args);
+      });
+      const probe = vi.fn().mockResolvedValue(10);
+
+      await render(videoId, {
+        projectsDir,
+        ...baseRenderOpts,
+        revealEffect: "draw_on",
+        drawOnHealthCheck: vi.fn().mockResolvedValue(undefined),
+        exec,
+        probe,
+        log: () => {},
+      });
+
+      // The Stage CD call writes video_only.mp4. Identify it.
+      const stageCD = execCalls.find((c) => {
+        const last = c[c.length - 1];
+        return typeof last === "string" && last.endsWith("video_only.mp4");
+      });
+      expect(stageCD).toBeDefined();
+
+      // Doodle concat shape: -f concat -safe 0 -i <list> -an -c:v copy <out>
+      expect(stageCD!).toContain("-f");
+      const fIdx = stageCD!.indexOf("-f");
+      expect(stageCD![fIdx + 1]).toBe("concat");
+      const cvIdx = stageCD!.indexOf("-c:v");
+      expect(stageCD![cvIdx + 1]).toBe("copy");
+      // Negative pin: no xfade filter graph.
+      expect(stageCD!).not.toContain("-filter_complex");
+
+      // The concat-list file was written to render/.
+      const renderDir = join(projectsDir, videoId, "render");
+      const listPath = join(renderDir, "draw_on_concat_list.txt");
+      expect(existsSync(listPath)).toBe(true);
+      const listContent = readFileSync(listPath, "utf-8");
+      // Each line points at a segment_NNN.mp4 in order.
+      expect(listContent).toMatch(/segment_001\.mp4/);
+      expect(listContent).toMatch(/segment_002\.mp4/);
+      expect(listContent).toMatch(/segment_003\.mp4/);
+    });
+
+    it("Stage CD ≥2-image cinematic path: -filter_complex xfade, NO concat demuxer (cinematic UNCHANGED)", async () => {
+      const projectsDir = tempDir("projects");
+      const videoId = "v_cinematic_xfade";
+      const chunks = makeImageChunks(["image_001", "image_002", "image_003"]);
+      // Cinematic project — images/ populated, clips_drawn/ deliberately absent.
+      setupImagesOnlyProject(projectsDir, videoId, chunks, [
+        "image_001",
+        "image_002",
+        "image_003",
+      ]);
+
+      const execCalls: string[][] = [];
+      const exec = vi.fn().mockImplementation((args: string[]) => {
+        execCalls.push(args);
+      });
+      const probe = vi.fn().mockResolvedValue(10);
+
+      await render(videoId, {
+        projectsDir,
+        ...baseRenderOpts,
+        revealEffect: "none",
+        exec,
+        probe,
+        log: () => {},
+      });
+
+      const stageCD = execCalls.find((c) => {
+        const last = c[c.length - 1];
+        return typeof last === "string" && last.endsWith("video_only.mp4");
+      });
+      expect(stageCD).toBeDefined();
+
+      // Cinematic shape: -i <seg1> -i <seg2> -i <seg3> -filter_complex "<graph>" -map [vout] <encoder> <out>
+      expect(stageCD!).toContain("-filter_complex");
+      const fcIdx = stageCD!.indexOf("-filter_complex");
+      const fcValue = stageCD![fcIdx + 1];
+      expect(fcValue).toContain("xfade");
+      expect(fcValue).toContain("[vout]");
+      // Negative pin: NOT the doodle concat path.
+      expect(stageCD!).not.toContain("concat");
+      // Negative pin: cinematic Stage CD does NOT write a draw-on concat list.
+      const listPath = join(projectsDir, videoId, "render", "draw_on_concat_list.txt");
+      expect(existsSync(listPath)).toBe(false);
+    });
+
+    it("revealEffect='none' (cinematic) does NOT consult clips_drawn or call drawOnHealthCheck", async () => {
+      const projectsDir = tempDir("projects");
+      const videoId = "v_cinema_skips_drawon";
+      const chunks = makeImageChunks(["image_001", "image_002"]);
+      // Cinematic project: images/ populated, clips_drawn/ deliberately absent.
+      setupImagesOnlyProject(projectsDir, videoId, chunks, [
+        "image_001",
+        "image_002",
+      ]);
+
+      const exec = vi.fn().mockResolvedValue(undefined);
+      const probe = vi.fn().mockResolvedValue(10);
+      const drawOnHealthCheck = vi.fn();
+
+      await render(videoId, {
+        projectsDir,
+        ...baseRenderOpts,
+        revealEffect: "none",
+        drawOnHealthCheck,
+        exec,
+        probe,
+        log: () => {},
+      });
+
+      expect(drawOnHealthCheck).not.toHaveBeenCalled();
+    });
   });
 
   it("precheck does NOT cover clip-missing — Stage A's existing throw still handles that (scope pin)", async () => {

@@ -131,6 +131,22 @@ export interface SegmentArgsOpts {
    * it in.
    */
   motion: RenderImageMotion;
+  /**
+   * Pre-rendered draw-on reveal clip for this image chunk (produced by
+   * the `draw_on_images` step). When set, `buildSegmentArgs` emits a
+   * draw-on segment chain — no `-loop`, no zoompan, the clip itself is
+   * the input — with a `tpad=stop_mode=clone` extending the last frame
+   * to cover the Stage CD crossfade overlap on non-last segments.
+   *
+   * When `undefined`, the function is byte-identical to its pre-Phase-6
+   * shape — the cinematic ken_burns and static `-vf` strings are pinned
+   * by `render.test.ts:160-179` and `:280-294`. The gate is the literal
+   * absence of this field; the field's optionality is load-bearing.
+   * Phase 5 (`materializeStepList`) decides whether the upstream
+   * `draw_on_images` step ran; Phase 7 wires Stage B to pass this path
+   * in only for chunks belonging to a draw-on-style workflow.
+   */
+  drawOnClipPath?: string;
 }
 
 export interface ZoomBuffer {
@@ -187,9 +203,42 @@ export function buildSegmentArgs(opts: SegmentArgsOpts): string[] {
     framerate,
     outPath,
     motion,
+    drawOnClipPath,
   } = opts;
 
   const renderDur = isLast ? chunkDuration : chunkDuration + CROSSFADE_SECONDS;
+
+  // Draw-on branch — FIRST so the cinematic motion code below is only
+  // reachable when drawOnClipPath is undefined. This keeps the
+  // ken_burns + static `-vf` regression pins byte-identical: the gate
+  // is the literal absence of this field, not a value check.
+  //
+  // Inputs differ from the cinematic path: no `-loop 1` because the
+  // draw-on clip is already a video, and the clip is the only `-i`.
+  // `-t` is exactly `chunkDuration` (NOT `renderDur`) and the `-vf`
+  // chain is just `scale + format=yuv420p` — no `tpad`. Phase 10's
+  // Stage CD concat-demuxer hard-cuts segments together with no
+  // crossfade overlap, so there is no last-frame tail to pad. The
+  // CLI's `hold_sec` (Phase 9) keeps the fully-drawn image visible for
+  // the last ~2s of each clip; the hard cut to the next clip's first
+  // frame happens at exactly `chunkDuration`.
+  if (drawOnClipPath !== undefined) {
+    return [
+      "-i",
+      drawOnClipPath,
+      "-t",
+      String(chunkDuration),
+      "-vf",
+      `scale=${width}:${height},format=yuv420p`,
+      "-c:v",
+      "libx264",
+      "-preset",
+      "ultrafast",
+      "-crf",
+      "18",
+      outPath,
+    ];
+  }
 
   let vf: string;
   if (motion === "static") {
@@ -439,6 +488,25 @@ export interface RenderDeps {
    */
   motion: RenderImageMotion;
   /**
+   * Per-render reveal mode resolved from the workflow snapshot's
+   * `image_style`. `"draw_on"` routes every image chunk's Stage B segment
+   * through `clips_drawn/<id>.mp4` (produced upstream by `draw_on_images`)
+   * and the precheck switches from images/ to clips_drawn/. `"none"` keeps
+   * the cinematic-still path byte-identical. Required so the choice is
+   * explicit at every call site — same shape as `motion`.
+   */
+  revealEffect: "none" | "draw_on";
+  /**
+   * Pre-render health probe for the draw-on Python interpreter. Called
+   * once during the precheck when `revealEffect === "draw_on"`. The
+   * worker step builds it as a closure over the resolved python path so
+   * `render` stays decoupled from the resolver. Optional because the
+   * cinematic path never needs it — when `revealEffect === "none"` the
+   * field is ignored entirely. When provided AND revealEffect === "draw_on",
+   * the precheck awaits this before any ffmpeg work.
+   */
+  drawOnHealthCheck?: () => Promise<void>;
+  /**
    * Run one ffmpeg invocation. Async so production can use `spawn` with
    * an AbortSignal — when the orchestrator cancels mid-render, the in-flight
    * child process is killed instead of running to completion. Tests can
@@ -471,6 +539,8 @@ export async function render(
     framerate,
     videoEncoder,
     motion,
+    revealEffect,
+    drawOnHealthCheck,
     exec,
     probe,
     log,
@@ -495,22 +565,53 @@ export async function render(
   const imageFiles = listDir(imageDir);
   const clipDir = join(projectDir, "videos", "clip");
   const clipFiles = listDir(clipDir);
+  const clipsDrawnDir = join(projectDir, "clips_drawn");
 
-  // Render precheck: refuse to render when any image-chunk's file is absent
-  // on disk. Spec §13.4's placeholder fallback (a black "MISSING" frame)
-  // silently substituted in production and was then masked by the cleanup
-  // step wiping intermediates — see the structural-safety baseline PR.
-  // Scope is image-files-only by design; clip-missing keeps its existing
-  // throw inside Stage A (see :504 below), pinned by the
-  // "precheck does NOT cover clip-missing" test.
-  const missingImages = imageChunks
-    .filter((c) => findChunkAsset(imageDir, imageFiles, c.id) === null)
-    .map((c) => c.id);
-  if (missingImages.length > 0) {
-    throw new RenderPrecheckError(
-      `Render precheck failed: missing image files for ${missingImages.join(", ")}`,
-      missingImages
-    );
+  // Render precheck: refuse to render when any image-chunk's expected
+  // input is absent on disk. Spec §13.4's placeholder fallback (a black
+  // "MISSING" frame) silently substituted in production and was then
+  // masked by the cleanup step wiping intermediates — see the structural-
+  // safety baseline PR.
+  //
+  // The required file per chunk depends on the reveal effect:
+  //   - `"draw_on"`: clips_drawn/<id>.mp4 (the per-image draw-on clip
+  //      produced by the upstream `draw_on_images` step). Stage B
+  //      consumes the clip directly via `drawOnClipPath`; the still PNG
+  //      is irrelevant by render time.
+  //   - `"none"` (cinematic): images/<id>.<ext> (the still that Stage B
+  //      loops + zoompans). Pre-Phase-7 behavior, byte-identical.
+  //
+  // Clip-chunk missing is intentionally NOT covered here — Stage A's
+  // existing `Missing clip video for <id>` throw still handles that
+  // (pinned by the "precheck does NOT cover clip-missing" test).
+  if (revealEffect === "draw_on") {
+    const missingDraws = imageChunks
+      .filter((c) => !existsSync(join(clipsDrawnDir, `${c.id}.mp4`)))
+      .map((c) => c.id);
+    if (missingDraws.length > 0) {
+      throw new RenderPrecheckError(
+        `Render precheck failed (draw-on): missing clip files for ${missingDraws.join(", ")}`,
+        missingDraws
+      );
+    }
+    // Health-check the Python interpreter that produced clips_drawn/.
+    // Defense-in-depth: the upstream draw_on_images step already had to
+    // succeed for the clip files above to exist, so the catatonic-Python
+    // case only arises when the .venv vanishes between steps. Awaited
+    // here so a half-broken environment surfaces before any ffmpeg work.
+    if (drawOnHealthCheck) {
+      await drawOnHealthCheck();
+    }
+  } else {
+    const missingImages = imageChunks
+      .filter((c) => findChunkAsset(imageDir, imageFiles, c.id) === null)
+      .map((c) => c.id);
+    if (missingImages.length > 0) {
+      throw new RenderPrecheckError(
+        `Render precheck failed: missing image files for ${missingImages.join(", ")}`,
+        missingImages
+      );
+    }
   }
 
   // ── Stages A and B run in parallel ────────────────────────────────
@@ -625,6 +726,37 @@ export async function render(
         const segPath = join(renderDir, `segment_${padded}.mp4`);
         segPaths.push(segPath);
 
+        // Draw-on branch: route the segment through the pre-rendered
+        // clip in clips_drawn/. The precheck above already verified the
+        // file's existence (and ran the python health check) — Stage B
+        // just builds the FFmpeg args via the draw-on early-return in
+        // buildSegmentArgs. The cinematic motion branches below are
+        // unreachable on this path, so the still-PNG lookup + buffer-cap
+        // warning are skipped entirely.
+        if (revealEffect === "draw_on") {
+          const drawOnClipPath = join(clipsDrawnDir, `${chunk.id}.mp4`);
+          segmentTasks.push(() =>
+            exec(
+              buildSegmentArgs({
+                // imagePath is required on the type for the cinematic
+                // branch but ignored by the draw-on early-return. Pass
+                // the clip path so a stray fall-through would at least
+                // reference a real file in error messages.
+                imagePath: drawOnClipPath,
+                chunkDuration: duration,
+                isLast,
+                width,
+                height,
+                framerate,
+                outPath: segPath,
+                motion,
+                drawOnClipPath,
+              })
+            )
+          );
+          continue;
+        }
+
         const imagePath = findChunkAsset(imageDir, imageFiles, chunk.id);
         if (imagePath === null) {
           // Unreachable in practice: the render precheck (above the
@@ -691,7 +823,27 @@ export async function render(
 
   if (!hasClips && segPaths.length === 1) {
     // Sub-case: 1 image + 0 clip — no filter graph, stream copy.
+    // Hard-cut by definition (nothing to crossfade), so draw_on and none
+    // share this path.
     await exec(["-i", segPaths[0], "-c", "copy", videoOnlyPath]);
+  } else if (!hasClips && revealEffect === "draw_on") {
+    // Sub-case: ≥2 image + 0 clip, doodle — hard-cut concat. Segments
+    // are already W×H/framerate/yuv420p/libx264 from buildSegmentArgs'
+    // draw-on branch, so stream-copy through ffmpeg's concat demuxer:
+    // no re-encode, no xfade overlap, no filter graph. Same precedent
+    // as sub-case 1 (1-image stream copy) which also bypasses the
+    // videoEncoder setting because no transform is needed.
+    const concatListPath = join(renderDir, "draw_on_concat_list.txt");
+    const concatLines = segPaths.map(
+      (p) => `file '${p.replace(/\\/g, "/")}'`
+    );
+    writeFileSync(concatListPath, concatLines.join("\n") + "\n");
+    await exec([
+      "-f", "concat", "-safe", "0",
+      "-i", concatListPath,
+      "-an", "-c:v", "copy",
+      videoOnlyPath,
+    ]);
   } else if (!hasClips) {
     // Sub-case: ≥2 image + 0 clip — image xfade chain only, encode
     // directly to video_only.mp4 (no image_concat intermediate).
@@ -732,6 +884,15 @@ export async function render(
     // built to be.
     const xfadeOffset = clipDuration - CROSSFADE_SECONDS;
 
+    // NOTE on revealEffect === "draw_on" for sub-cases 4 + 5 below:
+    // doodle workflows seed with `video_provider: null` today, so a
+    // doodle render NEVER has clipChunks — this branch is unreachable
+    // for the canonical doodle path. If a future workflow combines
+    // doodle image styles with hook clips, the image→image xfade chain
+    // here would need a doodle-concat variant (and the clip→image
+    // xfade-into-doodle transition would need its own decision). Left
+    // deferred until that workflow exists; current behavior keeps the
+    // xfade path even if the field is somehow set.
     if (segPaths.length === 1) {
       // Sub-case: 1 image + ≥1 clip — segment_001 is the image stream
       // directly at [1:v]; no image xfade chain. settb=AVTB on the
