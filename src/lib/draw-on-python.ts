@@ -144,12 +144,20 @@ export function runDrawOnCli(opts: RunDrawOnCliOpts): Promise<void> {
   }
 
   return new Promise<void>((resolveP, reject) => {
+    // Defensive normalize-to-absolute. The Python child runs with
+    // cwd=<repoRoot>/python (so it can find the draw_on package via
+    // implicit sys.path), so any relative path the caller supplies would
+    // resolve in Python against that cwd — typically one directory off
+    // from where the worker step thinks the file is. Callers (worker
+    // step, smoke harnesses, future consumers) should be passing
+    // absolute paths already; resolve() here is belt-and-suspenders so
+    // a regression in one caller can't silently re-introduce the bug.
     const args = [
       "-m",
       "draw_on",
-      opts.imagePath,
+      resolve(opts.imagePath),
       String(opts.durationSec),
-      opts.outputPath,
+      resolve(opts.outputPath),
     ];
 
     const child: ChildProcess = spawnFn(opts.pythonPath, args, {

@@ -1,7 +1,7 @@
 import { afterEach, describe, it, expect } from "vitest";
 import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { Readable } from "node:stream";
 import type { ChildProcess, spawn } from "node:child_process";
 import { spawn as realSpawn } from "node:child_process";
@@ -202,18 +202,66 @@ describe("runDrawOnCli", () => {
 
     expect(captured).not.toBeNull();
     expect(captured!.cmd).toBe("C:/python/python.exe");
+    // Args 2 and 4 (image, output) are run through resolve() defensively
+    // in the lib — see the relative→absolute test below for the why.
+    // Already-absolute inputs round-trip to themselves modulo separator
+    // normalisation on Windows; using resolve() on both sides keeps this
+    // pin platform-agnostic without weakening it.
     expect(captured!.args).toEqual([
       "-m",
       "draw_on",
-      "C:/img/001.png",
+      resolve("C:/img/001.png"),
       "4.25",
-      "C:/out/001.mp4",
+      resolve("C:/out/001.mp4"),
     ]);
     // cwd MUST be <repoRoot>/python so Python's implicit-CWD module
     // resolution finds the package. Pinned because Session 1 left this
     // off and `python -m draw_on` from any other CWD fails with
     // ModuleNotFoundError — caught by Phase 8's first smoke run.
     expect(captured!.opts.cwd).toBe(resolve("C:/repo", "python"));
+  });
+
+  // REGRESSION PIN — Task #26: the Squatters doodle render failed even
+  // after Magnific generated image_001.png because draw-on-images.ts was
+  // building `imagePath` with join() against a relative ctx.projectsDir,
+  // and the spawn ran with cwd=<repoRoot>/python — so Python's Path.exists
+  // looked one directory off. Belt-and-suspenders fix: runDrawOnCli now
+  // resolve()s the two file-path args before passing to spawn. This test
+  // pins that contract: relative-in → absolute-in-spawned-args.
+  it("normalizes relative imagePath / outputPath to absolute in the spawned args (Task #26 regression)", async () => {
+    let captured: { args: readonly string[] } | null = null;
+    const { proc } = makeFakeChild({ exitCode: 0 });
+    const spawnFn = ((
+      _cmd: string,
+      args: readonly string[]
+    ) => {
+      captured = { args };
+      return proc;
+    }) as unknown as typeof spawn;
+
+    await runDrawOnCli({
+      pythonPath: "py",
+      imagePath: "projects/abc/images/image_001.png", // RELATIVE in
+      durationSec: 4.0,
+      outputPath: "projects/abc/clips_drawn/image_001.mp4", // RELATIVE in
+      spawnFn,
+    });
+
+    expect(captured).not.toBeNull();
+    const imgArg = captured!.args[2] as string;
+    const outArg = captured!.args[4] as string;
+
+    // Spawned args MUST be absolute — that's the load-bearing assertion.
+    // Without this, the Python-side cwd=<repoRoot>/python resolves the
+    // relative path against the wrong base and the render fails with
+    // "input image not found" even when the file exists.
+    expect(isAbsolute(imgArg)).toBe(true);
+    expect(isAbsolute(outArg)).toBe(true);
+
+    // And they must be the host's resolve() of the original input — so a
+    // reviewer can trace exactly what got expanded.
+    expect(imgArg).toBe(resolve("projects/abc/images/image_001.png"));
+    expect(outArg).toBe(resolve("projects/abc/clips_drawn/image_001.mp4"));
   });
 
   it("rejects on non-zero exit code, surfacing the stderr tail", async () => {
