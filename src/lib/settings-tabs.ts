@@ -97,6 +97,11 @@ export const TAB_FIELDS: Record<TabId, readonly SettingKey[]> = {
     // Post-render cleanup gate. Belongs on the Render tab because it
     // governs what happens after the render step completes.
     "auto_cleanup_after_render",
+    // Doodle stage's Python interpreter override. Empty = the resolver
+    // probes python/draw_on/.venv/{Scripts,bin}/python and falls back to
+    // `python` on PATH. Belongs on Render because the doodle pass runs
+    // as part of the render pipeline.
+    "draw_on_python_path",
   ],
   script: [
     "script_length_minutes",

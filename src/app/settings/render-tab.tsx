@@ -2,7 +2,13 @@
 
 import type { AllSettings } from "@/lib/settings";
 import { enumOptions } from "@/lib/settings-enums";
-import { BoolField, NumberField, Panel, SelectField } from "./field-primitives";
+import {
+  BoolField,
+  NumberField,
+  Panel,
+  SelectField,
+  TextField,
+} from "./field-primitives";
 
 interface RenderTabProps {
   values: AllSettings;
@@ -50,6 +56,13 @@ export function RenderTab({ values, update }: RenderTabProps): JSX.Element {
         label="Wipe intermediates automatically after render (images, audio, alignment, chunks) — off by default; recommended to leave off unless you don't need intermediates for retry/diagnosis."
         value={values.auto_cleanup_after_render}
         onChange={(v) => update("auto_cleanup_after_render", v)}
+      />
+      <TextField
+        id="draw_on_python_path"
+        label="Doodle Python Interpreter"
+        value={values.draw_on_python_path}
+        onChange={(v) => update("draw_on_python_path", v)}
+        hint="Optional override for the doodle draw-on stage. Empty = auto-probe python/draw_on/.venv/{Scripts,bin}/python, then `python` on PATH. Pin an absolute path here if you have multiple Python installs or a non-standard venv layout."
       />
     </Panel>
   );

@@ -126,6 +126,7 @@ const defaults: AllSettings = {
   magnific_runtime_user_data_dir: "data/magnific-userdata",
   magnific_runtime_window_visible: false,
   magnific_runtime_extension_path: "extensions/magnific-ext",
+  draw_on_python_path: "",
 };
 
 beforeEach(() => {
