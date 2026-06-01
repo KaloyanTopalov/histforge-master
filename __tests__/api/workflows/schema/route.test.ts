@@ -83,6 +83,7 @@ describe("GET /api/workflows/schema", () => {
       "generate_visual_prompts",
       "generate_images",
       "generate_clips",
+      "draw_on_images",
     ];
     for (const name of chunksScoped) {
       expect(byName.get(name)).toBe("chunks");

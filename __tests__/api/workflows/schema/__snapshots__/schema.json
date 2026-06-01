@@ -169,6 +169,20 @@
       "for_each": "chunks"
     },
     {
+      "name": "draw_on_images",
+      "module": "glue",
+      "label": "Draw-on reveal clips",
+      "description": "Generates per-image draw-on reveal MP4 clips for doodle image styles.",
+      "inputs": [
+        "chunks/chunks.json",
+        "images"
+      ],
+      "produces": [
+        "clips_drawn/*.mp4"
+      ],
+      "for_each": "chunks"
+    },
+    {
       "name": "render",
       "module": "glue",
       "label": "Render",

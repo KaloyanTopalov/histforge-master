@@ -11,6 +11,7 @@ import { step as chunk_clips_only } from "./08-chunk-clips-only";
 import { step as generate_visual_prompts } from "./09-generate-visual-prompts";
 import { step as generate_images } from "./generate-images";
 import { step as generate_clips } from "./generate-clips";
+import { step as draw_on_images } from "./draw-on-images";
 import { step as render } from "./14-render";
 import { step as cleanup } from "./15-cleanup";
 import { step as generate_loop_image } from "./generate-loop-image";
@@ -46,6 +47,7 @@ export const REAL_STEPS: readonly Step[] = [
   generate_visual_prompts,
   generate_images,
   generate_clips,
+  draw_on_images,
   render,
   cleanup,
   generate_loop_image,
