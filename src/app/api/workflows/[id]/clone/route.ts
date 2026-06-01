@@ -70,6 +70,7 @@ export async function POST(
         created_at: now,
         updated_at: now,
         chunker_step: source.chunker_step,
+        image_style: source.image_style,
       };
       workflowsRepo.insert(db, newRow);
       workflowsRepo.replaceSteps(

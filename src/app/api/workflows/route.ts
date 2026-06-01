@@ -71,6 +71,11 @@ export async function POST(req: Request): Promise<NextResponse> {
     created_at: now,
     updated_at: now,
     chunker_step: data.chunker_step,
+    // Narrative-only route (music_video imports short-circuit above), so
+    // `data` is narrowed to the narrative branch which carries the
+    // optional image_style. Null fallback preserves the pre-Phase-5
+    // cinematic default for payloads that omit the field.
+    image_style: data.image_style ?? null,
   };
 
   try {
