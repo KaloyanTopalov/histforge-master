@@ -248,6 +248,8 @@ Add `image_reveal_fraction` to the appropriate settings tab (likely "Render" or 
 
 ## Render-step implementation
 
+> **SUPERSEDED 2026-05-31** — the pixel-dissolve / FFmpeg xfade reveal mechanism specified below was tested and rejected: "doesn't look like drawing." Replaced by the OpenCV contour-draw-on approach in [doodle-draw-on-render-requirements.md](./doodle-draw-on-render-requirements.md). The image-styles registry + per-style locks + seeded doodle workflows from Session 1 still stand; only this Session 2 render mechanism (and the related `image_reveal_fraction` setting + `reveal_effect: "pixel_dissolve"` registry value) is superseded.
+
 ### Pixel dissolve filter chain
 
 For each image in the render sequence where the style declares `reveal_effect: "pixel_dissolve"`:
