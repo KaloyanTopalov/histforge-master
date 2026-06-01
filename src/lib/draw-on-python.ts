@@ -210,3 +210,97 @@ export function runDrawOnCli(opts: RunDrawOnCliOpts): Promise<void> {
     });
   });
 }
+
+export interface VerifyDrawOnPythonOpts {
+  /** Resolved interpreter path (from `resolveDrawOnPythonPath`). */
+  pythonPath: string;
+  /**
+   * Hard timeout in milliseconds. Defaults to 5_000. The precheck runs in
+   * front of every render, so a catatonic Python (waiting on stdin,
+   * deadlocked import, etc.) must not hang it indefinitely.
+   */
+  timeoutMs?: number;
+  /** Test seam — defaults to `node:child_process`'s `spawn`. */
+  spawnFn?: typeof spawn;
+}
+
+/**
+ * Render-precheck health check: spawns `python -m draw_on --help` and
+ * resolves on exit 0. Argparse handles `--help` (auto-included by the
+ * argparse standard library) and exits 0 before any cv2/numpy import, so
+ * this verifies the interpreter can find the module but NOT that the deps
+ * are present. Dep failures surface at the first `runDrawOnCli` call with
+ * exit code 2; this check is defense-in-depth for "the .venv vanished
+ * between draw_on_images and render" pathological cases.
+ *
+ * Hard timeout via `setTimeout` + `child.kill()` so the precheck can't
+ * hang a render forever — see `VerifyDrawOnPythonOpts.timeoutMs`.
+ */
+export function verifyDrawOnPython(
+  opts: VerifyDrawOnPythonOpts
+): Promise<void> {
+  const spawnFn = opts.spawnFn ?? spawn;
+  const timeoutMs = opts.timeoutMs ?? 5_000;
+
+  return new Promise<void>((resolveP, reject) => {
+    const child = spawnFn(opts.pythonPath, ["-m", "draw_on", "--help"], {
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+
+    let stderrTail = "";
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try {
+        child.kill();
+      } catch {
+        /* best effort */
+      }
+      reject(
+        new Error(
+          `draw-on health check (${opts.pythonPath}) timed out after ${timeoutMs}ms`
+        )
+      );
+    }, timeoutMs);
+
+    child.stderr?.on("data", (chunk: Buffer) => {
+      stderrTail += chunk.toString();
+      if (stderrTail.length > 2000) stderrTail = stderrTail.slice(-2000);
+    });
+
+    child.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(
+        new Error(
+          `draw-on health check failed to spawn (${opts.pythonPath}): ${err.message}`
+        )
+      );
+    });
+
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (code === 0) {
+        resolveP();
+        return;
+      }
+      const tail = stderrTail
+        .split(/\r?\n/)
+        .filter((l) => l.trim())
+        .slice(-3)
+        .join(" | ");
+      reject(
+        new Error(
+          `draw-on health check (${opts.pythonPath}) exited with code ${
+            code ?? "null"
+          }${tail ? `: ${tail}` : ""}`
+        )
+      );
+    });
+  });
+}

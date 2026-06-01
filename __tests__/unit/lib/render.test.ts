@@ -768,6 +768,11 @@ describe("render() precheck", () => {
     // exists at the unit-level on buildSegmentArgs (see "motion: static"
     // describe block above).
     motion: "ken_burns" as const,
+    // Phase 7 added revealEffect. Default cinematic so every legacy test
+    // here keeps its prior shape — clips_drawn/ is never consulted and
+    // the python health check is never called. The draw-on cases live
+    // in their own describe block below.
+    revealEffect: "none" as const,
   };
 
   it("throws RenderPrecheckError when a single image file is missing", async () => {
@@ -864,6 +869,227 @@ describe("render() precheck", () => {
     }
     expect(err).toBeInstanceOf(RenderPrecheckError);
     expect(exec).not.toHaveBeenCalled();
+  });
+
+  describe("draw-on precheck (revealEffect: 'draw_on')", () => {
+    // Project layout helper for the doodle path: chunks.json + clips_drawn/
+    // entries instead of images/. The audio stub is still required (Stage E
+    // never reaches it but the render orchestrator reads chunks before any
+    // gating; the audio dir keeps fs operations consistent with the cinematic
+    // setup helper above).
+    function setupDoodleProject(
+      projectsDir: string,
+      videoId: string,
+      chunks: Chunk[],
+      presentClipIds: string[]
+    ): string {
+      const projDir = join(projectsDir, videoId);
+      mkdirSync(join(projDir, "chunks"), { recursive: true });
+      mkdirSync(join(projDir, "clips_drawn"), { recursive: true });
+      mkdirSync(join(projDir, "audio"), { recursive: true });
+      writeFileSync(
+        join(projDir, "chunks", "chunks.json"),
+        JSON.stringify(chunks)
+      );
+      for (const id of presentClipIds) {
+        writeFileSync(join(projDir, "clips_drawn", `${id}.mp4`), "");
+      }
+      writeFileSync(join(projDir, "audio", "narration.mp3"), "");
+      return projDir;
+    }
+
+    it("throws RenderPrecheckError when a single clips_drawn/<id>.mp4 is missing", async () => {
+      const projectsDir = tempDir("projects");
+      const videoId = "v_drawon_one_missing";
+      const chunks = makeImageChunks(["image_001", "image_002", "image_003"]);
+      setupDoodleProject(projectsDir, videoId, chunks, [
+        "image_001",
+        "image_003",
+      ]); // image_002 missing
+
+      const exec = vi.fn();
+      const probe = vi.fn();
+      let err: unknown;
+      try {
+        await render(videoId, {
+          projectsDir,
+          ...baseRenderOpts,
+          revealEffect: "draw_on",
+          drawOnHealthCheck: vi.fn().mockResolvedValue(undefined),
+          exec,
+          probe,
+          log: () => {},
+        });
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(RenderPrecheckError);
+      expect((err as RenderPrecheckError).missingChunkIds).toEqual([
+        "image_002",
+      ]);
+      expect((err as Error).message).toMatch(/draw-on/i);
+    });
+
+    it("RenderPrecheckError lists every missing clips_drawn entry (multiple missing)", async () => {
+      const projectsDir = tempDir("projects");
+      const videoId = "v_drawon_multi_missing";
+      const chunks = makeImageChunks([
+        "image_001",
+        "image_002",
+        "image_003",
+        "image_004",
+      ]);
+      setupDoodleProject(projectsDir, videoId, chunks, [
+        "image_002",
+        "image_004",
+      ]); // 001 + 003 missing
+
+      const exec = vi.fn();
+      const probe = vi.fn();
+      let err: unknown;
+      try {
+        await render(videoId, {
+          projectsDir,
+          ...baseRenderOpts,
+          revealEffect: "draw_on",
+          drawOnHealthCheck: vi.fn().mockResolvedValue(undefined),
+          exec,
+          probe,
+          log: () => {},
+        });
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(RenderPrecheckError);
+      expect((err as RenderPrecheckError).missingChunkIds).toEqual([
+        "image_001",
+        "image_003",
+      ]);
+    });
+
+    it("calls drawOnHealthCheck once when revealEffect='draw_on' and clips are present", async () => {
+      const projectsDir = tempDir("projects");
+      const videoId = "v_drawon_health";
+      const chunks = makeImageChunks(["image_001", "image_002"]);
+      setupDoodleProject(projectsDir, videoId, chunks, [
+        "image_001",
+        "image_002",
+      ]);
+
+      const exec = vi.fn().mockResolvedValue(undefined);
+      const probe = vi.fn().mockResolvedValue(10);
+      const drawOnHealthCheck = vi.fn().mockResolvedValue(undefined);
+
+      await render(videoId, {
+        projectsDir,
+        ...baseRenderOpts,
+        revealEffect: "draw_on",
+        drawOnHealthCheck,
+        exec,
+        probe,
+        log: () => {},
+      });
+
+      expect(drawOnHealthCheck).toHaveBeenCalledTimes(1);
+    });
+
+    it("propagates drawOnHealthCheck failure as the precheck error (no ffmpeg work runs)", async () => {
+      const projectsDir = tempDir("projects");
+      const videoId = "v_drawon_health_fail";
+      const chunks = makeImageChunks(["image_001"]);
+      setupDoodleProject(projectsDir, videoId, chunks, ["image_001"]);
+
+      const exec = vi.fn();
+      const probe = vi.fn();
+      const drawOnHealthCheck = vi
+        .fn()
+        .mockRejectedValue(new Error("python -m draw_on --help exited with code 1"));
+
+      let err: unknown;
+      try {
+        await render(videoId, {
+          projectsDir,
+          ...baseRenderOpts,
+          revealEffect: "draw_on",
+          drawOnHealthCheck,
+          exec,
+          probe,
+          log: () => {},
+        });
+      } catch (e) {
+        err = e;
+      }
+      expect((err as Error).message).toMatch(/exited with code 1/);
+      expect(exec).not.toHaveBeenCalled();
+    });
+
+    it("Stage B passes drawOnClipPath = clips_drawn/<id>.mp4 into buildSegmentArgs for every image chunk", async () => {
+      const projectsDir = tempDir("projects");
+      const videoId = "v_drawon_stageB";
+      const chunks = makeImageChunks(["image_001", "image_002"]);
+      setupDoodleProject(projectsDir, videoId, chunks, [
+        "image_001",
+        "image_002",
+      ]);
+
+      const execCalls: string[][] = [];
+      const exec = vi.fn().mockImplementation((args: string[]) => {
+        execCalls.push(args);
+      });
+      const probe = vi.fn().mockResolvedValue(10);
+
+      await render(videoId, {
+        projectsDir,
+        ...baseRenderOpts,
+        revealEffect: "draw_on",
+        drawOnHealthCheck: vi.fn().mockResolvedValue(undefined),
+        exec,
+        probe,
+        log: () => {},
+      });
+
+      // Every segment_NNN.mp4 call must -i the matching clips_drawn entry
+      // (NOT a still PNG). Two image chunks → two segment calls.
+      const segCalls = execCalls.filter((c) => {
+        const last = c[c.length - 1];
+        return typeof last === "string" && /segment_\d+\.mp4$/.test(last);
+      });
+      expect(segCalls).toHaveLength(2);
+      for (const call of segCalls) {
+        const iIdx = call.indexOf("-i");
+        const inputPath = call[iIdx + 1];
+        expect(inputPath).toMatch(/clips_drawn[\\/]image_\d+\.mp4$/);
+        expect(inputPath).not.toMatch(/\.png$/);
+        expect(call).not.toContain("-loop"); // draw-on shape, not -loop 1
+      }
+    });
+
+    it("revealEffect='none' (cinematic) does NOT consult clips_drawn or call drawOnHealthCheck", async () => {
+      const projectsDir = tempDir("projects");
+      const videoId = "v_cinema_skips_drawon";
+      const chunks = makeImageChunks(["image_001", "image_002"]);
+      // Cinematic project: images/ populated, clips_drawn/ deliberately absent.
+      setupImagesOnlyProject(projectsDir, videoId, chunks, [
+        "image_001",
+        "image_002",
+      ]);
+
+      const exec = vi.fn().mockResolvedValue(undefined);
+      const probe = vi.fn().mockResolvedValue(10);
+      const drawOnHealthCheck = vi.fn();
+
+      await render(videoId, {
+        projectsDir,
+        ...baseRenderOpts,
+        revealEffect: "none",
+        drawOnHealthCheck,
+        exec,
+        probe,
+        log: () => {},
+      });
+
+      expect(drawOnHealthCheck).not.toHaveBeenCalled();
+    });
   });
 
   it("precheck does NOT cover clip-missing — Stage A's existing throw still handles that (scope pin)", async () => {

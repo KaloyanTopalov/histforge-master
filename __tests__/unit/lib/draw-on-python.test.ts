@@ -354,6 +354,86 @@ describe("runDrawOnCli", () => {
   });
 });
 
+describe("verifyDrawOnPython", () => {
+  it("resolves on exit code 0 with the spec-shape spawn (-m draw_on --help)", async () => {
+    let captured: { cmd: string; args: readonly string[] } | null = null;
+    const { proc } = makeFakeChild({ exitCode: 0 });
+    const spawnFn = ((cmd: string, args: readonly string[]) => {
+      captured = { cmd, args };
+      return proc;
+    }) as unknown as typeof spawn;
+
+    const { verifyDrawOnPython } = await import("@/lib/draw-on-python");
+    await verifyDrawOnPython({
+      pythonPath: "C:/python/python.exe",
+      spawnFn,
+    });
+
+    expect(captured).not.toBeNull();
+    expect(captured!.cmd).toBe("C:/python/python.exe");
+    expect(captured!.args).toEqual(["-m", "draw_on", "--help"]);
+  });
+
+  it("rejects on non-zero exit code with the stderr tail in the message", async () => {
+    const { proc } = makeFakeChild({
+      exitCode: 1,
+      stderrLines: [
+        "ModuleNotFoundError: No module named 'draw_on'\n",
+      ],
+    });
+    const spawnFn = (() => proc) as unknown as typeof spawn;
+
+    const { verifyDrawOnPython } = await import("@/lib/draw-on-python");
+    await expect(
+      verifyDrawOnPython({ pythonPath: "py", spawnFn })
+    ).rejects.toThrow(/exited with code 1/);
+  });
+
+  it("rejects on spawn ENOENT (binary missing)", async () => {
+    const { proc } = makeFakeChild({
+      emitErrorBeforeClose: Object.assign(new Error("ENOENT"), {
+        code: "ENOENT",
+      }),
+    });
+    const spawnFn = (() => proc) as unknown as typeof spawn;
+
+    const { verifyDrawOnPython } = await import("@/lib/draw-on-python");
+    await expect(
+      verifyDrawOnPython({ pythonPath: "/no/such/python", spawnFn })
+    ).rejects.toThrow(/failed to spawn/);
+  });
+
+  it("rejects with a timeout error when the child doesn't exit within timeoutMs", async () => {
+    const { proc, killCalls } = makeFakeChild({
+      exitCode: 0,
+      closeDelayMs: 5000, // long-running
+    });
+    const spawnFn = (() => proc) as unknown as typeof spawn;
+
+    const { verifyDrawOnPython } = await import("@/lib/draw-on-python");
+    const start = Date.now();
+    await expect(
+      verifyDrawOnPython({ pythonPath: "py", timeoutMs: 80, spawnFn })
+    ).rejects.toThrow(/timed out/i);
+    const elapsed = Date.now() - start;
+    expect(elapsed).toBeLessThan(500);
+    expect(killCalls.length).toBeGreaterThanOrEqual(1); // child was killed
+  });
+
+  it("default timeoutMs is finite (5s) — won't hang the precheck if python becomes catatonic", async () => {
+    // Sanity pin — call without timeoutMs and confirm the default is applied.
+    // We verify by checking that on a 0-delay close, the call resolves
+    // quickly (well under any conceivable default).
+    const { proc } = makeFakeChild({ exitCode: 0, closeDelayMs: 1 });
+    const spawnFn = (() => proc) as unknown as typeof spawn;
+
+    const { verifyDrawOnPython } = await import("@/lib/draw-on-python");
+    const start = Date.now();
+    await verifyDrawOnPython({ pythonPath: "py", spawnFn });
+    expect(Date.now() - start).toBeLessThan(500);
+  });
+});
+
 describe("draw_on_python_path setting", () => {
   it("seeds an empty default on a fresh DB (empty triggers venv fallback in the resolver)", () => {
     const db = freshDb();

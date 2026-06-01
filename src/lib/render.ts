@@ -492,6 +492,25 @@ export interface RenderDeps {
    */
   motion: RenderImageMotion;
   /**
+   * Per-render reveal mode resolved from the workflow snapshot's
+   * `image_style`. `"draw_on"` routes every image chunk's Stage B segment
+   * through `clips_drawn/<id>.mp4` (produced upstream by `draw_on_images`)
+   * and the precheck switches from images/ to clips_drawn/. `"none"` keeps
+   * the cinematic-still path byte-identical. Required so the choice is
+   * explicit at every call site — same shape as `motion`.
+   */
+  revealEffect: "none" | "draw_on";
+  /**
+   * Pre-render health probe for the draw-on Python interpreter. Called
+   * once during the precheck when `revealEffect === "draw_on"`. The
+   * worker step builds it as a closure over the resolved python path so
+   * `render` stays decoupled from the resolver. Optional because the
+   * cinematic path never needs it — when `revealEffect === "none"` the
+   * field is ignored entirely. When provided AND revealEffect === "draw_on",
+   * the precheck awaits this before any ffmpeg work.
+   */
+  drawOnHealthCheck?: () => Promise<void>;
+  /**
    * Run one ffmpeg invocation. Async so production can use `spawn` with
    * an AbortSignal — when the orchestrator cancels mid-render, the in-flight
    * child process is killed instead of running to completion. Tests can
@@ -524,6 +543,8 @@ export async function render(
     framerate,
     videoEncoder,
     motion,
+    revealEffect,
+    drawOnHealthCheck,
     exec,
     probe,
     log,
@@ -548,22 +569,53 @@ export async function render(
   const imageFiles = listDir(imageDir);
   const clipDir = join(projectDir, "videos", "clip");
   const clipFiles = listDir(clipDir);
+  const clipsDrawnDir = join(projectDir, "clips_drawn");
 
-  // Render precheck: refuse to render when any image-chunk's file is absent
-  // on disk. Spec §13.4's placeholder fallback (a black "MISSING" frame)
-  // silently substituted in production and was then masked by the cleanup
-  // step wiping intermediates — see the structural-safety baseline PR.
-  // Scope is image-files-only by design; clip-missing keeps its existing
-  // throw inside Stage A (see :504 below), pinned by the
-  // "precheck does NOT cover clip-missing" test.
-  const missingImages = imageChunks
-    .filter((c) => findChunkAsset(imageDir, imageFiles, c.id) === null)
-    .map((c) => c.id);
-  if (missingImages.length > 0) {
-    throw new RenderPrecheckError(
-      `Render precheck failed: missing image files for ${missingImages.join(", ")}`,
-      missingImages
-    );
+  // Render precheck: refuse to render when any image-chunk's expected
+  // input is absent on disk. Spec §13.4's placeholder fallback (a black
+  // "MISSING" frame) silently substituted in production and was then
+  // masked by the cleanup step wiping intermediates — see the structural-
+  // safety baseline PR.
+  //
+  // The required file per chunk depends on the reveal effect:
+  //   - `"draw_on"`: clips_drawn/<id>.mp4 (the per-image draw-on clip
+  //      produced by the upstream `draw_on_images` step). Stage B
+  //      consumes the clip directly via `drawOnClipPath`; the still PNG
+  //      is irrelevant by render time.
+  //   - `"none"` (cinematic): images/<id>.<ext> (the still that Stage B
+  //      loops + zoompans). Pre-Phase-7 behavior, byte-identical.
+  //
+  // Clip-chunk missing is intentionally NOT covered here — Stage A's
+  // existing `Missing clip video for <id>` throw still handles that
+  // (pinned by the "precheck does NOT cover clip-missing" test).
+  if (revealEffect === "draw_on") {
+    const missingDraws = imageChunks
+      .filter((c) => !existsSync(join(clipsDrawnDir, `${c.id}.mp4`)))
+      .map((c) => c.id);
+    if (missingDraws.length > 0) {
+      throw new RenderPrecheckError(
+        `Render precheck failed (draw-on): missing clip files for ${missingDraws.join(", ")}`,
+        missingDraws
+      );
+    }
+    // Health-check the Python interpreter that produced clips_drawn/.
+    // Defense-in-depth: the upstream draw_on_images step already had to
+    // succeed for the clip files above to exist, so the catatonic-Python
+    // case only arises when the .venv vanishes between steps. Awaited
+    // here so a half-broken environment surfaces before any ffmpeg work.
+    if (drawOnHealthCheck) {
+      await drawOnHealthCheck();
+    }
+  } else {
+    const missingImages = imageChunks
+      .filter((c) => findChunkAsset(imageDir, imageFiles, c.id) === null)
+      .map((c) => c.id);
+    if (missingImages.length > 0) {
+      throw new RenderPrecheckError(
+        `Render precheck failed: missing image files for ${missingImages.join(", ")}`,
+        missingImages
+      );
+    }
   }
 
   // ── Stages A and B run in parallel ────────────────────────────────
@@ -677,6 +729,37 @@ export async function render(
         const padded = String(i + 1).padStart(3, "0");
         const segPath = join(renderDir, `segment_${padded}.mp4`);
         segPaths.push(segPath);
+
+        // Draw-on branch: route the segment through the pre-rendered
+        // clip in clips_drawn/. The precheck above already verified the
+        // file's existence (and ran the python health check) — Stage B
+        // just builds the FFmpeg args via the draw-on early-return in
+        // buildSegmentArgs. The cinematic motion branches below are
+        // unreachable on this path, so the still-PNG lookup + buffer-cap
+        // warning are skipped entirely.
+        if (revealEffect === "draw_on") {
+          const drawOnClipPath = join(clipsDrawnDir, `${chunk.id}.mp4`);
+          segmentTasks.push(() =>
+            exec(
+              buildSegmentArgs({
+                // imagePath is required on the type for the cinematic
+                // branch but ignored by the draw-on early-return. Pass
+                // the clip path so a stray fall-through would at least
+                // reference a real file in error messages.
+                imagePath: drawOnClipPath,
+                chunkDuration: duration,
+                isLast,
+                width,
+                height,
+                framerate,
+                outPath: segPath,
+                motion,
+                drawOnClipPath,
+              })
+            )
+          );
+          continue;
+        }
 
         const imagePath = findChunkAsset(imageDir, imageFiles, chunk.id);
         if (imagePath === null) {
