@@ -179,10 +179,14 @@ function makeFakeChild(opts: {
 describe("runDrawOnCli", () => {
   it("spawns the CLI with [-m draw_on, image, dur, out] and resolves on exit 0", async () => {
     let captured:
-      | { cmd: string; args: readonly string[]; opts: unknown }
+      | { cmd: string; args: readonly string[]; opts: { cwd?: string } }
       | null = null;
     const { proc } = makeFakeChild({ exitCode: 0 });
-    const spawnFn = ((cmd: string, args: readonly string[], opts: unknown) => {
+    const spawnFn = ((
+      cmd: string,
+      args: readonly string[],
+      opts: { cwd?: string }
+    ) => {
       captured = { cmd, args, opts };
       return proc;
     }) as unknown as typeof spawn;
@@ -192,6 +196,7 @@ describe("runDrawOnCli", () => {
       imagePath: "C:/img/001.png",
       durationSec: 4.25,
       outputPath: "C:/out/001.mp4",
+      repoRoot: "C:/repo",
       spawnFn,
     });
 
@@ -204,6 +209,11 @@ describe("runDrawOnCli", () => {
       "4.25",
       "C:/out/001.mp4",
     ]);
+    // cwd MUST be <repoRoot>/python so Python's implicit-CWD module
+    // resolution finds the package. Pinned because Session 1 left this
+    // off and `python -m draw_on` from any other CWD fails with
+    // ModuleNotFoundError — caught by Phase 8's first smoke run.
+    expect(captured!.opts.cwd).toBe(resolve("C:/repo", "python"));
   });
 
   it("rejects on non-zero exit code, surfacing the stderr tail", async () => {
@@ -355,23 +365,33 @@ describe("runDrawOnCli", () => {
 });
 
 describe("verifyDrawOnPython", () => {
-  it("resolves on exit code 0 with the spec-shape spawn (-m draw_on --help)", async () => {
-    let captured: { cmd: string; args: readonly string[] } | null = null;
+  it("resolves on exit code 0 with the spec-shape spawn (-m draw_on --help) and cwd=<repoRoot>/python", async () => {
+    let captured:
+      | { cmd: string; args: readonly string[]; opts: { cwd?: string } }
+      | null = null;
     const { proc } = makeFakeChild({ exitCode: 0 });
-    const spawnFn = ((cmd: string, args: readonly string[]) => {
-      captured = { cmd, args };
+    const spawnFn = ((
+      cmd: string,
+      args: readonly string[],
+      opts: { cwd?: string }
+    ) => {
+      captured = { cmd, args, opts };
       return proc;
     }) as unknown as typeof spawn;
 
     const { verifyDrawOnPython } = await import("@/lib/draw-on-python");
     await verifyDrawOnPython({
       pythonPath: "C:/python/python.exe",
+      repoRoot: "C:/repo",
       spawnFn,
     });
 
     expect(captured).not.toBeNull();
     expect(captured!.cmd).toBe("C:/python/python.exe");
     expect(captured!.args).toEqual(["-m", "draw_on", "--help"]);
+    // Same cwd contract as runDrawOnCli — the package isn't pip-installed,
+    // so the spawn must run from <repoRoot>/python.
+    expect(captured!.opts.cwd).toBe(resolve("C:/repo", "python"));
   });
 
   it("rejects on non-zero exit code with the stderr tail in the message", async () => {

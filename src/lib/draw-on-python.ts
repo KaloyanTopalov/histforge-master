@@ -92,8 +92,26 @@ export interface RunDrawOnCliOpts {
    * step to route progress into `appendLog`.
    */
   log?: (line: string) => void;
+  /**
+   * Repo root used to derive the spawn `cwd`. The draw_on package is not
+   * pip-installed — Python finds it via the implicit `<cwd>` entry on
+   * `sys.path` only when CWD is `<repoRoot>/python` (so that
+   * `python -m draw_on` resolves to `<repoRoot>/python/draw_on/`). Defaults
+   * to `process.cwd()`; tests usually leave this absent (mocked spawn
+   * doesn't observe cwd).
+   */
+  repoRoot?: string;
   /** Test seam — defaults to `node:child_process`'s `spawn`. */
   spawnFn?: typeof spawn;
+}
+
+/**
+ * Directory `python -m draw_on` must be spawned from for Python's
+ * implicit-CWD module resolution to find the package. The package lives
+ * at `<repoRoot>/python/draw_on/`; CWD must therefore be `<repoRoot>/python`.
+ */
+function drawOnSpawnCwd(repoRoot?: string): string {
+  return resolve(repoRoot ?? process.cwd(), "python");
 }
 
 /**
@@ -110,7 +128,9 @@ export interface RunDrawOnCliOpts {
  *
  * The CLI invocation is `<python> -m draw_on <image> <dur_sec> <out>`,
  * matching the Session-1 README. All flags (--fps, --split-len,
- * --dilation-px) stay at the CLI's locked defaults.
+ * --dilation-px) stay at the CLI's locked defaults. `cwd` is set to
+ * `<repoRoot>/python` so Python's implicit-CWD `sys.path` resolution
+ * finds the package (it is not pip-installed).
  */
 export function runDrawOnCli(opts: RunDrawOnCliOpts): Promise<void> {
   const spawnFn = opts.spawnFn ?? spawn;
@@ -134,6 +154,7 @@ export function runDrawOnCli(opts: RunDrawOnCliOpts): Promise<void> {
 
     const child: ChildProcess = spawnFn(opts.pythonPath, args, {
       stdio: ["ignore", "pipe", "pipe"],
+      cwd: drawOnSpawnCwd(opts.repoRoot),
     });
 
     let stderrTail = "";
@@ -220,6 +241,11 @@ export interface VerifyDrawOnPythonOpts {
    * deadlocked import, etc.) must not hang it indefinitely.
    */
   timeoutMs?: number;
+  /**
+   * Repo root used to derive the spawn `cwd` so `python -m draw_on --help`
+   * finds the package on `sys.path`. See `RunDrawOnCliOpts.repoRoot`.
+   */
+  repoRoot?: string;
   /** Test seam — defaults to `node:child_process`'s `spawn`. */
   spawnFn?: typeof spawn;
 }
@@ -245,6 +271,7 @@ export function verifyDrawOnPython(
   return new Promise<void>((resolveP, reject) => {
     const child = spawnFn(opts.pythonPath, ["-m", "draw_on", "--help"], {
       stdio: ["ignore", "ignore", "pipe"],
+      cwd: drawOnSpawnCwd(opts.repoRoot),
     });
 
     let stderrTail = "";
