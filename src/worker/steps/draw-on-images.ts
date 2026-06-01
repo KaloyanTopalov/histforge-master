@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { Step } from "@/worker/pipeline";
 import type { Chunk } from "@/types";
 import { appendLog } from "@/lib/logger";
@@ -67,13 +67,20 @@ export const step: Step = {
         throw new Error("draw_on_images aborted between chunks");
       }
 
-      const outputPath = join(clipsDir, `${chunk.id}.mp4`);
+      // resolve() not join() — the Python child is spawned with
+      // cwd=<repoRoot>/python (so `python -m draw_on` resolves the package
+      // via implicit sys.path). A relative imagePath would resolve against
+      // that cwd in Python's Path.exists(), missing the file by one
+      // directory. Passing absolute paths makes the spawn cwd irrelevant
+      // to file lookup. Same for outputPath for symmetry — and so the
+      // mkdir-parents inside the CLI lands in the right place.
+      const outputPath = resolve(clipsDir, `${chunk.id}.mp4`);
       if (existsSync(outputPath)) {
         log(`skip ${chunk.id} — clip already exists`);
         continue;
       }
 
-      const imagePath = join(imagesDir, `${chunk.id}.png`);
+      const imagePath = resolve(imagesDir, `${chunk.id}.png`);
       const durationSec = chunk.end - chunk.start;
 
       log(`draw ${chunk.id} (${durationSec.toFixed(2)}s)`);
