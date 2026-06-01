@@ -142,3 +142,64 @@ def test_progressive_frame_dilation_expands_colored_region(small_kernel):
     small_count = (small_frame == colored).all(axis=-1).sum()
     big_count = (big_frame == colored).all(axis=-1).sum()
     assert big_count > small_count
+
+
+def test_progressive_frame_flat_fill_mask_no_dilation(small_kernel):
+    """flat_fill_mask reveals pixels EXACTLY where set — no dilation past the
+    boundary. This is what keeps flood-fills from pulling adjacent line-work
+    pixels into the reveal."""
+    colored = np.full((50, 50, 3), [128, 64, 32], dtype=np.uint8)
+    drawn = np.zeros((50, 50), dtype=np.uint8)
+    fill = np.zeros((50, 50), dtype=np.uint8)
+    fill[20:30, 20:30] = 255  # exact 10x10 fill
+    frame = progressive_frame(colored, drawn, small_kernel, flat_fill_mask=fill)
+    # Inside the fill: colored
+    assert (frame[25, 25] == colored[25, 25]).all()
+    # Immediately outside the fill boundary: still WHITE (no dilation)
+    assert (frame[19, 25] == 255).all(), "flat_fill_mask should not dilate"
+    assert (frame[30, 25] == 255).all()
+    assert (frame[25, 19] == 255).all()
+    assert (frame[25, 30] == 255).all()
+
+
+from draw_on.algorithm import detect_color_regions
+
+
+def test_detect_color_regions_finds_flat_color_blocks():
+    """Two large solid color blocks on white = 2 regions.
+
+    Block size matters: tiny blocks have huge perimeter-to-area ratio, so edge
+    ink (from adaptiveThreshold detecting the block/background transition)
+    dominates and they get rejected by max_ink_fraction. The flood-fill is
+    designed for blocks where dilation can't cover the interior in the first
+    place — those are by definition LARGER than the dilation kernel.
+    """
+    img = np.full((200, 200, 3), 255, dtype=np.uint8)
+    img[10:90, 10:90] = [0, 200, 0]        # 80x80 green BGR — gray ~117
+    img[110:190, 110:190] = [50, 50, 200]  # 80x80 red-ish BGR — gray ~95
+    regions = detect_color_regions(img)
+    assert len(regions) == 2
+    for r in regions:
+        assert r.shape == (200, 200)
+        assert r.dtype == np.uint8
+        assert (r > 0).sum() > 0
+
+
+def test_detect_color_regions_skips_hatched_textured_areas():
+    """A region with lots of line work is treated as 'sketchy', not a flat block."""
+    img = np.full((100, 100, 3), 255, dtype=np.uint8)
+    # Gray region with many black hatch lines — should be excluded
+    img[10:60, 10:60] = [180, 180, 180]
+    for y in range(10, 60, 4):
+        img[y:y+1, 10:60] = [0, 0, 0]  # hatch lines
+    regions = detect_color_regions(img)
+    # Hatched region should not be returned (high ink_fraction)
+    assert len(regions) == 0
+
+
+def test_detect_color_regions_skips_tiny_regions():
+    """Regions below min_area are dropped (noise filter)."""
+    img = np.full((100, 100, 3), 255, dtype=np.uint8)
+    img[10:12, 10:12] = [0, 200, 0]  # tiny 2x2 block, well under default min_area=200
+    regions = detect_color_regions(img)
+    assert len(regions) == 0

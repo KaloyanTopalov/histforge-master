@@ -84,15 +84,73 @@ def progressive_frame(
     colored_bgr: np.ndarray,
     drawn_mask: np.ndarray,
     dilation_kernel: np.ndarray,
+    flat_fill_mask: np.ndarray | None = None,
 ) -> np.ndarray:
     """Composite the current draw-on frame.
 
-    Pixels where the dilated `drawn_mask` is positive show the colored image;
-    everywhere else shows pure white. Dilating the mask makes color "leak"
-    slightly past the drawn strokes — this is what makes color emerge WITH
-    the lines, not after them.
+    `drawn_mask` (grid-traversal cells) is DILATED so color leaks slightly
+    past the strokes — this is what makes color emerge WITH the lines.
+
+    `flat_fill_mask` (optional, from flood-fill of detected color regions)
+    is composed EXACTLY — no dilation. This prevents the fill from pulling
+    adjacent line-work pixels into the reveal via dilation, so black line
+    work continues to draw stroke-by-stroke via the grid traversal even
+    after a region has been flood-filled.
     """
     dilated = cv2.dilate(drawn_mask, dilation_kernel)
-    mask_3 = np.stack([dilated, dilated, dilated], axis=-1)
+    if flat_fill_mask is not None:
+        visible = (dilated > 0) | (flat_fill_mask > 0)
+    else:
+        visible = dilated > 0
+    visible_3 = np.stack([visible, visible, visible], axis=-1)
     white = np.full_like(colored_bgr, 255)
-    return np.where(mask_3 > 0, colored_bgr, white).astype(np.uint8)
+    return np.where(visible_3, colored_bgr, white).astype(np.uint8)
+
+
+def detect_color_regions(
+    img_bgr: np.ndarray,
+    white_threshold: int = 230,
+    black_threshold: int = 60,
+    min_area: int = 200,
+    max_ink_fraction: float = 0.30,
+) -> List[np.ndarray]:
+    """Detect connected regions of FLAT color — not white background, not
+    line work, not hatched/textured regions.
+
+    A "flat color region" is a connected component of pixels with grayscale
+    value between black_threshold and white_threshold (i.e. not pure white
+    and not pure black). Regions where the adaptive-threshold detects
+    significant ink (> max_ink_fraction of the region's pixels) are excluded
+    — these are sketchy/hatched regions (e.g. shaded US-state silhouettes)
+    that already get drawn progressively by build_traversal, so flood-filling
+    them would short-circuit the natural drawing motion.
+
+    Returns a list of binary masks (uint8, 0 or 255) the same H x W as input.
+    """
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    not_white = gray < white_threshold
+    not_black = gray > black_threshold
+    color_mask = (not_white & not_black).astype(np.uint8) * 255
+
+    thresh = cv2.adaptiveThreshold(
+        gray, 255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        15, 10,
+    )
+    ink_mask = (thresh == 0)
+
+    n_components, labels, stats, _ = cv2.connectedComponentsWithStats(
+        color_mask, connectivity=8
+    )
+    regions: List[np.ndarray] = []
+    for label in range(1, n_components):
+        area = int(stats[label, cv2.CC_STAT_AREA])
+        if area < min_area:
+            continue
+        region_bool = (labels == label)
+        ink_in_region = int((region_bool & ink_mask).sum())
+        if ink_in_region / area > max_ink_fraction:
+            continue  # hatched/textured — skip flood-fill
+        regions.append((region_bool.astype(np.uint8) * 255))
+    return regions

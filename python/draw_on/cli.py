@@ -13,8 +13,8 @@ def main(argv=None) -> int:
     parser.add_argument("image_path", help="Path to input image (PNG, JPG, etc)")
     parser.add_argument("duration_sec", type=float, help="Output video duration in seconds")
     parser.add_argument("output_path", help="Path to output mp4")
-    parser.add_argument("--fps", type=int, default=30)
-    parser.add_argument("--split-len", type=int, default=10)
+    parser.add_argument("--fps", type=int, default=60)
+    parser.add_argument("--split-len", type=int, default=4)
     parser.add_argument("--dilation-px", type=int, default=12)
     args = parser.parse_args(argv)
 
